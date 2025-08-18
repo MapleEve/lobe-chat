@@ -19,6 +19,7 @@ export const AiProviderSDKEnum = {
   AzureAI: 'azureai',
   Bedrock: 'bedrock',
   Cloudflare: 'cloudflare',
+  ComfyUI: 'comfyui',
   Google: 'google',
   Huggingface: 'huggingface',
   Ollama: 'ollama',
@@ -101,7 +102,7 @@ const AiProviderSettingsSchema = z.object({
     })
     .or(ResponseAnimationType)
     .optional(),
-  sdkType: z.enum(['anthropic', 'openai', 'ollama']).optional(),
+  sdkType: z.enum(['anthropic', 'comfyui', 'ollama', 'openai']).optional(),
   searchMode: z.enum(['params', 'internal']).optional(),
   showAddNewModel: z.boolean().optional(),
   showApiKey: z.boolean().optional(),
