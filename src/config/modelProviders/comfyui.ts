@@ -17,26 +17,21 @@ const ComfyUI: ModelProviderCard = {
   settings: {
     // 禁用浏览器直接请求，通过服务端代理
     disableBrowserRequest: true,
-    
+
     // SDK 类型标识
-sdkType: 'comfyui',
-    
-    
-// 不显示添加新模型按钮（模型通过配置管理）
-showAddNewModel: false,
-    
-    
+    sdkType: 'comfyui',
 
-// 显示 API 密钥配置（用于认证配置）
-showApiKey: true,
-    
-    
+    // 不显示添加新模型按钮（模型通过配置管理）
+    showAddNewModel: false,
 
-// 显示连通性检查
-showChecker: true,
-    
+    // 显示 API 密钥配置（用于认证配置）
+    showApiKey: true,
+
+    // 显示连通性检查
+    showChecker: true,
+
     // 不显示模型获取器（使用预定义模型）
-showModelFetcher: false,
+    showModelFetcher: false,
   },
   url: 'https://www.comfy.org/',
 };

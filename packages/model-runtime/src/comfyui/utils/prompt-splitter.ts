@@ -3,9 +3,10 @@
  * 将单一prompt分离为T5-XXL和CLIP-L的不同输入
  */
 export function splitPromptForDualCLIP(prompt: string): {
+  // 风格关键词，给CLIP-L理解视觉概念
+  clipLPrompt: string;
   // 完整描述，给T5-XXL理解语义
-  clipLPrompt: string; 
-  t5xxlPrompt: string; // 风格关键词，给CLIP-L理解视觉概念
+  t5xxlPrompt: string;
 } {
   if (!prompt) {
     return { clipLPrompt: '', t5xxlPrompt: '' };
@@ -125,9 +126,10 @@ export function splitPromptForDualCLIP(prompt: string): {
   // 构建结果
   if (styleWords.length > 0) {
     return {
+      // CLIP-L专注风格和视觉概念
+      clipLPrompt: styleWords.join(' '),
       // T5-XXL接收完整context以理解语义关系
-clipLPrompt: styleWords.join(' '), 
-      t5xxlPrompt: prompt, // CLIP-L专注风格和视觉概念
+      t5xxlPrompt: prompt,
     };
   }
 
