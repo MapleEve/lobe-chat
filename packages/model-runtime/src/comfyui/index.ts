@@ -14,6 +14,7 @@ import { AgentRuntimeErrorType } from '../error';
 import { CreateImagePayload, CreateImageResponse } from '../types/image';
 import { TextToImagePayload } from '../types/textToImage';
 import { AgentRuntimeError } from '../utils/createError';
+import { MODEL_LIST_CONFIGS, processModelList } from '../utils/modelParse';
 import { buildFluxDevWorkflow } from './workflows/flux-dev';
 import { buildFluxKontextWorkflow } from './workflows/flux-kontext';
 import { buildFluxKreaWorkflow } from './workflows/flux-krea';
@@ -67,20 +68,31 @@ export class LobeComfyUI implements LobeRuntimeAI {
 
       const modelFiles = checkpointLoader.input.required.ckpt_name[0];
 
-      return modelFiles.map((fileName: string) => {
+      // Transform model files to standard format for processModelList
+      // Note: we pass the ID without the comfyui/ prefix to processModelList,
+      // since the config file uses IDs without the prefix
+      const modelList = modelFiles.map((fileName: string) => {
         const cleanName = fileName.replace(/\.(safetensors|ckpt|pt)$/i, '');
         const modelId = this.normalizeModelName(cleanName);
-        const displayName = this.createDisplayName(cleanName);
 
         return {
-          displayName,
           enabled: true,
-          functionCall: false,
-          id: `comfyui/${modelId}`,
-          reasoning: false,
-          vision: false,
+          id: modelId, // Without the comfyui/ prefix for config matching
         };
       });
+
+      // Use processModelList to handle displayName and capabilities
+      const processedModels = await processModelList(
+        modelList,
+        MODEL_LIST_CONFIGS.comfyui || {},
+        'comfyui',
+      );
+
+      // Add the comfyui/ prefix back to the processed models
+      return processedModels.map((model) => ({
+        ...model,
+        id: `comfyui/${model.id}`,
+      }));
     } catch (error) {
       log('Failed to fetch models:', error);
       return [];
@@ -248,25 +260,6 @@ export class LobeComfyUI implements LobeRuntimeAI {
       .replaceAll(/[\s_]+/g, '-')
       .replaceAll(/[^\da-z-]/g, '')
       .replaceAll(/^-+|-+$/g, '');
-  }
-
-  /**
-   * Create human-readable display name
-   */
-  private createDisplayName(name: string): string {
-    // Handle special FLUX cases
-    if (name.toLowerCase().includes('flux') && name.toLowerCase().includes('schnell')) {
-      return 'FLUX.1 Schnell';
-    }
-    if (name.toLowerCase().includes('flux') && name.toLowerCase().includes('dev')) {
-      return 'FLUX.1 Dev';
-    }
-
-    // General case: capitalize and replace separators, preserving multiple spaces/dashes
-    return name
-      .replaceAll(/[_-]/g, ' ')
-      .replaceAll(/\b\w/g, (l) => l.toUpperCase())
-      .trim();
   }
 
   /**
