@@ -5,14 +5,20 @@ import type {
   CustomCredentials,
 } from '@saintno/comfyui-sdk';
 import debug from 'debug';
-import { ClientOptions } from 'openai';
 
 import { ChatModelCard } from '@/types/llm';
+import { ComfyUIKeyVault } from '@/types/user/settings';
 
 import { LobeRuntimeAI } from '../BaseAI';
 import { AgentRuntimeErrorType } from '../error';
 import { CreateImagePayload, CreateImageResponse } from '../types/image';
+import { TextToImagePayload } from '../types/textToImage';
 import { AgentRuntimeError } from '../utils/createError';
+import { buildFluxDevWorkflow } from './workflows/flux-dev';
+import { buildFluxKontextWorkflow } from './workflows/flux-kontext';
+import { buildFluxKreaWorkflow } from './workflows/flux-krea';
+// Import workflow builders
+import { buildFluxSchnellWorkflow } from './workflows/flux-schnell';
 
 const log = debug('lobe-image:comfyui');
 
@@ -20,91 +26,94 @@ const log = debug('lobe-image:comfyui');
  * ComfyUI Runtime 实现
  * 支持 FLUX 系列模型的文生图和图像编辑
  */
-export class LobeComfyUIAI implements LobeRuntimeAI {
+export class LobeComfyUI implements LobeRuntimeAI {
   private client: ComfyApi;
   baseURL: string;
 
-  constructor(options: ClientOptions = {}) {
-    const { apiKey, baseURL = 'http://localhost:8188' } = options;
+  // Direct workflow mapping - no more string parsing
+  private static readonly WORKFLOW_BUILDERS = {
+    'comfyui/flux-dev': buildFluxDevWorkflow,
+    'comfyui/flux-kontext-dev': buildFluxKontextWorkflow,
+    'comfyui/flux-krea-dev': buildFluxKreaWorkflow,
+    'comfyui/flux-schnell': buildFluxSchnellWorkflow,
+  } as const;
 
-    this.baseURL = baseURL as string;
+  constructor(options: ComfyUIKeyVault = {}) {
+    const { baseURL = 'http://localhost:8188' } = options;
 
-    // 根据配置创建认证凭据
-    const credentials = this.createCredentials(apiKey);
+    this.baseURL = baseURL;
+    const credentials = this.createCredentials(options);
 
-    // 初始化 ComfyAPI 客户端
     this.client = new ComfyApi(this.baseURL, undefined, { credentials });
     this.client.init();
-
-    log('ComfyUI initialized with baseURL: %s', baseURL);
   }
 
   /**
-   * 获取可用模型列表（无缓存，直接调用 API）
-   * 参考 Ollama 的实现模式
+   * Discover available models from ComfyUI server
    */
   async models(): Promise<ChatModelCard[]> {
     try {
-      // 等待客户端就绪
-      await this.client.waitForReady();
+      const response = await fetch(`${this.baseURL}/object_info`, {
+        headers: { 'Content-Type': 'application/json' },
+        method: 'GET',
+      });
 
-      // 获取所有可用的检查点模型
-      const checkpoints = await this.getCheckpoints();
+      const objectInfo = await response.json();
+      const checkpointLoader = objectInfo.CheckpointLoaderSimple;
 
-      // 转换为标准的 ChatModelCard 格式
-      return checkpoints.map((checkpoint) => ({
-        displayName: this.getDisplayName(checkpoint),
-        enabled: true,
-        // ComfyUI 主要用于图像生成，不支持文本对话功能
-functionCall: false,
-        
-        id: `comfyui/${this.normalizeModelName(checkpoint)}`,
-        reasoning: false,
-        vision: false,
-      }));
+      if (!checkpointLoader?.input?.required?.ckpt_name?.[0]) {
+        return [];
+      }
+
+      const modelFiles = checkpointLoader.input.required.ckpt_name[0];
+
+      return modelFiles.map((fileName: string) => {
+        const cleanName = fileName.replace(/\.(safetensors|ckpt|pt)$/i, '');
+        const modelId = this.normalizeModelName(cleanName);
+        const displayName = this.createDisplayName(cleanName);
+
+        return {
+          displayName,
+          enabled: true,
+          functionCall: false,
+          id: `comfyui/${modelId}`,
+          reasoning: false,
+          vision: false,
+        };
+      });
     } catch (error) {
-      log('Error fetching models: %O', error);
-      // 如果获取失败，返回默认的 FLUX 模型
-      return this.getDefaultModels();
+      log('Failed to fetch models:', error);
+      return [];
     }
   }
 
   /**
-   * 创建图像
+   * Create image - follows FAL's clean direct approach
    */
   async createImage(payload: CreateImagePayload): Promise<CreateImageResponse> {
     const { model, params } = payload;
-    log('Creating image with model: %s and params: %O', model, params);
 
     try {
-      // 等待客户端就绪
       await this.client.waitForReady();
 
-      // 动态查找最佳匹配的模型
-      const actualModel = await this.findBestModel(model);
+      // Get actual model filename for workflow
+      const modelFileName = await this.resolveModelFileName(model);
 
-      // 根据模型类型构建工作流
-      const workflow = this.buildWorkflowForModel(actualModel, params);
+      // Direct workflow building with resolved model name
+      const workflow = this.buildWorkflow(model, modelFileName, params);
 
-      // 执行工作流
       const result = await new Promise<any>((resolve, reject) => {
         new CallWrapper(this.client, workflow)
-          .onFinished((data) => {
-            log('Workflow finished with data: %O', data);
-            resolve(data);
-          })
-          .onFailed((error) => {
-            log('Workflow failed with error: %O', error);
-            reject(error);
-          })
-          .onProgress((info) => {
-            log('Workflow progress: %O', info);
+          .onFinished(resolve)
+          .onFailed(reject)
+          .onProgress((info: any) => {
+            // Handle progress updates if needed
+            log('Progress:', info);
           })
           .run();
       });
 
-      // 提取图像 URL
-      const images = result.images?.images || [];
+      const images = result.images?.images ?? [];
       if (images.length === 0) {
         throw AgentRuntimeError.createError(AgentRuntimeErrorType.ProviderBizError, {
           error: new Error('No images generated'),
@@ -112,527 +121,210 @@ functionCall: false,
       }
 
       const imageInfo = images[0];
-      const imageUrl = this.client.getPathImage(imageInfo);
-
       return {
-        height: imageInfo.height || params.height,
-        imageUrl,
-        width: imageInfo.width || params.width,
+        height: imageInfo.height ?? params.height,
+        imageUrl: this.client.getPathImage(imageInfo),
+        width: imageInfo.width ?? params.width,
       };
     } catch (error) {
-      log('Error creating image: %O', error);
-
-      // 检查是否已经是 AgentRuntimeError
       if (error && typeof error === 'object' && 'errorType' in error) {
         throw error;
       }
-
       throw AgentRuntimeError.createError(AgentRuntimeErrorType.ProviderBizError, { error });
     }
   }
 
   /**
-   * 创建认证凭据
+   * TextToImage adapter - simple parameter mapping
    */
-  private createCredentials(
-    apiKey?: string,
-  ): BasicCredentials | BearerTokenCredentials | CustomCredentials | undefined {
-    if (!apiKey) return undefined;
+  async textToImage(payload: TextToImagePayload): Promise<string[]> {
+    const { model, prompt, size } = payload;
 
-    // 解析认证配置
-    // 格式1: "basic:username:password"
-    // 格式2: "bearer:token"
-    // 格式3: "custom:header1=value1,header2=value2"
-    // 格式4: 直接作为 Bearer Token
+    let width = 1024;
+    let height = 1024;
 
-    if (apiKey.startsWith('basic:')) {
-      const [, username, password] = apiKey.split(':');
-      return { password, type: 'basic', username } as BasicCredentials;
+    if (size) {
+      const [w, h] = size.split('x').map(Number);
+      if (w && h) {
+        width = w;
+        height = h;
+      }
     }
 
-    if (apiKey.startsWith('bearer:')) {
-      const token = apiKey.slice(7);
-      return { token, type: 'bearer_token' } as BearerTokenCredentials;
-    }
+    const createImagePayload: CreateImagePayload = {
+      model,
+      params: {
+        height,
+        prompt,
+        seed: -1,
+        steps: model.includes('schnell') ? 4 : 20,
+        width,
+        ...(model.includes('dev') && { cfg: 3.5 }),
+      },
+    };
 
-    if (apiKey.startsWith('custom:')) {
-      const headerStr = apiKey.slice(7);
-      const headers: Record<string, string> = {};
-      headerStr.split(',').forEach((pair) => {
-        const [key, value] = pair.split('=');
-        if (key && value) headers[key] = value;
-      });
-      return { headers, type: 'custom' } as CustomCredentials;
-    }
-
-    // 默认作为 Bearer Token
-    return { token: apiKey, type: 'bearer_token' } as BearerTokenCredentials;
+    const result = await this.createImage(createImagePayload);
+    return [result.imageUrl];
   }
 
   /**
-   * 获取可用的检查点模型（无缓存，每次实时查询）
+   * Resolve model ID to actual model filename
    */
-  private async getCheckpoints(): Promise<string[]> {
+  private async resolveModelFileName(modelId: string): Promise<string> {
     try {
-      // 通过 ComfyUI API 获取对象信息
-      const response = await fetch(`${this.baseURL}/object_info`);
+      const response = await fetch(`${this.baseURL}/object_info`, {
+        headers: { 'Content-Type': 'application/json' },
+        method: 'GET',
+      });
+
       const objectInfo = await response.json();
+      const modelFiles = objectInfo.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] || [];
 
-      // 查找 CheckpointLoaderSimple 节点的输入信息
-      const checkpointLoader = objectInfo.CheckpointLoaderSimple;
-      if (checkpointLoader?.input?.required?.ckpt_name?.[0]) {
-        return checkpointLoader.input.required.ckpt_name[0] as string[];
+      if (modelFiles.length === 0) {
+        throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
+          model: modelId,
+        });
       }
 
-      return [];
-    } catch (error) {
-      log('Error fetching checkpoints: %O', error);
-      return [];
+      // Extract model name without comfyui prefix for matching
+      const modelName = modelId.replace('comfyui/', '');
+
+      // Try exact match first
+      const exactMatch = modelFiles.find((file: string) => {
+        const baseName = file.replace(/\.(safetensors|ckpt|pt)$/i, '');
+        return this.normalizeModelName(baseName) === modelName;
+      });
+
+      if (exactMatch) return exactMatch;
+
+      // Try fuzzy matching with keywords
+      const keywords = modelName.split('-');
+      const fuzzyMatch = modelFiles.find((file: string) => {
+        const fileLower = file.toLowerCase();
+        return keywords.some((keyword) => fileLower.includes(keyword));
+      });
+
+      if (fuzzyMatch) return fuzzyMatch;
+
+      // Fallback to FLUX models if available
+      const fluxMatch = modelFiles.find((file: string) => file.toLowerCase().includes('flux'));
+
+      if (fluxMatch) return fluxMatch;
+
+      // Last resort: first available model
+      return modelFiles[0];
+    } catch {
+      throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
+        model: modelId,
+      });
     }
   }
 
   /**
-   * 动态查找最佳匹配的模型（无缓存）
+   * Build workflow directly from model ID
    */
-  private async findBestModel(requestedModel: string): Promise<string> {
-    const availableCheckpoints = await this.getCheckpoints();
-
-    // 提取模型名称（去掉 comfyui/ 前缀）
-    const modelName = requestedModel.replace(/^comfyui\//, '');
-
-    // 精确匹配
-    const exactMatch = availableCheckpoints.find(
-      (checkpoint) => this.normalizeModelName(checkpoint) === modelName,
-    );
-    if (exactMatch) return exactMatch;
-
-    // 模糊匹配（包含关键词）
-    const keywords = modelName.toLowerCase().split(/[_-]/);
-    const fuzzyMatch = availableCheckpoints.find((checkpoint) => {
-      const checkpointLower = checkpoint.toLowerCase();
-      return keywords.some((keyword) => checkpointLower.includes(keyword));
-    });
-    if (fuzzyMatch) return fuzzyMatch;
-
-    // 默认匹配 FLUX 模型
-    const fluxMatch = availableCheckpoints.find((checkpoint) =>
-      checkpoint.toLowerCase().includes('flux'),
-    );
-    if (fluxMatch) return fluxMatch;
-
-    // 如果都没找到，使用第一个可用模型
-    if (availableCheckpoints.length > 0) {
-      return availableCheckpoints[0];
+  private buildWorkflow(
+    model: string,
+    modelFileName: string,
+    params: Record<string, any>,
+  ): PromptBuilder<any, any, any> {
+    // Direct model ID lookup with full comfyui/ prefix
+    const workflowBuilder =
+      LobeComfyUI.WORKFLOW_BUILDERS[model as keyof typeof LobeComfyUI.WORKFLOW_BUILDERS];
+    if (workflowBuilder) {
+      return workflowBuilder(modelFileName, params);
     }
 
-    throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
-      model: requestedModel,
-    });
+    // Fallback to generic SD workflow for unknown models
+    return this.buildGenericSDWorkflow(modelFileName, params);
   }
 
   /**
-   * 标准化模型名称
+   * Normalize model name for consistent ID generation
    */
-  private normalizeModelName(checkpoint: string): string {
-    return checkpoint
-      .replace(/\.(safetensors|ckpt|pt)$/i, '')
-      .replaceAll(/[_-]/g, '-')
-      .toLowerCase();
+  private normalizeModelName(name: string): string {
+    return name
+      .toLowerCase()
+      .replaceAll(/[\s_]+/g, '-')
+      .replaceAll(/[^\da-z-]/g, '')
+      .replaceAll(/^-+|-+$/g, '');
   }
 
   /**
-   * 获取显示名称
+   * Create human-readable display name
    */
-  private getDisplayName(checkpoint: string): string {
-    return checkpoint
-      .replace(/\.(safetensors|ckpt|pt)$/i, '')
+  private createDisplayName(name: string): string {
+    // Handle special FLUX cases
+    if (name.toLowerCase().includes('flux') && name.toLowerCase().includes('schnell')) {
+      return 'FLUX.1 Schnell';
+    }
+    if (name.toLowerCase().includes('flux') && name.toLowerCase().includes('dev')) {
+      return 'FLUX.1 Dev';
+    }
+
+    // General case: capitalize and replace separators, preserving multiple spaces/dashes
+    return name
       .replaceAll(/[_-]/g, ' ')
-      .replaceAll(/\b\w/g, (l) => l.toUpperCase());
+      .replaceAll(/\b\w/g, (l) => l.toUpperCase())
+      .trim();
   }
 
   /**
-   * 获取默认模型列表
-   */
-  private getDefaultModels(): ChatModelCard[] {
-    return [
-      {
-        displayName: 'FLUX Schnell',
-        enabled: true,
-        functionCall: false,
-        id: 'comfyui/flux-schnell',
-        reasoning: false,
-        vision: false,
-      },
-      {
-        displayName: 'FLUX Dev',
-        enabled: true,
-        functionCall: false,
-        id: 'comfyui/flux-dev',
-        reasoning: false,
-        vision: false,
-      },
-    ];
-  }
-
-  /**
-   * 根据模型构建工作流
-   */
-  private buildWorkflowForModel(
-    modelName: string,
-    params: Record<string, any>,
-  ): PromptBuilder<any, any, any> {
-    const modelLower = modelName.toLowerCase();
-
-    // 判断是否为 FLUX 模型
-    if (modelLower.includes('flux')) {
-      if (modelLower.includes('schnell')) {
-        return this.buildFluxSchnellWorkflow(modelName, params);
-      } else {
-        return this.buildFluxDevWorkflow(modelName, params);
-      }
-    }
-
-    // 默认使用通用 SD 工作流
-    return this.buildGenericSDWorkflow(modelName, params);
-  }
-
-  /**
-   * 构建 FLUX Schnell 工作流（4步快速生成）
-   */
-  private buildFluxSchnellWorkflow(
-    modelName: string,
-    params: Record<string, any>,
-  ): PromptBuilder<any, any, any> {
-    const workflow = {
-      '1': {
-        _meta: {
-          title: 'DualCLIP Loader',
-        },
-        class_type: 'DualCLIPLoader',
-        inputs: {
-          clip_name1: 't5xxl_fp16.safetensors',
-          clip_name2: 'clip_l.safetensors',
-          type: 'flux',
-        },
-      },
-      '2': {
-        _meta: {
-          title: 'UNET Loader',
-        },
-        class_type: 'UNETLoader',
-        inputs: {
-          unet_name: modelName,
-          weight_dtype: 'fp8_e4m3fn',
-        },
-      },
-      '3': {
-        _meta: {
-          title: 'VAE Loader',
-        },
-        class_type: 'VAELoader',
-        inputs: {
-          vae_name: 'ae.safetensors',
-        },
-      },
-      '4': {
-        _meta: {
-          title: 'CLIP Text Encode (Flux)',
-        },
-        class_type: 'CLIPTextEncodeFlux',
-        inputs: {
-          clip: ['1', 0],
-          clip_l: params.prompt || '',
-          guidance: 1,
-          t5xxl: params.prompt || '',
-        },
-      },
-      '5': {
-        _meta: {
-          title: 'Empty SD3 Latent Image',
-        },
-        class_type: 'EmptySD3LatentImage',
-        inputs: {
-          batch_size: 1,
-          height: params.height || 1024,
-          width: params.width || 1024,
-        },
-      },
-      '6': {
-        _meta: {
-          title: 'K Sampler',
-        },
-        class_type: 'KSampler',
-        inputs: {
-          cfg: 1,
-          denoise: 1,
-          latent_image: ['5', 0],
-          model: ['2', 0],
-          negative: ['4', 0],
-          positive: ['4', 0],
-          sampler_name: 'euler',
-          scheduler: 'simple',
-          seed: params.seed || -1,
-          steps: params.steps || 4,
-        },
-      },
-      '7': {
-        _meta: {
-          title: 'VAE Decode',
-        },
-        class_type: 'VAEDecode',
-        inputs: {
-          samples: ['6', 0],
-          vae: ['3', 0],
-        },
-      },
-      '8': {
-        _meta: {
-          title: 'Save Image',
-        },
-        class_type: 'SaveImage',
-        inputs: {
-          filename_prefix: 'flux_schnell',
-          images: ['7', 0],
-        },
-      },
-    };
-
-    // 创建 PromptBuilder
-    const builder = new PromptBuilder(
-      workflow,
-      ['prompt', 'width', 'height', 'steps', 'seed'],
-      ['images'],
-    );
-
-    // 设置输出节点
-    builder.setOutputNode('images', '8');
-
-    return builder;
-  }
-
-  /**
-   * 构建 FLUX Dev 工作流（高质量20步生成）
-   */
-  private buildFluxDevWorkflow(
-    modelName: string,
-    params: Record<string, any>,
-  ): PromptBuilder<any, any, any> {
-    const workflow = {
-      '1': {
-        _meta: {
-          title: 'DualCLIP Loader',
-        },
-        class_type: 'DualCLIPLoader',
-        inputs: {
-          clip_name1: 't5xxl_fp16.safetensors',
-          clip_name2: 'clip_l.safetensors',
-          type: 'flux',
-        },
-      },
-      '10': {
-        _meta: {
-          title: 'Sampler Custom Advanced',
-        },
-        class_type: 'SamplerCustomAdvanced',
-        inputs: {
-          latent_image: ['7', 0],
-          model: ['4', 0],
-          negative: ['6', 0],
-          positive: ['6', 0],
-          sampler: ['8', 0],
-          sigmas: ['9', 0],
-        },
-      },
-      '11': {
-        _meta: {
-          title: 'VAE Decode',
-        },
-        class_type: 'VAEDecode',
-        inputs: {
-          samples: ['10', 0],
-          vae: ['3', 0],
-        },
-      },
-      '12': {
-        _meta: {
-          title: 'Save Image',
-        },
-        class_type: 'SaveImage',
-        inputs: {
-          filename_prefix: 'flux_dev',
-          images: ['11', 0],
-        },
-      },
-      '2': {
-        _meta: {
-          title: 'UNET Loader',
-        },
-        class_type: 'UNETLoader',
-        inputs: {
-          unet_name: modelName,
-          weight_dtype: 'fp8_e4m3fn',
-        },
-      },
-      '3': {
-        _meta: {
-          title: 'VAE Loader',
-        },
-        class_type: 'VAELoader',
-        inputs: {
-          vae_name: 'ae.safetensors',
-        },
-      },
-      '4': {
-        _meta: {
-          title: 'Model Sampling Flux',
-        },
-        class_type: 'ModelSamplingFlux',
-        inputs: {
-          height: params.height || 1024,
-          max_shift: 1.15,
-          model: ['2', 0],
-          width: params.width || 1024,
-        },
-      },
-      '5': {
-        _meta: {
-          title: 'CLIP Text Encode (Flux)',
-        },
-        class_type: 'CLIPTextEncodeFlux',
-        inputs: {
-          clip: ['1', 0],
-          clip_l: params.prompt || '',
-          guidance: params.cfg || 3.5,
-          t5xxl: params.prompt || '',
-        },
-      },
-      '6': {
-        _meta: {
-          title: 'Flux Guidance',
-        },
-        class_type: 'FluxGuidance',
-        inputs: {
-          conditioning: ['5', 0],
-          guidance: params.cfg || 3.5,
-        },
-      },
-      '7': {
-        _meta: {
-          title: 'Empty SD3 Latent Image',
-        },
-        class_type: 'EmptySD3LatentImage',
-        inputs: {
-          batch_size: 1,
-          height: params.height || 1024,
-          width: params.width || 1024,
-        },
-      },
-      '8': {
-        _meta: {
-          title: 'K Sampler Select',
-        },
-        class_type: 'KSamplerSelect',
-        inputs: {
-          sampler_name: 'euler',
-        },
-      },
-      '9': {
-        _meta: {
-          title: 'Basic Scheduler',
-        },
-        class_type: 'BasicScheduler',
-        inputs: {
-          denoise: 1,
-          model: ['4', 0],
-          scheduler: 'simple',
-          steps: params.steps || 20,
-        },
-      },
-    };
-
-    // 创建 PromptBuilder
-    const builder = new PromptBuilder(
-      workflow,
-      ['prompt', 'width', 'height', 'steps', 'cfg', 'seed'],
-      ['images'],
-    );
-
-    // 设置输出节点
-    builder.setOutputNode('images', '12');
-
-    return builder;
-  }
-
-  /**
-   * 构建通用 SD 工作流
+   * Generic SD workflow for unsupported models
    */
   private buildGenericSDWorkflow(
-    modelName: string,
+    modelFileName: string,
     params: Record<string, any>,
   ): PromptBuilder<any, any, any> {
     const workflow = {
       '1': {
-        _meta: {
-          title: 'Load Checkpoint',
-        },
+        _meta: { title: 'Load Checkpoint' },
         class_type: 'CheckpointLoaderSimple',
-        inputs: {
-          ckpt_name: modelName,
-        },
+        inputs: { ckpt_name: modelFileName },
       },
       '2': {
-        _meta: {
-          title: 'CLIP Text Encode (Positive)',
-        },
+        _meta: { title: 'CLIP Text Encode (Positive)' },
         class_type: 'CLIPTextEncode',
         inputs: {
           clip: ['1', 1],
-          text: params.prompt || '',
+          text: params.prompt ?? '',
         },
       },
       '3': {
-        _meta: {
-          title: 'CLIP Text Encode (Negative)',
-        },
+        _meta: { title: 'CLIP Text Encode (Negative)' },
         class_type: 'CLIPTextEncode',
         inputs: {
           clip: ['1', 1],
-          text: params.negative_prompt || '',
+          text: params.negativePrompt ?? '',
         },
       },
       '4': {
-        _meta: {
-          title: 'Empty Latent Image',
-        },
+        _meta: { title: 'Empty Latent Image' },
         class_type: 'EmptyLatentImage',
         inputs: {
           batch_size: 1,
-          height: params.height || 512,
-          width: params.width || 512,
+          height: params.height ?? 512,
+          width: params.width ?? 512,
         },
       },
       '5': {
-        _meta: {
-          title: 'K Sampler',
-        },
+        _meta: { title: 'K Sampler' },
         class_type: 'KSampler',
         inputs: {
-          cfg: params.cfg || 7,
+          cfg: params.cfg ?? 7,
           denoise: 1,
           latent_image: ['4', 0],
           model: ['1', 0],
           negative: ['3', 0],
           positive: ['2', 0],
-          sampler_name: 'euler',
-          scheduler: 'normal',
-          seed: params.seed || -1,
-          steps: params.steps || 20,
+          sampler_name: params.samplerName ?? 'euler',
+          scheduler: params.scheduler ?? 'normal',
+          seed: params.seed ?? -1,
+          steps: params.steps ?? 20,
         },
       },
       '6': {
-        _meta: {
-          title: 'VAE Decode',
-        },
+        _meta: { title: 'VAE Decode' },
         class_type: 'VAEDecode',
         inputs: {
           samples: ['5', 0],
@@ -640,9 +332,7 @@ functionCall: false,
         },
       },
       '7': {
-        _meta: {
-          title: 'Save Image',
-        },
+        _meta: { title: 'Save Image' },
         class_type: 'SaveImage',
         inputs: {
           filename_prefix: 'comfyui',
@@ -651,16 +341,49 @@ functionCall: false,
       },
     };
 
-    // 创建 PromptBuilder
     const builder = new PromptBuilder(
       workflow,
-      ['prompt', 'negative_prompt', 'width', 'height', 'steps', 'cfg', 'seed'],
+      ['prompt', 'negativePrompt', 'width', 'height', 'steps', 'cfg', 'seed'],
       ['images'],
     );
 
-    // 设置输出节点
     builder.setOutputNode('images', '7');
-
     return builder;
+  }
+
+  /**
+   * Create authentication credentials
+   */
+  private createCredentials(
+    options: ComfyUIKeyVault,
+  ): BasicCredentials | BearerTokenCredentials | CustomCredentials | undefined {
+    const { authType = 'none', apiKey, username, password, customHeaders } = options;
+
+    switch (authType) {
+      case 'basic': {
+        if (username && password) {
+          return { password, type: 'basic', username } as BasicCredentials;
+        }
+        break;
+      }
+
+      case 'bearer': {
+        if (apiKey) {
+          return { token: apiKey, type: 'bearer_token' } as BearerTokenCredentials;
+        }
+        break;
+      }
+
+      case 'custom': {
+        if (customHeaders && Object.keys(customHeaders).length > 0) {
+          return { headers: customHeaders, type: 'custom' } as CustomCredentials;
+        }
+        break;
+      }
+
+      default: {
+        return undefined;
+      }
+    }
   }
 }

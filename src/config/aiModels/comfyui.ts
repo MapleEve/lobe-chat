@@ -50,8 +50,7 @@ export const fluxKontextDevParamsSchema: ModelParamsSchema = {
   prompt: { default: '' },
   seed: { default: -1 },
   steps: { default: 20, max: 50, min: 10, step: 1 },
-  // strength 参数用于控制编辑强度，但目前 standard-parameters 中未定义
-  // TODO: 需要扩展 standard-parameters 以支持 strength 参数
+  strength: { default: 0.8, max: 1, min: 0, step: 0.1 }, // 图像编辑强度控制
   width: { default: 1024, max: 2048, min: 512, step: 8 },
 };
 
@@ -65,7 +64,7 @@ const comfyuiImageModels: AIImageModelCard[] = [
       'FLUX.1 Schnell 是超快速文生图模型，1-4步即可生成高质量图像，适合实时应用。Apache 2.0 开源许可。',
     displayName: 'FLUX.1 Schnell',
     enabled: true,
-    id: 'flux/schnell',
+    id: 'flux-schnell',
     parameters: fluxSchnellParamsSchema,
     releasedAt: '2024-08-01',
     type: 'image',
@@ -75,7 +74,7 @@ const comfyuiImageModels: AIImageModelCard[] = [
       'FLUX.1 Dev 是高质量文生图模型，支持 guidance scale 调节，适合生成高质量作品。非商业许可。',
     displayName: 'FLUX.1 Dev',
     enabled: true,
-    id: 'flux/dev',
+    id: 'flux-dev',
     parameters: fluxDevParamsSchema,
     releasedAt: '2024-08-01',
     type: 'image',
@@ -85,7 +84,7 @@ const comfyuiImageModels: AIImageModelCard[] = [
       'FLUX.1 Krea-dev 是增强安全的文生图模型，与 Krea 合作开发，内置安全过滤。非商业许可。',
     displayName: 'FLUX.1 Krea-dev',
     enabled: true,
-    id: 'flux/krea-dev',
+    id: 'flux-krea-dev',
     parameters: fluxKreaDevParamsSchema,
     releasedAt: '2024-08-01',
     type: 'image',
@@ -94,7 +93,7 @@ const comfyuiImageModels: AIImageModelCard[] = [
     description: 'FLUX.1 Kontext-dev 是图像编辑模型，支持基于文本指令修改现有图像。非商业许可。',
     displayName: 'FLUX.1 Kontext-dev',
     enabled: true,
-    id: 'flux/kontext-dev',
+    id: 'flux-kontext-dev',
     parameters: fluxKontextDevParamsSchema,
     releasedAt: '2024-08-01',
     type: 'image',
