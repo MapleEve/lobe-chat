@@ -304,7 +304,7 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
 
   ```bash
   # 测试 API 调用
-  curl -H "Authorization: Bearer your_token" \
+  curl -H "Authorization: Bearer <YOUR_TOKEN_HERE>" \
        http://your-server:8188/system_stats
   ```
 
@@ -446,13 +446,14 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
   - **解决**：
     ```bash
     # 检查认证配置
-    curl -v http://your-server:8188/system_stats
+    curl -v -H "Authorization: Bearer <YOUR_TOKEN_HERE>" \
+         http://your-server:8188/system_stats
 
     # 验证用户名密码
     echo -n "admin:password" | base64
 
-    # 测试 Bearer Token
-    curl -H "Authorization: Bearer your_token" \
+    # 测试 Bearer Token  
+    curl -H "Authorization: Bearer <YOUR_TOKEN_HERE>" \
          http://your-server:8188/system_stats
     ```
 
