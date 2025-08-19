@@ -82,6 +82,9 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
   # 安装依赖
   pip install -r requirements.txt
 
+  # 可选：安装JWT支持（用于Token认证）
+  pip install PyJWT
+
   # 启动 ComfyUI 服务器
   python main.py --listen 0.0.0.0 --port 8188
   ```
@@ -90,7 +93,7 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
 
   将以下模型下载到相应目录：
 
-  **FLUX 主模型** (放入 `models/unet/` 目录)：
+  **FLUX 主模型** (放入 `models/diffusion_models/` 目录)：
 
   - `flux1-schnell.safetensors`
   - `flux1-dev.safetensors`
@@ -173,9 +176,9 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
 
   **支持的插件 / 扩展**：
 
-  - **ComfyUI-Manager**：支持通过环境变量设置认证
-  - **comfyui-workspace-manager**：可配置用户权限
-  - **ComfyUI-Custom-Scripts**：支持认证脚本
+  - **ComfyUI-Manager**：支持通过环境变量设置认证 (`Comfy-Org/ComfyUI-Manager`)
+  - **ComfyUI Workspace Manager**：可配置用户权限 (`11cafe/comfyui-workspace-manager`)
+  - **ComfyUI-Custom-Scripts**：UI 增强脚本，支持认证功能 (`pythongosssss/ComfyUI-Custom-Scripts`)
 
   **获取认证信息**：
 
@@ -239,28 +242,31 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
 
   **支持的插件 / 扩展**：
 
-  - **ComfyUI-API-Manager**：专门的 API 管理插件
-  - **ComfyUI-Auth**：提供 Token 认证功能
-  - **comfyui-security**：安全增强插件
+  - **ComfyUI-Login**：基础密码认证插件 (`liusida/ComfyUI-Login`)
+  - **ComfyUI SDK**：支持多种认证方式的 SDK (`comfy-addons/comfyui-sdk`)
+  - **ComfyUI-Manager**：扩展管理，支持认证配置 (`Comfy-Org/ComfyUI-Manager`)
 
   **获取 Token 方法**：
 
-  1. **使用 ComfyUI-Auth 插件**：
+  1. **使用 ComfyUI-Login 插件**：
 
   ```bash
   # 安装插件
   cd ComfyUI/custom_nodes
-  git clone https://github.com/your-repo/ComfyUI-Auth.git
-  cd ComfyUI-Auth
+  git clone https://github.com/liusida/ComfyUI-Login.git
+  cd ComfyUI-Login
   pip install -r requirements.txt
 
-  # 生成 Token
-  python generate_token.py --user admin --expires 30d
+  # 重启ComfyUI，首次登录时可设置任意密码
+  # 密码将被加密并存储在 ComfyUI/login/PASSWORD 文件中
   ```
 
   2. **手动生成 JWT Token**：
 
   ```python
+  # 首先安装JWT依赖
+  # pip install PyJWT
+
   import jwt
   import datetime
 
@@ -313,9 +319,9 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
 
   **支持的插件 / 扩展**：
 
-  - **ComfyUI-Enterprise-Auth**：企业级认证集成
-  - **comfyui-custom-headers**：自定义请求头管理
-  - **ComfyUI-SSO**：单点登录集成
+  - **ComfyUI-Login**：基础认证系统 (`liusida/ComfyUI-Login`)
+  - **ComfyUI SDK**：自定义认证头支持 (`comfy-addons/comfyui-sdk`)
+  - **WASasquatch Plugins**：100 + 节点扩展包 (`WASasquatch/comfyui-plugins`)
 
   **常见自定义认证配置**：
 
