@@ -32,6 +32,7 @@ export function buildFluxKreaWorkflow(
         latent_image: ['7', 0],
         model: ['4', 0],
         negative: ['6', 0],
+        noise: ['13', 0],
         positive: ['6', 0],
         sampler: ['8', 0],
         sigmas: ['9', 0],
@@ -145,6 +146,15 @@ export function buildFluxKreaWorkflow(
         model: ['4', 0],
         scheduler: params.scheduler ?? 'karras', // Karras调度器增强美学
         steps: params.steps ?? 15, // Krea优化的较少步数
+      },
+    },
+    '13': {
+      _meta: {
+        title: 'Random Noise',
+      },
+      class_type: 'RandomNoise',
+      inputs: {
+        noise_seed: params.seed ?? -1,
       },
     },
   };
