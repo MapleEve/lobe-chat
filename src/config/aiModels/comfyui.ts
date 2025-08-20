@@ -1,6 +1,23 @@
-import { PRESET_ASPECT_RATIOS } from '@/const/image';
 import { ModelParamsSchema } from '@/libs/standard-parameters';
 import { AIImageModelCard } from '@/types/aiModel';
+
+/**
+ * FLUX 模型支持的宽高比
+ * 支持从 21:9 到 9:21 的宽范围比例，包含折叠屏设备
+ */
+const FLUX_ASPECT_RATIOS = [
+  '21:9', // 超宽屏
+  '16:9', // 宽屏
+  '8:7', // 折叠屏 (如 Galaxy Z Fold, 展开状态约 7.6寸)
+  '4:3', // 传统横屏
+  '3:2', // 经典横屏
+  '1:1', // 正方形
+  '2:3', // 经典竖屏
+  '3:4', // 传统竖屏
+  '7:8', // 折叠屏竖向
+  '9:16', // 竖屏
+  '9:21', // 超高竖屏
+];
 
 /**
  * FLUX.1 Schnell 模型参数配置
@@ -9,7 +26,7 @@ import { AIImageModelCard } from '@/types/aiModel';
 export const fluxSchnellParamsSchema: ModelParamsSchema = {
   aspectRatio: {
     default: '1:1',
-    enum: PRESET_ASPECT_RATIOS,
+    enum: FLUX_ASPECT_RATIOS,
   },
   height: { default: 1024, max: 1536, min: 512, step: 8 },
   prompt: { default: '' },
@@ -25,7 +42,7 @@ export const fluxSchnellParamsSchema: ModelParamsSchema = {
 export const fluxDevParamsSchema: ModelParamsSchema = {
   aspectRatio: {
     default: '1:1',
-    enum: PRESET_ASPECT_RATIOS,
+    enum: FLUX_ASPECT_RATIOS,
   },
   cfg: { default: 3.5, max: 10, min: 1, step: 0.5 },
   height: { default: 1024, max: 2048, min: 512, step: 8 },
@@ -42,7 +59,7 @@ export const fluxDevParamsSchema: ModelParamsSchema = {
 export const fluxKreaDevParamsSchema: ModelParamsSchema = {
   aspectRatio: {
     default: '1:1',
-    enum: PRESET_ASPECT_RATIOS,
+    enum: FLUX_ASPECT_RATIOS,
   },
   cfg: { default: 4.5, max: 10, min: 1, step: 0.5 },
   height: { default: 1024, max: 2048, min: 512, step: 8 },
@@ -59,7 +76,7 @@ export const fluxKreaDevParamsSchema: ModelParamsSchema = {
 export const fluxKontextDevParamsSchema: ModelParamsSchema = {
   aspectRatio: {
     default: '1:1',
-    enum: PRESET_ASPECT_RATIOS,
+    enum: FLUX_ASPECT_RATIOS,
   },
   cfg: { default: 3.5, max: 10, min: 1, step: 0.5 },
   height: { default: 1024, max: 2048, min: 512, step: 8 },
@@ -103,7 +120,7 @@ const comfyuiImageModels: AIImageModelCard[] = [
     enabled: true,
     id: 'flux-krea-dev',
     parameters: fluxKreaDevParamsSchema,
-    releasedAt: '2024-08-01',
+    releasedAt: '2025-07-31',
     type: 'image',
   },
   {
