@@ -35,6 +35,7 @@ export function buildFluxKontextWorkflow(
         latent_image: hasInputImage ? ['img_encode', 0] : ['7', 0], // 根据是否有输入图像选择latent来源
         model: ['4', 0],
         negative: ['6', 0],
+        noise: ['13', 0],
         positive: ['6', 0],
         sampler: ['8', 0],
         sigmas: ['9', 0],
@@ -58,6 +59,15 @@ export function buildFluxKontextWorkflow(
       inputs: {
         filename_prefix: 'LobeChat/%year%-%month%-%day%/FLUX_Kontext',
         images: ['11', 0],
+      },
+    },
+    '13': {
+      _meta: {
+        title: 'Random Noise',
+      },
+      class_type: 'RandomNoise',
+      inputs: {
+        noise_seed: params.seed ?? -1,
       },
     },
     '2': {
