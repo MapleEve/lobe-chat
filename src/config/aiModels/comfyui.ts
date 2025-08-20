@@ -30,7 +30,7 @@ export const fluxSchnellParamsSchema: ModelParamsSchema = {
   },
   height: { default: 1024, max: 1536, min: 512, step: 8 },
   prompt: { default: '' },
-  seed: { default: -1 },
+  seed: { default: null },
   steps: { default: 4, max: 4, min: 1, step: 1 },
   width: { default: 1024, max: 1536, min: 512, step: 8 },
 };
@@ -47,7 +47,7 @@ export const fluxDevParamsSchema: ModelParamsSchema = {
   cfg: { default: 3.5, max: 10, min: 1, step: 0.5 },
   height: { default: 1024, max: 2048, min: 512, step: 8 },
   prompt: { default: '' },
-  seed: { default: -1 },
+  seed: { default: null },
   steps: { default: 20, max: 50, min: 10, step: 1 },
   width: { default: 1024, max: 2048, min: 512, step: 8 },
 };
@@ -64,7 +64,7 @@ export const fluxKreaDevParamsSchema: ModelParamsSchema = {
   cfg: { default: 4.5, max: 10, min: 1, step: 0.5 },
   height: { default: 1024, max: 2048, min: 512, step: 8 },
   prompt: { default: '' },
-  seed: { default: -1 },
+  seed: { default: null },
   steps: { default: 20, max: 50, min: 10, step: 1 },
   width: { default: 1024, max: 2048, min: 512, step: 8 },
 };
@@ -82,7 +82,7 @@ export const fluxKontextDevParamsSchema: ModelParamsSchema = {
   height: { default: 1024, max: 2048, min: 512, step: 8 },
   imageUrl: { default: '' }, // 输入图像 URL（支持文生图和图生图）
   prompt: { default: '' },
-  seed: { default: -1 },
+  seed: { default: null },
   steps: { default: 28, max: 50, min: 10, step: 1 }, // Kontext 默认使用 28 步
   strength: { default: 0.75, max: 1, min: 0, step: 0.05 }, // 图像编辑强度控制（对应 denoise）
   width: { default: 1024, max: 2048, min: 512, step: 8 },

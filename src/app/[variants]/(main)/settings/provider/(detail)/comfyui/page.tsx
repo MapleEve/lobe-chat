@@ -1,7 +1,6 @@
 'use client';
 
 import { Select } from '@lobehub/ui';
-import { Form } from 'antd';
 import { useTranslation } from 'react-i18next';
 
 import { FormInput, FormPassword } from '@/components/FormInput';
@@ -19,12 +18,11 @@ const providerKey: GlobalLLMProviderKey = 'comfyui';
 
 const useComfyUICard = (): ProviderItem => {
   const { t } = useTranslation('modelProvider');
-  const form = Form.useFormInstance();
 
   const isLoading = useAiInfraStore(aiProviderSelectors.isAiProviderConfigLoading(providerKey));
-
-  // Watch for auth type changes to enable conditional rendering
-  const authType = Form.useWatch([KeyVaultsConfigKey, 'authType'], form) || 'none';
+  
+  // Watch for auth type changes from store to enable conditional rendering
+  const authType = useAiInfraStore(s => s.aiProviderRuntimeConfig?.[providerKey]?.keyVaults?.authType) || 'none';
 
   const authTypeOptions = [
     { label: t('comfyui.authType.options.none' as any), value: 'none' },

@@ -58,6 +58,15 @@ export function buildFluxKreaWorkflow(
         images: ['11', 0],
       },
     },
+    '13': {
+      _meta: {
+        title: 'Random Noise',
+      },
+      class_type: 'RandomNoise',
+      inputs: {
+        noise_seed: params.seed ?? -1,
+      },
+    },
     '2': {
       _meta: {
         title: 'UNET Loader',
@@ -146,15 +155,6 @@ export function buildFluxKreaWorkflow(
         model: ['4', 0],
         scheduler: params.scheduler ?? 'karras', // Karras调度器增强美学
         steps: params.steps ?? 15, // Krea优化的较少步数
-      },
-    },
-    '13': {
-      _meta: {
-        title: 'Random Noise',
-      },
-      class_type: 'RandomNoise',
-      inputs: {
-        noise_seed: params.seed ?? -1,
       },
     },
   };

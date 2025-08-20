@@ -58,6 +58,15 @@ export function buildFluxDevWorkflow(
         images: ['11', 0],
       },
     },
+    '13': {
+      _meta: {
+        title: 'Random Noise',
+      },
+      class_type: 'RandomNoise',
+      inputs: {
+        noise_seed: params.seed ?? -1,
+      },
+    },
     '2': {
       _meta: {
         title: 'UNET Loader',
@@ -146,15 +155,6 @@ export function buildFluxDevWorkflow(
         model: ['4', 0],
         scheduler: params.scheduler ?? 'simple',
         steps: params.steps ?? 20,
-      },
-    },
-    '13': {
-      _meta: {
-        title: 'Random Noise',
-      },
-      class_type: 'RandomNoise',
-      inputs: {
-        noise_seed: params.seed ?? -1,
       },
     },
   };
