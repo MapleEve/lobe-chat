@@ -27,8 +27,8 @@ const ComfyUI: ModelProviderCard = {
     // 显示 API 密钥配置（用于认证配置）
     showApiKey: true,
 
-    // 显示连通性检查
-    showChecker: true,
+    // 不显示连通性检查（图像生成不支持聊天接口检查）
+    showChecker: false,
 
     // 不显示模型获取器（使用预定义模型）
     showModelFetcher: false,
