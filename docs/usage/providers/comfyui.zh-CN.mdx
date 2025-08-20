@@ -303,8 +303,16 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
   **验证 Token 有效性**：
 
   ```bash
-  # 测试 API 调用
-  curl -H "Authorization: Bearer <YOUR_TOKEN_HERE>" \
+  # 设置环境变量（推荐安全方式）
+  export COMFYUI_TOKEN="your_actual_token_here"
+
+  # 测试 API 调用（使用环境变量）
+  curl -H "Authorization: Bearer $COMFYUI_TOKEN" \
+       http://your-server:8188/system_stats
+
+  # 或者使用文件方式（更安全）
+  echo "Bearer your_actual_token_here" > ~/.comfyui_token
+  curl -H "Authorization: $(cat ~/.comfyui_token)" \
        http://your-server:8188/system_stats
   ```
 
@@ -445,15 +453,24 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
   - **原因**：认证信息错误或过期
   - **解决**：
     ```bash
-    # 检查认证配置
-    curl -v -H "Authorization: Bearer <YOUR_TOKEN_HERE>" \
+    # 设置安全的认证变量
+    export COMFYUI_TOKEN="your_actual_token_here"
+
+    # 检查认证配置（使用环境变量）
+    curl -v -H "Authorization: Bearer $COMFYUI_TOKEN" \
          http://your-server:8188/system_stats
 
     # 验证用户名密码
     echo -n "admin:password" | base64
 
-    # 测试 Bearer Token  
-    curl -H "Authorization: Bearer <YOUR_TOKEN_HERE>" \
+    # 测试 Bearer Token（使用环境变量）
+    curl -H "Authorization: Bearer $COMFYUI_TOKEN" \
+         http://your-server:8188/system_stats
+
+    # 或使用文件方式避免环境变量泄露
+    echo "Bearer your_actual_token_here" > ~/.comfyui_token
+    chmod 600 ~/.comfyui_token  # 限制文件权限
+    curl -H "Authorization: $(cat ~/.comfyui_token)" \
          http://your-server:8188/system_stats
     ```
 
@@ -500,6 +517,12 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
      - 监控异常登录尝试
      - 设置告警机制
 
+  5. **命令行安全**：
+     - 避免在 curl 命令中直接暴露 Token（防止历史记录泄露）
+     - 使用环境变量或文件存储敏感认证信息
+     - 限制认证文件的访问权限（chmod 600）
+     - 定期清理包含敏感信息的命令历史
+
   **HTTPS 配置示例**：
 
   ```nginx
@@ -535,13 +558,13 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
   **使用 FLUX Schnell（快速生成）**：
 
   ```
-  请生成一张图片：一只可爱的橘猫坐在阳光明媚的窗台上
+  Generate an image: A cute orange cat sitting on a sunny windowsill, warm lighting, detailed fur texture
   ```
 
   **使用 FLUX Dev（高质量生成）**：
 
   ```
-  请用高质量模式生成：夕阳下的城市天际线，赛博朋克风格，4K 高清
+  Generate high quality image: City skyline at sunset, cyberpunk style, neon lights, 4K high resolution, detailed architecture
   ```
 
   #### 3. 图像编辑
@@ -549,7 +572,7 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
   **使用 FLUX Kontext-dev 编辑图像**：
 
   ```
-  请帮我编辑这张图片，将背景改成星空
+  Edit this image: Change the background to a starry night sky, keep the main subject, cosmic atmosphere
   ```
 
   然后上传需要编辑的原始图像。
@@ -706,8 +729,8 @@ interface ComfyUIResponse {
 **示例**：
 
 ```
-一位年轻女性，长发飘逸，穿着优雅的蓝色连衣裙，站在樱花盛开的公园里，
-阳光从树叶间洒下，营造温暖的氛围，电影般的光线，4K 高清，细节丰富
+A young woman with flowing long hair, wearing an elegant blue dress, standing in a cherry blossom park, 
+sunlight filtering through leaves, warm atmosphere, cinematic lighting, 4K high resolution, detailed, photorealistic
 ```
 
 ### 参数调优
