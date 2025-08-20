@@ -1,3 +1,4 @@
+import { PRESET_ASPECT_RATIOS } from '@/const/image';
 import { ModelParamsSchema } from '@/libs/standard-parameters';
 import { AIImageModelCard } from '@/types/aiModel';
 
@@ -6,6 +7,10 @@ import { AIImageModelCard } from '@/types/aiModel';
  * 超快速文生图模式，1-4 步即可生成，Apache 2.0 许可证
  */
 export const fluxSchnellParamsSchema: ModelParamsSchema = {
+  aspectRatio: {
+    default: '1:1',
+    enum: PRESET_ASPECT_RATIOS,
+  },
   height: { default: 1024, max: 1536, min: 512, step: 8 },
   prompt: { default: '' },
   seed: { default: -1 },
@@ -18,6 +23,10 @@ export const fluxSchnellParamsSchema: ModelParamsSchema = {
  * 高质量文生图模式，支持 guidance scale 调节，非商业许可证
  */
 export const fluxDevParamsSchema: ModelParamsSchema = {
+  aspectRatio: {
+    default: '1:1',
+    enum: PRESET_ASPECT_RATIOS,
+  },
   cfg: { default: 3.5, max: 10, min: 1, step: 0.5 },
   height: { default: 1024, max: 2048, min: 512, step: 8 },
   prompt: { default: '' },
@@ -31,6 +40,10 @@ export const fluxDevParamsSchema: ModelParamsSchema = {
  * 增强安全的文生图模式，与 Krea 合作开发，非商业许可证
  */
 export const fluxKreaDevParamsSchema: ModelParamsSchema = {
+  aspectRatio: {
+    default: '1:1',
+    enum: PRESET_ASPECT_RATIOS,
+  },
   cfg: { default: 4.5, max: 10, min: 1, step: 0.5 },
   height: { default: 1024, max: 2048, min: 512, step: 8 },
   prompt: { default: '' },
@@ -44,13 +57,17 @@ export const fluxKreaDevParamsSchema: ModelParamsSchema = {
  * 图像编辑模式，支持基于文本指令修改现有图像，非商业许可证
  */
 export const fluxKontextDevParamsSchema: ModelParamsSchema = {
+  aspectRatio: {
+    default: '1:1',
+    enum: PRESET_ASPECT_RATIOS,
+  },
   cfg: { default: 3.5, max: 10, min: 1, step: 0.5 },
   height: { default: 1024, max: 2048, min: 512, step: 8 },
-  imageUrl: { default: '' }, // 输入图像 URL（必需）
+  imageUrl: { default: '' }, // 输入图像 URL（支持文生图和图生图）
   prompt: { default: '' },
   seed: { default: -1 },
-  steps: { default: 20, max: 50, min: 10, step: 1 },
-  strength: { default: 0.8, max: 1, min: 0, step: 0.1 }, // 图像编辑强度控制
+  steps: { default: 28, max: 50, min: 10, step: 1 }, // Kontext 默认使用 28 步
+  strength: { default: 0.75, max: 1, min: 0, step: 0.05 }, // 图像编辑强度控制（对应 denoise）
   width: { default: 1024, max: 2048, min: 512, step: 8 },
 };
 
@@ -95,7 +112,7 @@ const comfyuiImageModels: AIImageModelCard[] = [
     enabled: true,
     id: 'flux-kontext-dev',
     parameters: fluxKontextDevParamsSchema,
-    releasedAt: '2024-08-01',
+    releasedAt: '2025-05-29', // 与 BFL 官方的 Kontext 系列发布时间对齐
     type: 'image',
   },
 ];
