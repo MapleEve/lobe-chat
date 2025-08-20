@@ -220,7 +220,15 @@ export const UpdateAiProviderConfigSchema = z.object({
     })
     .optional(),
   fetchOnClient: z.boolean().nullable().optional(),
-  keyVaults: z.record(z.string(), z.string().optional()).optional(),
+  keyVaults: z
+    .record(
+      z.string(),
+      z.union([
+        z.string().optional(),
+        z.record(z.string(), z.string()).optional(), // 支持嵌套对象，如 customHeaders
+      ]),
+    )
+    .optional(),
 });
 
 export type UpdateAiProviderConfigParams = z.infer<typeof UpdateAiProviderConfigSchema>;
