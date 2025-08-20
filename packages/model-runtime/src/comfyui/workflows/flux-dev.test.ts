@@ -128,7 +128,7 @@ describe('buildFluxDevWorkflow', () => {
         '12': expect.objectContaining({
           class_type: 'SaveImage',
           inputs: expect.objectContaining({
-            filename_prefix: 'flux_dev',
+            filename_prefix: 'LobeChat/%year%-%month%-%day%/FLUX_Dev',
             images: ['11', 0],
           }),
         }),
