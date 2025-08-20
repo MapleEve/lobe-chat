@@ -19,6 +19,17 @@ const getParamsFromPayload = (provider: string, payload: ClientSecretPayload) =>
   const llmConfig = getLLMConfig() as Record<string, any>;
 
   switch (provider) {
+    case ModelProvider.ComfyUI: {
+      // ComfyUI specific handling
+      const baseURL = payload?.baseURL || process.env.COMFYUI_BASE_URL || 'http://localhost:8188';
+      
+      // ComfyUI supports multiple auth types
+      // For now, we pass through the apiKey which can contain various auth credentials
+      const apiKey = payload?.apiKey;
+      
+      return { apiKey, baseURL };
+    }
+
     default: {
       let upperProvider = provider.toUpperCase();
 
