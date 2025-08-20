@@ -90,6 +90,7 @@ export const MODEL_LIST_CONFIGS = {
 // 模型提供商关键词配置
 export const PROVIDER_DETECTION_CONFIG = {
   anthropic: ['claude'],
+  comfyui: ['comfyui/'], // ComfyUI models detection - all ComfyUI models have comfyui/ prefix
   deepseek: ['deepseek'],
   google: ['gemini', 'imagen'],
   llama: ['llama', 'llava'],
