@@ -56,7 +56,7 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'SaveImage',
       inputs: {
-        filename_prefix: 'flux_kontext',
+        filename_prefix: 'LobeChat/%year%-%month%-%day%/FLUX_Kontext',
         images: ['11', 0],
       },
     },

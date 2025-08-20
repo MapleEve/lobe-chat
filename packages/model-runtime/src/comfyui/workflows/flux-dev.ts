@@ -53,7 +53,7 @@ export function buildFluxDevWorkflow(
       },
       class_type: 'SaveImage',
       inputs: {
-        filename_prefix: 'flux_dev',
+        filename_prefix: 'LobeChat/%year%-%month%-%day%/FLUX_Dev',
         images: ['11', 0],
       },
     },

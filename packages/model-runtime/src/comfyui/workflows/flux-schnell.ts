@@ -104,7 +104,7 @@ export function buildFluxSchnellWorkflow(
       },
       class_type: 'SaveImage',
       inputs: {
-        filename_prefix: 'flux_schnell',
+        filename_prefix: 'LobeChat/%year%-%month%-%day%/FLUX_Schnell',
         images: ['7', 0],
       },
     },

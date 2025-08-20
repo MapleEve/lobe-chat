@@ -53,7 +53,7 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'SaveImage',
       inputs: {
-        filename_prefix: 'flux_krea',
+        filename_prefix: 'LobeChat/%year%-%month%-%day%/FLUX_Krea',
         images: ['11', 0],
       },
     },
