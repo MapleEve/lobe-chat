@@ -44,10 +44,15 @@ export class LobeComfyUI implements LobeRuntimeAI {
   } as const;
 
   constructor(options: ComfyUIKeyVault = {}) {
-    const { baseURL = 'http://localhost:8188' } = options;
+    const { baseURL = 'http://localhost:8188', authType = 'none' } = options;
 
-    // 验证配置参数完整性
-    this.validateConfiguration(options);
+    // 强制校验
+    if (authType === 'basic' && (!options.username || !options.password)) {
+      throw AgentRuntimeError.createError(AgentRuntimeErrorType.InvalidComfyUIArgs);
+    }
+    if (authType === 'bearer' && !options.apiKey) {
+      throw AgentRuntimeError.createError(AgentRuntimeErrorType.InvalidProviderAPIKey);
+    }
 
     this.options = options;
     this.baseURL = baseURL;
@@ -57,23 +62,6 @@ export class LobeComfyUI implements LobeRuntimeAI {
 
     this.client = new ComfyApi(this.baseURL, undefined, { credentials });
     this.client.init();
-  }
-
-  /**
-   * 验证配置参数完整性
-   */
-  private validateConfiguration(options: ComfyUIKeyVault): void {
-    const { authType = 'none' } = options;
-
-    // 验证 basic auth 的完整性
-    if (authType === 'basic' && (!options.username || !options.password)) {
-      throw AgentRuntimeError.createError(AgentRuntimeErrorType.InvalidComfyUIArgs);
-    }
-
-    // 验证 bearer auth 的完整性
-    if (authType === 'bearer' && !options.apiKey) {
-      throw AgentRuntimeError.createError(AgentRuntimeErrorType.InvalidProviderAPIKey);
-    }
   }
 
   /**
@@ -169,11 +157,7 @@ export class LobeComfyUI implements LobeRuntimeAI {
       const images = result.images?.images ?? [];
       if (images.length === 0) {
         throw AgentRuntimeError.createImage({
-          error: {
-            code: 'EMPTY_RESULT',
-            message: 'Empty result from ComfyUI workflow',
-            type: 'ComfyUIError',
-          },
+          error: new Error('Empty result from ComfyUI workflow'),
           errorType: AgentRuntimeErrorType.ComfyUIEmptyResult,
           provider: 'comfyui',
         });
@@ -313,24 +297,20 @@ export class LobeComfyUI implements LobeRuntimeAI {
 
     switch (authType) {
       case 'basic': {
-        if (username && password) {
-          return { password, type: 'basic', username } as BasicCredentials;
-        }
-        break;
+        // 构造函数已验证参数完整性，直接返回
+        return { password: password!, type: 'basic', username: username! } as BasicCredentials;
       }
 
       case 'bearer': {
-        if (apiKey) {
-          return { token: apiKey, type: 'bearer_token' } as BearerTokenCredentials;
-        }
-        break;
+        // 构造函数已验证参数完整性，直接返回
+        return { token: apiKey!, type: 'bearer_token' } as BearerTokenCredentials;
       }
 
       case 'custom': {
         if (customHeaders && Object.keys(customHeaders).length > 0) {
           return { headers: customHeaders, type: 'custom' } as CustomCredentials;
         }
-        break;
+        return undefined;
       }
 
       default: {
