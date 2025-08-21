@@ -32,6 +32,7 @@ export class LobeComfyUI implements LobeRuntimeAI {
   private client: ComfyApi;
   private options: ComfyUIKeyVault;
   private modelResolver: ComfyUIModelResolver;
+  private connectionValidated: boolean;
   baseURL: string;
 
   // Direct workflow mapping - no more string parsing
@@ -45,19 +46,69 @@ export class LobeComfyUI implements LobeRuntimeAI {
   constructor(options: ComfyUIKeyVault = {}) {
     const { baseURL = 'http://localhost:8188' } = options;
 
+    // 验证配置参数完整性
+    this.validateConfiguration(options);
+
     this.options = options;
     this.baseURL = baseURL;
     this.modelResolver = new ComfyUIModelResolver(this.baseURL);
     const credentials = this.createCredentials(options);
+    this.connectionValidated = false;
 
     this.client = new ComfyApi(this.baseURL, undefined, { credentials });
     this.client.init();
   }
 
   /**
+   * 验证配置参数完整性
+   */
+  private validateConfiguration(options: ComfyUIKeyVault): void {
+    const { authType = 'none' } = options;
+
+    // 验证 basic auth 的完整性
+    if (authType === 'basic' && (!options.username || !options.password)) {
+      throw AgentRuntimeError.createError(AgentRuntimeErrorType.InvalidComfyUIArgs);
+    }
+
+    // 验证 bearer auth 的完整性
+    if (authType === 'bearer' && !options.apiKey) {
+      throw AgentRuntimeError.createError(AgentRuntimeErrorType.InvalidProviderAPIKey);
+    }
+  }
+
+  /**
+   * 确保 ComfyUI 连接有效，使用现有的错误处理器
+   */
+  private async ensureConnection(): Promise<void> {
+    if (this.connectionValidated) return;
+
+    try {
+      // 尝试获取模型列表来验证连接和权限
+      const models = await this.modelResolver.getAvailableModelFiles();
+
+      // 验证响应有效性
+      if (!Array.isArray(models)) {
+        throw new Error('Invalid response from ComfyUI server');
+      }
+
+      this.connectionValidated = true;
+    } catch (error) {
+      // 复用现有的错误处理器
+      const { error: parsedError, errorType } = parseComfyUIErrorMessage(error);
+
+      throw AgentRuntimeError.createError(errorType, {
+        error: parsedError,
+      });
+    }
+  }
+
+  /**
    * Discover available models from ComfyUI server
    */
   async models(): Promise<ChatModelCard[]> {
+    // 确保连接有效，防止无效请求进入处理流程
+    await this.ensureConnection();
+
     try {
       const modelFiles = await this.modelResolver.getAvailableModelFiles();
 
@@ -90,6 +141,9 @@ export class LobeComfyUI implements LobeRuntimeAI {
    * Create image
    */
   async createImage(payload: CreateImagePayload): Promise<CreateImageResponse> {
+    // 确保连接有效，防止无效请求进入 async 队列
+    await this.ensureConnection();
+
     const { model, params } = payload;
 
     try {

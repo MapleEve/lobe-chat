@@ -7,6 +7,7 @@ import { CreateImagePayload, CreateImageResponse } from '@/libs/model-runtime';
 import { ChatModelCard } from '@/types/llm';
 
 import { LobeComfyUI } from '../index';
+import { AgentRuntimeError } from '../utils/createError';
 
 // Mock the ComfyUI SDK
 vi.mock('@saintno/comfyui-sdk', () => ({
@@ -88,6 +89,44 @@ describe('LobeComfyUI', () => {
       expect(instance.baseURL).toBe('http://localhost:8188');
     });
 
+    it('should throw InvalidComfyUIArgs for incomplete basic auth', () => {
+      expect(() => {
+        new LobeComfyUI({
+          authType: 'basic',
+          username: 'user',
+          // missing password
+        });
+      }).toThrow();
+    });
+
+    it('should throw InvalidProviderAPIKey for missing bearer token', () => {
+      expect(() => {
+        new LobeComfyUI({
+          authType: 'bearer',
+          // missing apiKey
+        });
+      }).toThrow();
+    });
+
+    it('should accept complete basic auth configuration', () => {
+      expect(() => {
+        new LobeComfyUI({
+          authType: 'basic',
+          username: 'user',
+          password: 'pass',
+        });
+      }).not.toThrow();
+    });
+
+    it('should accept complete bearer auth configuration', () => {
+      expect(() => {
+        new LobeComfyUI({
+          authType: 'bearer',
+          apiKey: 'test-key',
+        });
+      }).not.toThrow();
+    });
+
     it('should initialize with custom baseURL', () => {
       const customBaseURL = 'https://my-comfyui.example.com';
       instance = new LobeComfyUI({ baseURL: customBaseURL });
@@ -160,15 +199,13 @@ describe('LobeComfyUI', () => {
         });
       });
 
-      it('should fallback to undefined credentials when required fields are missing', () => {
-        instance = new LobeComfyUI({
-          authType: 'basic',
-          // Missing username and password
-        });
-
-        expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8188', undefined, {
-          credentials: undefined,
-        });
+      it('should throw error when required fields are missing for basic auth', () => {
+        expect(() => {
+          new LobeComfyUI({
+            authType: 'basic',
+            // Missing username and password
+          });
+        }).toThrow();
       });
 
       it('should prioritize new authType over legacy apiKey format', () => {
@@ -190,7 +227,154 @@ describe('LobeComfyUI', () => {
     });
   });
 
-  // models() method removed - following FAL pattern (no model discovery)
+  describe('Connection validation', () => {
+    beforeEach(() => {
+      instance = new LobeComfyUI({ baseURL: 'http://custom:8188' });
+    });
+
+    it('should handle connection failure during createImage', async () => {
+      // Mock connection failure
+      (global.fetch as Mock).mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+
+      const payload: CreateImagePayload = {
+        model: 'comfyui/flux-schnell',
+        params: { prompt: 'Test connection validation' },
+      };
+
+      // Should throw error (ModelNotFound) when trying to resolve model after connection validation
+      await expect(instance.createImage(payload)).rejects.toThrow();
+    });
+
+    it('should return empty array when connection validation fails in models()', async () => {
+      // Mock connection failure
+      (global.fetch as Mock).mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+
+      // Should return empty array when connection fails (graceful degradation)
+      const result = await instance.models();
+      expect(result).toEqual([]);
+    });
+
+    it('should cache successful connection validation', async () => {
+      // Mock successful connection and model files response for BOTH calls in first createImage:
+      // 1. ensureConnection() -> getAvailableModelFiles()
+      // 2. resolveModelFileName() -> getAvailableModelFiles()
+      (global.fetch as Mock)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            CheckpointLoaderSimple: {
+              input: {
+                required: {
+                  ckpt_name: [['flux_schnell.safetensors']],
+                },
+              },
+            },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            CheckpointLoaderSimple: {
+              input: {
+                required: {
+                  ckpt_name: [['flux_schnell.safetensors']],
+                },
+              },
+            },
+          }),
+        });
+
+      // Mock successful image creation
+      mockComfyApi.waitForReady.mockResolvedValue(undefined);
+      const mockRun = vi.fn().mockImplementation(function (this: any) {
+        // Simulate CallWrapper behavior
+        setTimeout(
+          () =>
+            this.onFinishedCallback({
+              images: { images: [{ filename: 'test.png', height: 512, width: 512 }] },
+            }),
+          0,
+        );
+        return this;
+      });
+      const mockCallWrapper = {
+        onFinished: vi.fn().mockImplementation(function (this: any, callback: any) {
+          this.onFinishedCallback = callback;
+          return this;
+        }),
+        onFailed: vi.fn().mockReturnThis(),
+        onProgress: vi.fn().mockReturnThis(),
+        run: mockRun,
+      };
+      (CallWrapper as any).mockImplementation(() => mockCallWrapper);
+
+      const payload: CreateImagePayload = {
+        model: 'comfyui/flux-schnell',
+        params: { prompt: 'Test caching' },
+      };
+
+      // First call - should validate connection (2 fetch calls)
+      await instance.createImage(payload);
+
+      // Reset fetch mock to count subsequent calls
+      (global.fetch as Mock).mockClear();
+
+      // Mock the fetch call for model resolution in the second call (only 1 call now, connection cached)
+      (global.fetch as Mock).mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          CheckpointLoaderSimple: {
+            input: {
+              required: {
+                ckpt_name: [['flux_schnell.safetensors']],
+              },
+            },
+          },
+        }),
+      });
+
+      // Second call - should use cached connection validation but still needs to resolve models
+      await instance.createImage(payload);
+
+      // fetch should be called once for model resolution, but not for connection validation
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle authentication errors during validation', async () => {
+      // Mock 401 error
+      (global.fetch as Mock).mockRejectedValueOnce({
+        status: 401,
+        message: 'Unauthorized',
+      });
+
+      const payload: CreateImagePayload = {
+        model: 'comfyui/flux-schnell',
+        params: { prompt: 'Test auth error' },
+      };
+
+      await expect(instance.createImage(payload)).rejects.toThrow();
+    });
+
+    it('should validate even with authType=none', async () => {
+      instance = new LobeComfyUI({
+        baseURL: 'http://secure-server:8188',
+        authType: 'none',
+      });
+
+      // Mock server requiring authentication despite none config
+      (global.fetch as Mock).mockRejectedValueOnce({
+        status: 401,
+        message: 'Unauthorized',
+      });
+
+      const payload: CreateImagePayload = {
+        model: 'comfyui/flux-schnell',
+        params: { prompt: 'Test none auth validation' },
+      };
+
+      await expect(instance.createImage(payload)).rejects.toThrow();
+    });
+  });
 
   describe('createImage()', () => {
     beforeEach(() => {
@@ -1389,13 +1573,13 @@ describe('LobeComfyUI', () => {
   });
 
   describe('Authentication edge cases', () => {
-    it('should handle bearer auth without apiKey', () => {
-      const instance = new LobeComfyUI({
-        authType: 'bearer',
-        // No apiKey provided
-      });
-      expect(instance).toBeDefined();
-      expect(instance.baseURL).toBe('http://localhost:8188');
+    it('should throw error for bearer auth without apiKey', () => {
+      expect(() => {
+        new LobeComfyUI({
+          authType: 'bearer',
+          // No apiKey provided
+        });
+      }).toThrow();
     });
 
     it('should handle custom auth without customHeaders', () => {
