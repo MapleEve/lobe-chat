@@ -1,3 +1,5 @@
+import { ComfyApi } from '@saintno/comfyui-sdk';
+
 import { AgentRuntimeErrorType } from '../../error';
 import { AgentRuntimeError } from '../../utils/createError';
 
@@ -6,32 +8,39 @@ import { AgentRuntimeError } from '../../utils/createError';
  * 负责从 ComfyUI 服务器获取和解析模型信息
  */
 export class ComfyUIModelResolver {
-  private baseURL: string;
+  private client: ComfyApi;
 
-  constructor(baseURL: string) {
-    this.baseURL = baseURL;
+  constructor(client: ComfyApi) {
+    this.client = client;
   }
 
   /**
    * 获取 ComfyUI 服务器上可用的模型文件列表
+   * 使用 ComfyApi 客户端进行请求（支持所有认证模式包括 authType='none'）
    */
   async getAvailableModelFiles(): Promise<string[]> {
     try {
-      const response = await fetch(`${this.baseURL}/object_info`, {
+      // 使用 ComfyApi 客户端进行请求，认证由客户端内部处理
+      const response = await this.client.fetchApi('/object_info', {
         headers: { 'Content-Type': 'application/json' },
         method: 'GET',
       });
-
       const objectInfo = await response.json();
+
       const checkpointLoader = objectInfo.CheckpointLoaderSimple;
 
       if (!checkpointLoader?.input?.required?.ckpt_name?.[0]) {
-        return [];
+        throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
+          model: 'No models available on ComfyUI server',
+        });
       }
 
       return checkpointLoader.input.required.ckpt_name[0] as string[];
-    } catch {
-      return [];
+    } catch (error) {
+      throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
+        cause: error,
+        model: 'Failed to fetch models from ComfyUI server',
+      });
     }
   }
 
@@ -51,12 +60,6 @@ export class ComfyUIModelResolver {
    */
   async resolveModelFileName(modelId: string): Promise<string> {
     const modelFiles = await this.getAvailableModelFiles();
-
-    if (modelFiles.length === 0) {
-      throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
-        model: modelId,
-      });
-    }
 
     // Extract model name without comfyui prefix for matching
     const modelName = modelId.replace('comfyui/', '');
@@ -83,8 +86,15 @@ export class ComfyUIModelResolver {
 
     if (fluxMatch) return fluxMatch;
 
-    // Last resort: first available model
-    return modelFiles[0];
+    // Last resort: first available model if any
+    if (modelFiles.length > 0) {
+      return modelFiles[0];
+    }
+
+    // No models available
+    throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
+      model: modelId,
+    });
   }
 
   /**

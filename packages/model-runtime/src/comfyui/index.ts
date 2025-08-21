@@ -56,12 +56,14 @@ export class LobeComfyUI implements LobeRuntimeAI {
 
     this.options = options;
     this.baseURL = baseURL;
-    this.modelResolver = new ComfyUIModelResolver(this.baseURL);
-    const credentials = this.createCredentials(options);
+    const credentials = this.createCredentials(this.options);
     this.connectionValidated = false;
 
     this.client = new ComfyApi(this.baseURL, undefined, { credentials });
     this.client.init();
+
+    // 在创建客户端后，将其传递给 modelResolver 以支持认证请求
+    this.modelResolver = new ComfyUIModelResolver(this.client);
   }
 
   /**

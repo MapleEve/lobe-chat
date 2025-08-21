@@ -89,23 +89,33 @@ describe('LobeComfyUI', () => {
       expect(instance.baseURL).toBe('http://localhost:8188');
     });
 
-    it('should throw InvalidComfyUIArgs for incomplete basic auth', () => {
-      expect(() => {
-        new LobeComfyUI({
-          authType: 'basic',
-          username: 'user',
-          // missing password
-        });
-      }).toThrow();
+    it('should gracefully degrade incomplete basic auth to authType "none"', () => {
+      const instance = new LobeComfyUI({
+        authType: 'basic',
+        username: 'user',
+        // missing password - should degrade to 'none'
+      });
+
+      // Verify the instance was created successfully (no exception)
+      expect(instance).toBeDefined();
+      expect(instance.baseURL).toBe('http://localhost:8188');
+
+      // Verify authType was degraded to 'none' in options
+      expect((instance as any).options.authType).toBe('none');
     });
 
-    it('should throw InvalidProviderAPIKey for missing bearer token', () => {
-      expect(() => {
-        new LobeComfyUI({
-          authType: 'bearer',
-          // missing apiKey
-        });
-      }).toThrow();
+    it('should gracefully degrade missing bearer token to authType "none"', () => {
+      const instance = new LobeComfyUI({
+        authType: 'bearer',
+        // missing apiKey - should degrade to 'none'
+      });
+
+      // Verify the instance was created successfully (no exception)
+      expect(instance).toBeDefined();
+      expect(instance.baseURL).toBe('http://localhost:8188');
+
+      // Verify authType was degraded to 'none'
+      expect((instance as any).options.authType).toBe('none');
     });
 
     it('should accept complete basic auth configuration', () => {
@@ -199,13 +209,17 @@ describe('LobeComfyUI', () => {
         });
       });
 
-      it('should throw error when required fields are missing for basic auth', () => {
-        expect(() => {
-          new LobeComfyUI({
-            authType: 'basic',
-            // Missing username and password
-          });
-        }).toThrow();
+      it('should gracefully degrade when required fields are missing for basic auth', () => {
+        const instance = new LobeComfyUI({
+          authType: 'basic',
+          // Missing username and password - should degrade to 'none'
+        });
+
+        // Verify the instance was created successfully (no exception)
+        expect(instance).toBeDefined();
+
+        // Verify authType was degraded to 'none'
+        expect((instance as any).options.authType).toBe('none');
       });
 
       it('should prioritize new authType over legacy apiKey format', () => {
@@ -1573,13 +1587,18 @@ describe('LobeComfyUI', () => {
   });
 
   describe('Authentication edge cases', () => {
-    it('should throw error for bearer auth without apiKey', () => {
-      expect(() => {
-        new LobeComfyUI({
-          authType: 'bearer',
-          // No apiKey provided
-        });
-      }).toThrow();
+    it('should gracefully degrade bearer auth without apiKey to authType "none"', () => {
+      const instance = new LobeComfyUI({
+        authType: 'bearer',
+        // No apiKey provided - should degrade to 'none'
+      });
+
+      // Verify the instance was created successfully (no exception)
+      expect(instance).toBeDefined();
+      expect(instance.baseURL).toBe('http://localhost:8188');
+
+      // Verify authType was degraded to 'none'
+      expect((instance as any).options.authType).toBe('none');
     });
 
     it('should handle custom auth without customHeaders', () => {
