@@ -64,10 +64,45 @@ const categorizeError = (
   error: any,
   isAborted: boolean,
 ): { errorMessage: string; errorType: AsyncTaskErrorType } => {
+  // 处理 ComfyUI 服务不可用
+  if (error.errorType === AgentRuntimeErrorType.ComfyUIServiceUnavailable) {
+    return {
+      errorMessage: error.error?.message || error.message || 'ComfyUI service is unavailable',
+      errorType: AsyncTaskErrorType.ServerError,
+    };
+  }
+
+  // 处理 ComfyUI 业务错误
+  if (error.errorType === AgentRuntimeErrorType.ComfyUIBizError) {
+    return {
+      errorMessage: error.error?.message || error.message || 'ComfyUI processing error',
+      errorType: AsyncTaskErrorType.ServerError,
+    };
+  }
+
+  // 处理 ConnectionCheckFailed (保留向后兼容)
+  if (error.errorType === AgentRuntimeErrorType.ConnectionCheckFailed) {
+    return {
+      errorMessage: error.message || 'Failed to connect to image generation service',
+      errorType: AsyncTaskErrorType.ServerError,
+    };
+  }
+
+  // 处理 PermissionDenied
+  if (error.errorType === AgentRuntimeErrorType.PermissionDenied) {
+    return {
+      errorMessage: error.error?.message || error.message || 'Permission denied',
+      errorType: AsyncTaskErrorType.InvalidProviderAPIKey,
+    };
+  }
+
   // FIXME: 401 的问题应该放到 agentRuntime 中处理会更好
   if (error.errorType === AgentRuntimeErrorType.InvalidProviderAPIKey || error?.status === 401) {
     return {
-      errorMessage: 'Invalid provider API key, please check your API key',
+      errorMessage:
+        error.error?.message ||
+        error.message ||
+        'Invalid provider API key, please check your API key',
       errorType: AsyncTaskErrorType.InvalidProviderAPIKey,
     };
   }
