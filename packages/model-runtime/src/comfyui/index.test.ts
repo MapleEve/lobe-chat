@@ -1590,6 +1590,45 @@ describe('LobeComfyUI', () => {
       expect(instance).toBeDefined();
       expect(instance.baseURL).toBe('http://localhost:8188');
     });
+
+    // Tests to achieve 100% branch coverage of createCredentials method
+    describe('createCredentials fallback scenarios', () => {
+      it('should pass undefined credentials when custom auth has no customHeaders', () => {
+        const instance = new LobeComfyUI({
+          authType: 'custom',
+          // No customHeaders provided - hits break statement on line 318
+        });
+
+        // Verify ComfyApi was called with credentials: undefined
+        expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8188', undefined, {
+          credentials: undefined,
+        });
+      });
+
+      it('should pass undefined credentials when custom auth has empty customHeaders', () => {
+        const instance = new LobeComfyUI({
+          authType: 'custom',
+          customHeaders: {}, // Empty object - hits break statement on line 318
+        });
+
+        // Verify ComfyApi was called with credentials: undefined
+        expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8188', undefined, {
+          credentials: undefined,
+        });
+      });
+
+      it('should pass undefined credentials when custom auth has null customHeaders', () => {
+        const instance = new LobeComfyUI({
+          authType: 'custom',
+          customHeaders: null as any, // null value - hits break statement on line 318
+        });
+
+        // Verify ComfyApi was called with credentials: undefined
+        expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8188', undefined, {
+          credentials: undefined,
+        });
+      });
+    });
   });
 
   describe('models() edge cases', () => {
