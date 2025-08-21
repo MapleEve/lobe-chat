@@ -12,10 +12,10 @@ import { ComfyUIKeyVault } from '@/types/user/settings';
 import { LobeRuntimeAI } from '../BaseAI';
 import { AgentRuntimeErrorType } from '../error';
 import { CreateImagePayload, CreateImageResponse } from '../types/image';
-import { TextToImagePayload } from '../types/textToImage';
 import { parseComfyUIErrorMessage } from '../utils/comfyuiErrorParser';
 import { AgentRuntimeError } from '../utils/createError';
 import { MODEL_LIST_CONFIGS, processModelList } from '../utils/modelParse';
+import { ComfyUIModelResolver } from './utils/modelResolver';
 import { buildFluxDevWorkflow } from './workflows/flux-dev';
 import { buildFluxKontextWorkflow } from './workflows/flux-kontext';
 import { buildFluxKreaWorkflow } from './workflows/flux-krea';
@@ -31,6 +31,7 @@ const log = debug('lobe-image:comfyui');
 export class LobeComfyUI implements LobeRuntimeAI {
   private client: ComfyApi;
   private options: ComfyUIKeyVault;
+  private modelResolver: ComfyUIModelResolver;
   baseURL: string;
 
   // Direct workflow mapping - no more string parsing
@@ -46,6 +47,7 @@ export class LobeComfyUI implements LobeRuntimeAI {
 
     this.options = options;
     this.baseURL = baseURL;
+    this.modelResolver = new ComfyUIModelResolver(this.baseURL);
     const credentials = this.createCredentials(options);
 
     this.client = new ComfyApi(this.baseURL, undefined, { credentials });
@@ -57,32 +59,14 @@ export class LobeComfyUI implements LobeRuntimeAI {
    */
   async models(): Promise<ChatModelCard[]> {
     try {
-      const response = await fetch(`${this.baseURL}/object_info`, {
-        headers: { 'Content-Type': 'application/json' },
-        method: 'GET',
-      });
+      const modelFiles = await this.modelResolver.getAvailableModelFiles();
 
-      const objectInfo = await response.json();
-      const checkpointLoader = objectInfo.CheckpointLoaderSimple;
-
-      if (!checkpointLoader?.input?.required?.ckpt_name?.[0]) {
+      if (modelFiles.length === 0) {
         return [];
       }
 
-      const modelFiles = checkpointLoader.input.required.ckpt_name[0];
-
       // Transform model files to standard format for processModelList
-      // Note: we pass the ID without the comfyui/ prefix to processModelList,
-      // since the config file uses IDs without the prefix
-      const modelList = modelFiles.map((fileName: string) => {
-        const cleanName = fileName.replace(/\.(safetensors|ckpt|pt)$/i, '');
-        const modelId = this.normalizeModelName(cleanName);
-
-        return {
-          enabled: true,
-          id: modelId, // Without the comfyui/ prefix for config matching
-        };
-      });
+      const modelList = this.modelResolver.transformModelFilesToList(modelFiles);
 
       // Use processModelList to handle displayName and capabilities
       const processedModels = await processModelList(
@@ -112,7 +96,7 @@ export class LobeComfyUI implements LobeRuntimeAI {
       await this.client.waitForReady();
 
       // Get actual model filename for workflow
-      const modelFileName = await this.resolveModelFileName(model);
+      const modelFileName = await this.modelResolver.resolveModelFileName(model);
 
       // Direct workflow building with resolved model name
       const workflow = this.buildWorkflow(model, modelFileName, params);
@@ -165,92 +149,6 @@ export class LobeComfyUI implements LobeRuntimeAI {
   }
 
   /**
-   * TextToImage adapter - simple parameter mapping
-   */
-  async textToImage(payload: TextToImagePayload): Promise<string[]> {
-    const { model, prompt, size } = payload;
-
-    let width = 1024;
-    let height = 1024;
-
-    if (size) {
-      const [w, h] = size.split('x').map(Number);
-      if (w && h) {
-        width = w;
-        height = h;
-      }
-    }
-
-    const createImagePayload: CreateImagePayload = {
-      model,
-      params: {
-        height,
-        prompt,
-        seed: -1,
-        steps: model.includes('schnell') ? 4 : 20,
-        width,
-        ...(model.includes('dev') && { cfg: 3.5 }),
-      },
-    };
-
-    const result = await this.createImage(createImagePayload);
-    return [result.imageUrl];
-  }
-
-  /**
-   * Resolve model ID to actual model filename
-   */
-  private async resolveModelFileName(modelId: string): Promise<string> {
-    try {
-      const response = await fetch(`${this.baseURL}/object_info`, {
-        headers: { 'Content-Type': 'application/json' },
-        method: 'GET',
-      });
-
-      const objectInfo = await response.json();
-      const modelFiles = objectInfo.CheckpointLoaderSimple?.input?.required?.ckpt_name?.[0] || [];
-
-      if (modelFiles.length === 0) {
-        throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
-          model: modelId,
-        });
-      }
-
-      // Extract model name without comfyui prefix for matching
-      const modelName = modelId.replace('comfyui/', '');
-
-      // Try exact match first
-      const exactMatch = modelFiles.find((file: string) => {
-        const baseName = file.replace(/\.(safetensors|ckpt|pt)$/i, '');
-        return this.normalizeModelName(baseName) === modelName;
-      });
-
-      if (exactMatch) return exactMatch;
-
-      // Try fuzzy matching with keywords
-      const keywords = modelName.split('-');
-      const fuzzyMatch = modelFiles.find((file: string) => {
-        const fileLower = file.toLowerCase();
-        return keywords.some((keyword) => fileLower.includes(keyword));
-      });
-
-      if (fuzzyMatch) return fuzzyMatch;
-
-      // Fallback to FLUX models if available
-      const fluxMatch = modelFiles.find((file: string) => file.toLowerCase().includes('flux'));
-
-      if (fluxMatch) return fluxMatch;
-
-      // Last resort: first available model
-      return modelFiles[0];
-    } catch {
-      throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
-        model: modelId,
-      });
-    }
-  }
-
-  /**
    * Build workflow directly from model ID
    */
   private buildWorkflow(
@@ -267,17 +165,6 @@ export class LobeComfyUI implements LobeRuntimeAI {
 
     // Fallback to generic SD workflow for unknown models
     return this.buildGenericSDWorkflow(modelFileName, params);
-  }
-
-  /**
-   * Normalize model name for consistent ID generation
-   */
-  private normalizeModelName(name: string): string {
-    return name
-      .toLowerCase()
-      .replaceAll(/[\s_]+/g, '-')
-      .replaceAll(/[^\da-z-]/g, '')
-      .replaceAll(/^-+|-+$/g, '');
   }
 
   /**
