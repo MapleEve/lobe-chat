@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { PromptBuilder } from '@saintno/comfyui-sdk';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildFluxKreaWorkflow } from './flux-krea';
 
