@@ -147,6 +147,12 @@ export default {
     OllamaServiceUnavailable:
       'Ollama 服务连接失败，请检查 Ollama 是否运行正常，或是否正确设置 Ollama 的跨域配置',
 
+    InvalidComfyUIArgs: 'ComfyUI 配置不正确，请检查 ComfyUI 配置后重试',
+    ComfyUIBizError: '请求 ComfyUI 服务出错，请根据以下信息排查或重试',
+    ComfyUIServiceUnavailable:
+      'ComfyUI 服务连接失败，请检查 ComfyUI 是否运行正常，或检查服务地址配置是否正确',
+    ComfyUIEmptyResult: 'ComfyUI 未生成任何图像，请检查模型配置或重试',
+
     AgentRuntimeError: 'Lobe AI Runtime 执行出错，请根据以下信息排查或重试',
 
     // cloud
