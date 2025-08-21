@@ -12,6 +12,7 @@ import {
 } from '@/database/schemas';
 import { authedProcedure, router } from '@/libs/trpc/lambda';
 import { keyVaults, serverDatabase } from '@/libs/trpc/lambda/middleware';
+import { initModelRuntimeWithUserPayload } from '@/server/modules/ModelRuntime';
 import { createAsyncCaller } from '@/server/routers/async/caller';
 import { FileService } from '@/server/services/file';
 import {
@@ -70,6 +71,27 @@ export const imageRouter = router({
     const { generationTopicId, provider, model, imageNum, params } = input;
 
     log('Starting image creation process, input: %O', input);
+
+    // ComfyUI 服务器可达性验证 - 在创建 async tasks 前确保服务器可用
+    if (provider === 'comfyui') {
+      log('Validating ComfyUI server reachability for provider: %s', provider);
+      try {
+        // 创建运行时实例，这会触发构造函数验证（配置参数）
+        const agentRuntime = await initModelRuntimeWithUserPayload(provider, ctx.jwtPayload);
+
+        // 验证服务器连接和可达性
+        if (agentRuntime && typeof agentRuntime.models === 'function') {
+          await agentRuntime.models();
+          log('ComfyUI server reachability validation successful');
+        } else {
+          throw new Error('ComfyUI runtime not properly initialized');
+        }
+      } catch (error) {
+        log('ComfyUI server reachability validation failed: %O', error);
+        // 直接抛出原始错误，保持错误类型和消息
+        throw error;
+      }
+    }
 
     // 如果 params 中包含 imageUrls，将它们转换为 S3 keys 用于数据库存储
     let configForDatabase = { ...params };
