@@ -23,7 +23,9 @@ global.fetch = vi.fn();
 vi.spyOn(console, 'error').mockImplementation(() => {});
 
 const provider = 'comfyui';
-const bizErrorType = 'ProviderBizError';
+const bizErrorType = 'ComfyUIBizError';
+const emptyResultErrorType = 'ComfyUIEmptyResult';
+const serviceUnavailableErrorType = 'ComfyUIServiceUnavailable';
 const invalidErrorType = 'InvalidProviderAPIKey';
 const modelNotFoundErrorType = 'ModelNotFound';
 
@@ -663,7 +665,7 @@ describe('LobeComfyUI', () => {
       });
     });
 
-    it('should throw ProviderBizError when no images are generated', async () => {
+    it('should throw ComfyUIEmptyResult when no images are generated', async () => {
       const mockObjectInfo = {
         CheckpointLoaderSimple: {
           input: {
@@ -696,15 +698,16 @@ describe('LobeComfyUI', () => {
         },
       };
 
-      await expect(instance.createImage(payload)).rejects.toEqual({
-        error: {
-          error: new Error('No images generated'),
-        },
-        errorType: bizErrorType,
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        errorType: emptyResultErrorType,
+        provider: 'comfyui',
+        error: expect.objectContaining({
+          message: expect.any(String),
+        }),
       });
     });
 
-    it('should throw ProviderBizError when workflow fails', async () => {
+    it('should throw ComfyUIBizError when workflow fails', async () => {
       const mockObjectInfo = {
         CheckpointLoaderSimple: {
           input: {
@@ -733,11 +736,182 @@ describe('LobeComfyUI', () => {
         },
       };
 
-      await expect(instance.createImage(payload)).rejects.toEqual({
-        error: {
-          error: workflowError,
-        },
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        error: expect.objectContaining({
+          message: expect.any(String),
+        }),
         errorType: bizErrorType,
+        provider: 'comfyui',
+      });
+    });
+
+    it('should throw ComfyUIServiceUnavailable for ECONNREFUSED', async () => {
+      const mockError = new Error('connect ECONNREFUSED 127.0.0.1:8188');
+      mockComfyApi.waitForReady.mockRejectedValueOnce(mockError);
+
+      const payload: CreateImagePayload = {
+        model: 'comfyui/flux-schnell',
+        params: {
+          prompt: 'Test connection error',
+        },
+      };
+
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        errorType: serviceUnavailableErrorType,
+        provider: 'comfyui',
+        error: expect.objectContaining({
+          message: expect.any(String),
+        }),
+      });
+    });
+
+    it('should throw ComfyUIServiceUnavailable for fetch failed', async () => {
+      const mockError = new Error('fetch failed');
+      mockCallWrapper.run.mockImplementation(() => {
+        const failCallback = mockCallWrapper.onFailed.mock.calls[0][0];
+        failCallback(mockError);
+      });
+
+      const payload: CreateImagePayload = {
+        model: 'comfyui/flux-schnell',
+        params: {
+          prompt: 'Test fetch error',
+        },
+      };
+
+      // Setup basic mock for models
+      const mockObjectInfo = {
+        CheckpointLoaderSimple: {
+          input: {
+            required: {
+              ckpt_name: [['flux_schnell.safetensors']],
+            },
+          },
+        },
+      };
+
+      (global.fetch as Mock).mockResolvedValue({
+        json: () => Promise.resolve(mockObjectInfo),
+      });
+
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        errorType: serviceUnavailableErrorType,
+        provider: 'comfyui',
+        error: expect.objectContaining({
+          message: expect.any(String),
+        }),
+      });
+    });
+
+    it('should throw InvalidProviderAPIKey for 401 status with basic auth', async () => {
+      const comfyuiWithBasicAuth = new LobeComfyUI({
+        baseURL: 'http://localhost:8188',
+        authType: 'basic',
+        username: 'user',
+        password: 'pass',
+      });
+
+      const mockError = { status: 401, message: 'Unauthorized' };
+      mockComfyApi.waitForReady.mockRejectedValueOnce(mockError);
+
+      const payload: CreateImagePayload = {
+        model: 'comfyui/flux-schnell',
+        params: {
+          prompt: 'Test auth error',
+        },
+      };
+
+      await expect(comfyuiWithBasicAuth.createImage(payload)).rejects.toMatchObject({
+        errorType: 'InvalidProviderAPIKey',
+        provider: 'comfyui',
+        error: expect.objectContaining({
+          message: expect.any(String),
+        }),
+      });
+    });
+
+    it('should throw InvalidProviderAPIKey for 401 status with bearer token', async () => {
+      const comfyuiWithBearer = new LobeComfyUI({
+        baseURL: 'http://localhost:8188',
+        authType: 'bearer',
+        apiKey: 'invalid-token',
+      });
+
+      const mockError = { status: 401, message: 'Unauthorized' };
+      mockComfyApi.waitForReady.mockRejectedValueOnce(mockError);
+
+      const payload: CreateImagePayload = {
+        model: 'comfyui/flux-schnell',
+        params: {
+          prompt: 'Test bearer auth error',
+        },
+      };
+
+      await expect(comfyuiWithBearer.createImage(payload)).rejects.toMatchObject({
+        errorType: 'InvalidProviderAPIKey',
+        provider: 'comfyui',
+        error: expect.objectContaining({
+          message: expect.any(String),
+        }),
+      });
+    });
+
+    it('should throw PermissionDenied for 403 status', async () => {
+      const mockError = { status: 403, message: 'Forbidden' };
+      mockComfyApi.waitForReady.mockRejectedValueOnce(mockError);
+
+      const payload: CreateImagePayload = {
+        model: 'comfyui/flux-schnell',
+        params: {
+          prompt: 'Test permission error',
+        },
+      };
+
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        errorType: 'PermissionDenied',
+        provider: 'comfyui',
+        error: expect.objectContaining({
+          message: expect.any(String),
+        }),
+      });
+    });
+
+    it('should throw ComfyUIBizError for server errors', async () => {
+      const mockError = { status: 500, message: 'Internal Server Error' };
+      mockCallWrapper.run.mockImplementation(() => {
+        const failCallback = mockCallWrapper.onFailed.mock.calls[0][0];
+        failCallback(mockError);
+      });
+
+      const payload: CreateImagePayload = {
+        model: 'comfyui/flux-schnell',
+        params: {
+          prompt: 'Test server error',
+        },
+      };
+
+      // Setup basic mock for models
+      const mockObjectInfo = {
+        CheckpointLoaderSimple: {
+          input: {
+            required: {
+              ckpt_name: [['flux_schnell.safetensors']],
+            },
+          },
+        },
+      };
+
+      (global.fetch as Mock).mockResolvedValue({
+        json: () => Promise.resolve(mockObjectInfo),
+      });
+
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        errorType: serviceUnavailableErrorType,
+        provider: 'comfyui',
+        error: expect.objectContaining({
+          message: expect.any(String),
+          status: 500,
+        }),
       });
     });
 
@@ -794,7 +968,7 @@ describe('LobeComfyUI', () => {
       });
     });
 
-    it('should throw ProviderBizError when result.images is null or undefined', async () => {
+    it('should throw ComfyUIEmptyResult when result.images is null or undefined', async () => {
       const mockObjectInfo = {
         CheckpointLoaderSimple: {
           input: {
@@ -827,10 +1001,11 @@ describe('LobeComfyUI', () => {
       // This covers the `result.images?.images ?? []` branch.
       // `result.images` is undefined, so `images` becomes `[]`, and the length check fails.
       await expect(instance.createImage(payload)).rejects.toEqual({
-        error: {
-          error: new Error('No images generated'),
-        },
-        errorType: bizErrorType,
+        errorType: emptyResultErrorType,
+        provider: 'comfyui',
+        error: expect.objectContaining({
+          message: expect.any(String),
+        }),
       });
     });
 
@@ -1479,11 +1654,13 @@ describe('LobeComfyUI', () => {
         prompt: 'Test error handling',
       };
 
-      await expect(instance.textToImage(payload)).rejects.toEqual({
-        error: {
-          error: workflowError,
-        },
+      await expect(instance.textToImage(payload)).rejects.toMatchObject({
+        error: expect.objectContaining({
+          message: 'Workflow execution failed',
+          type: 'Error',
+        }),
         errorType: bizErrorType,
+        provider: 'comfyui',
       });
     });
   });
