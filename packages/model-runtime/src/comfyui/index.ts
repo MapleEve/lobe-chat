@@ -13,6 +13,7 @@ import { LobeRuntimeAI } from '../BaseAI';
 import { AgentRuntimeErrorType } from '../error';
 import { CreateImagePayload, CreateImageResponse } from '../types/image';
 import { TextToImagePayload } from '../types/textToImage';
+import { parseComfyUIErrorMessage } from '../utils/comfyuiErrorParser';
 import { AgentRuntimeError } from '../utils/createError';
 import { MODEL_LIST_CONFIGS, processModelList } from '../utils/modelParse';
 import { buildFluxDevWorkflow } from './workflows/flux-dev';
@@ -29,6 +30,7 @@ const log = debug('lobe-image:comfyui');
  */
 export class LobeComfyUI implements LobeRuntimeAI {
   private client: ComfyApi;
+  private options: ComfyUIKeyVault;
   baseURL: string;
 
   // Direct workflow mapping - no more string parsing
@@ -42,6 +44,7 @@ export class LobeComfyUI implements LobeRuntimeAI {
   constructor(options: ComfyUIKeyVault = {}) {
     const { baseURL = 'http://localhost:8188' } = options;
 
+    this.options = options;
     this.baseURL = baseURL;
     const credentials = this.createCredentials(options);
 
@@ -100,7 +103,7 @@ export class LobeComfyUI implements LobeRuntimeAI {
   }
 
   /**
-   * Create image - follows FAL's clean direct approach
+   * Create image
    */
   async createImage(payload: CreateImagePayload): Promise<CreateImageResponse> {
     const { model, params } = payload;
@@ -127,8 +130,14 @@ export class LobeComfyUI implements LobeRuntimeAI {
 
       const images = result.images?.images ?? [];
       if (images.length === 0) {
-        throw AgentRuntimeError.createError(AgentRuntimeErrorType.ProviderBizError, {
-          error: new Error('No images generated'),
+        throw AgentRuntimeError.createImage({
+          error: {
+            code: 'EMPTY_RESULT',
+            message: 'Empty result from ComfyUI workflow',
+            type: 'ComfyUIError',
+          },
+          errorType: AgentRuntimeErrorType.ComfyUIEmptyResult,
+          provider: 'comfyui',
         });
       }
 
@@ -139,10 +148,19 @@ export class LobeComfyUI implements LobeRuntimeAI {
         width: imageInfo.width ?? params.width,
       };
     } catch (error) {
+      // 保留已有的 AgentRuntimeError
       if (error && typeof error === 'object' && 'errorType' in error) {
         throw error;
       }
-      throw AgentRuntimeError.createError(AgentRuntimeErrorType.ProviderBizError, { error });
+
+      // 使用结构化错误解析器
+      const { error: parsedError, errorType } = parseComfyUIErrorMessage(error);
+
+      throw AgentRuntimeError.createImage({
+        error: parsedError,
+        errorType,
+        provider: 'comfyui',
+      });
     }
   }
 
