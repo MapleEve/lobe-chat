@@ -35,9 +35,9 @@ export function buildFluxDevWorkflow(
         guider: ['6', 0], // Required parameter - use FluxGuidance output
         latent_image: ['7', 0],
         model: ['4', 0],
-        negative: ['6', 0],
+        negative: ['5', 0], // Use CLIPTextEncodeFlux output for negative
         noise: ['13', 0],
-        positive: ['6', 0],
+        positive: ['5', 0], // Use CLIPTextEncodeFlux output for positive
         sampler: ['8', 0],
         sigmas: ['9', 0],
       },

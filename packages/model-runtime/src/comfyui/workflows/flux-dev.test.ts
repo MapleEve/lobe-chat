@@ -60,9 +60,9 @@ describe('buildFluxDevWorkflow', () => {
             guider: ['6', 0],
             latent_image: ['7', 0],
             model: ['4', 0],
-            negative: ['6', 0],
+            negative: ['5', 0],
             noise: ['13', 0],
-            positive: ['6', 0],
+            positive: ['5', 0],
             sampler: ['8', 0],
             sigmas: ['9', 0],
           }),
@@ -220,8 +220,8 @@ describe('buildFluxDevWorkflow', () => {
     expect(workflow['9'].inputs.model).toEqual(['4', 0]); // Scheduler uses sampling model
     expect(workflow['10'].inputs.latent_image).toEqual(['7', 0]); // Sampler uses empty latent
     expect(workflow['10'].inputs.model).toEqual(['4', 0]); // Sampler uses sampling model
-    expect(workflow['10'].inputs.positive).toEqual(['6', 0]); // Sampler uses guided conditioning
-    expect(workflow['10'].inputs.negative).toEqual(['6', 0]); // Sampler uses same for negative
+    expect(workflow['10'].inputs.positive).toEqual(['5', 0]); // Sampler uses CLIP conditioning
+    expect(workflow['10'].inputs.negative).toEqual(['5', 0]); // Sampler uses same for negative
     expect(workflow['10'].inputs.sampler).toEqual(['8', 0]); // Sampler uses selected sampler
     expect(workflow['10'].inputs.sigmas).toEqual(['9', 0]); // Sampler uses scheduler sigmas
     expect(workflow['11'].inputs.samples).toEqual(['10', 0]); // VAE decode uses sampler output
