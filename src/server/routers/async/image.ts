@@ -164,27 +164,17 @@ export const imageRouter = router({
 
     try {
       const imageGenerationPromise = async (signal: AbortSignal) => {
-        const startTime = Date.now();
-        log('Starting image generation at %s', new Date(startTime).toISOString());
-
         log('Initializing agent runtime for provider: %s', provider);
         const agentRuntime = await initModelRuntimeWithUserPayload(provider, ctx.jwtPayload);
-        log('Agent runtime initialized after %d ms', Date.now() - startTime);
 
         // Check if operation has been cancelled
         checkAbortSignal(signal);
 
-        log('Calling createImage on agent runtime');
-        const createImageStart = Date.now();
+        log('Agent runtime initialized, calling createImage');
         const response = await agentRuntime.createImage({
           model,
           params: params as unknown as RuntimeImageGenParams,
         });
-        log(
-          'createImage completed after %d ms (total: %d ms)',
-          Date.now() - createImageStart,
-          Date.now() - startTime,
-        );
 
         if (!response) {
           log('Create image response is empty');
@@ -202,7 +192,7 @@ export const imageRouter = router({
           width: response.width,
         });
 
-        log('Starting image transformation at %d ms from start', Date.now() - startTime);
+        log('Transforming image for generation');
         const { imageUrl, width, height } = response;
 
         // Extract ComfyUI authentication headers if provider is ComfyUI
@@ -249,43 +239,22 @@ export const imageRouter = router({
           }
         }
 
-        const transformStart = Date.now();
-        log(
-          'Calling transformImageForGeneration with auth headers: %s',
-          authHeaders ? 'yes' : 'no',
-        );
         const { image, thumbnailImage } = await ctx.generationService.transformImageForGeneration(
           imageUrl,
           authHeaders,
         );
-        log(
-          'Image transformation completed after %d ms (total: %d ms)',
-          Date.now() - transformStart,
-          Date.now() - startTime,
-        );
 
         // Check if operation has been cancelled
         checkAbortSignal(signal);
 
-        const uploadStart = Date.now();
-        log(
-          'Starting S3 upload for image (%d bytes) and thumbnail (%d bytes)',
-          image.size,
-          thumbnailImage.size,
-        );
+        log('Uploading image for generation');
         const { imageUrl: uploadedImageUrl, thumbnailImageUrl } =
           await ctx.generationService.uploadImageForGeneration(image, thumbnailImage);
-        log(
-          'S3 upload completed after %d ms (total: %d ms)',
-          Date.now() - uploadStart,
-          Date.now() - startTime,
-        );
 
         // Check if operation has been cancelled
         checkAbortSignal(signal);
 
-        const dbUpdateStart = Date.now();
-        log('Updating generation asset and file in database');
+        log('Updating generation asset and file');
         await ctx.generationModel.createAssetAndFile(
           generationId,
           {
@@ -311,22 +280,13 @@ export const imageRouter = router({
             url: uploadedImageUrl,
           },
         );
-        log(
-          'Database update completed after %d ms (total: %d ms)',
-          Date.now() - dbUpdateStart,
-          Date.now() - startTime,
-        );
 
         log('Updating task status to Success: %s', taskId);
         await ctx.asyncTaskModel.update(taskId, {
           status: AsyncTaskStatus.Success,
         });
 
-        log(
-          'Async image generation completed successfully: %s (total time: %d ms)',
-          taskId,
-          Date.now() - startTime,
-        );
+        log('Async image generation completed successfully: %s', taskId);
         return { success: true };
       };
 

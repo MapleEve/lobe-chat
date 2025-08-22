@@ -87,21 +87,12 @@ export class GenerationService {
     image: ImageForGeneration;
     thumbnailImage: ImageForGeneration;
   }> {
-    const transformStart = Date.now();
     log('Starting image transformation for:', url.startsWith('data:') ? 'base64 data' : url);
-    log('Using authentication headers:', headers ? 'yes' : 'no');
 
     // Fetch image buffer and MIME type using utility function
-    const fetchStart = Date.now();
-    log('Fetching image from URL...');
     const { buffer: originalImageBuffer, mimeType: originalMimeType } = await fetchImageFromUrl(
       url,
       headers,
-    );
-    log(
-      'Image fetched in %d ms, size: %d bytes',
-      Date.now() - fetchStart,
-      originalImageBuffer.length,
     );
 
     // Calculate hash for original image
@@ -137,7 +128,7 @@ export class GenerationService {
     // Calculate hash for thumbnail
     const thumbnailHash = sha256(thumbnailBuffer);
 
-    log('Image transformation completed successfully in %d ms', Date.now() - transformStart);
+    log('Image transformation completed successfully');
 
     // Determine extension using url utility
     let extension: string;

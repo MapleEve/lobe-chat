@@ -410,7 +410,7 @@ describe('GenerationService', () => {
       const url = 'https://example.com/image';
       vi.mocked(inferFileExtensionFromImageUrl).mockReturnValue('');
 
-      // Mock fetch for HTTP URL
+      // Mock fetch for HTTP URL - return a MIME type that can't be resolved to extension
       const mockArrayBuffer = mockOriginalBuffer.buffer.slice(
         mockOriginalBuffer.byteOffset,
         mockOriginalBuffer.byteOffset + mockOriginalBuffer.byteLength,
@@ -419,7 +419,7 @@ describe('GenerationService', () => {
         ok: true,
         status: 200,
         headers: {
-          get: vi.fn().mockReturnValue('image/jpeg'),
+          get: vi.fn().mockReturnValue('application/octet-stream'), // Changed to unresolvable MIME type
         },
         arrayBuffer: vi.fn().mockResolvedValue(mockArrayBuffer),
       });
