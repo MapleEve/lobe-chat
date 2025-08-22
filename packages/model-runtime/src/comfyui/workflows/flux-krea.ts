@@ -1,5 +1,6 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
 import { splitPromptForDualCLIP } from '../utils/prompt-splitter';
 import { selectOptimalWeightDtype } from '../utils/weight-dtype';
 
@@ -18,8 +19,8 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'DualCLIPLoader',
       inputs: {
-        clip_name1: 't5xxl_fp16.safetensors',
-        clip_name2: 'clip_l.safetensors',
+        clip_name1: FLUX_MODEL_CONFIG.CLIP.T5XXL,
+        clip_name2: FLUX_MODEL_CONFIG.CLIP.CLIP_L,
         type: 'flux',
       },
     },
@@ -54,7 +55,7 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'SaveImage',
       inputs: {
-        filename_prefix: 'LobeChat/%year%-%month%-%day%/FLUX_Krea',
+        filename_prefix: FLUX_MODEL_CONFIG.FILENAME_PREFIXES.KREA,
         images: ['11', 0],
       },
     },
@@ -64,7 +65,7 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'RandomNoise',
       inputs: {
-        noise_seed: params.seed ?? -1,
+        noise_seed: params.seed ?? WORKFLOW_DEFAULTS.NOISE.SEED,
       },
     },
     '2': {
@@ -83,7 +84,7 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'VAELoader',
       inputs: {
-        vae_name: 'ae.safetensors',
+        vae_name: FLUX_MODEL_CONFIG.VAE.DEFAULT,
       },
     },
     '4': {
@@ -92,10 +93,10 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'ModelSamplingFlux',
       inputs: {
-        height: params.height ?? 1024,
-        max_shift: 1.15,
+        height: params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
+        max_shift: WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT,
         model: ['2', 0],
-        width: params.width ?? 1024,
+        width: params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH,
       },
     },
     '5': {
@@ -112,7 +113,7 @@ export function buildFluxKreaWorkflow(
             t5xxl: t5xxlPrompt,
           };
         })(),
-        guidance: params.cfg ?? 1.5, // Krea使用较低引导获得更自然的摄影效果
+        guidance: params.cfg ?? WORKFLOW_DEFAULTS.KREA.CFG, // Krea使用较低引导获得更自然的摄影效果
       },
     },
     '6': {
@@ -122,7 +123,7 @@ export function buildFluxKreaWorkflow(
       class_type: 'FluxGuidance',
       inputs: {
         conditioning: ['5', 0],
-        guidance: params.cfg ?? 1.5, // 摄影美学优化的较低CFG
+        guidance: params.cfg ?? WORKFLOW_DEFAULTS.KREA.CFG, // 摄影美学优化的较低CFG
       },
     },
     '7': {
@@ -131,9 +132,9 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'EmptySD3LatentImage',
       inputs: {
-        batch_size: 1,
-        height: params.height ?? 1024,
-        width: params.width ?? 1024,
+        batch_size: WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE,
+        height: params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
+        width: params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH,
       },
     },
     '8': {
@@ -151,10 +152,10 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'BasicScheduler',
       inputs: {
-        denoise: 1,
+        denoise: WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
         model: ['4', 0],
         scheduler: params.scheduler ?? 'karras', // Karras调度器增强美学
-        steps: params.steps ?? 15, // Krea优化的较少步数
+        steps: params.steps ?? WORKFLOW_DEFAULTS.KREA.STEPS, // Krea优化的较少步数
       },
     },
   };

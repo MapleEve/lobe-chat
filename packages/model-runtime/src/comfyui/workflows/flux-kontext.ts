@@ -1,5 +1,6 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
 import { splitPromptForDualCLIP } from '../utils/prompt-splitter';
 import { selectOptimalWeightDtype } from '../utils/weight-dtype';
 
@@ -21,8 +22,8 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'DualCLIPLoader',
       inputs: {
-        clip_name1: 't5xxl_fp16.safetensors',
-        clip_name2: 'clip_l.safetensors',
+        clip_name1: FLUX_MODEL_CONFIG.CLIP.T5XXL,
+        clip_name2: FLUX_MODEL_CONFIG.CLIP.CLIP_L,
         type: 'flux',
       },
     },
@@ -57,7 +58,7 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'SaveImage',
       inputs: {
-        filename_prefix: 'LobeChat/%year%-%month%-%day%/FLUX_Kontext',
+        filename_prefix: FLUX_MODEL_CONFIG.FILENAME_PREFIXES.KONTEXT,
         images: ['11', 0],
       },
     },
@@ -67,7 +68,7 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'RandomNoise',
       inputs: {
-        noise_seed: params.seed ?? -1,
+        noise_seed: params.seed ?? WORKFLOW_DEFAULTS.NOISE.SEED,
       },
     },
     '2': {
@@ -86,7 +87,7 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'VAELoader',
       inputs: {
-        vae_name: 'ae.safetensors',
+        vae_name: FLUX_MODEL_CONFIG.VAE.DEFAULT,
       },
     },
     '4': {
@@ -95,10 +96,10 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'ModelSamplingFlux',
       inputs: {
-        height: params.height ?? 1024,
-        max_shift: 1.15,
+        height: params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
+        max_shift: WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT,
         model: ['2', 0],
-        width: params.width ?? 1024,
+        width: params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH,
       },
     },
     '5': {
@@ -115,7 +116,7 @@ export function buildFluxKontextWorkflow(
             t5xxl: t5xxlPrompt,
           };
         })(),
-        guidance: params.cfg ?? 3.5,
+        guidance: params.cfg ?? WORKFLOW_DEFAULTS.KONTEXT.CFG,
       },
     },
     '6': {
@@ -125,7 +126,7 @@ export function buildFluxKontextWorkflow(
       class_type: 'FluxGuidance',
       inputs: {
         conditioning: ['5', 0],
-        guidance: params.cfg ?? 3.5,
+        guidance: params.cfg ?? WORKFLOW_DEFAULTS.KONTEXT.CFG,
       },
     },
     '8': {
@@ -143,10 +144,10 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'BasicScheduler',
       inputs: {
-        denoise: params.denoise ?? (hasInputImage ? 0.75 : 1), // 图生图使用denoise控制编辑强度
+        denoise: params.denoise ?? (hasInputImage ? 0.75 : WORKFLOW_DEFAULTS.SAMPLING.DENOISE), // 图生图使用denoise控制编辑强度
         model: ['4', 0],
         scheduler: params.scheduler ?? 'karras',
-        steps: params.steps ?? 28,
+        steps: params.steps ?? WORKFLOW_DEFAULTS.KONTEXT.STEPS,
       },
     },
   };
@@ -181,9 +182,9 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'EmptySD3LatentImage',
       inputs: {
-        batch_size: 1,
-        height: params.height ?? 1024,
-        width: params.width ?? 1024,
+        batch_size: WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE,
+        height: params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
+        width: params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH,
       },
     };
   }

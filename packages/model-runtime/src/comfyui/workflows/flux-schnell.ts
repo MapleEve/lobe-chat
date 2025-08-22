@@ -1,5 +1,6 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
 import { splitPromptForDualCLIP } from '../utils/prompt-splitter';
 import { selectOptimalWeightDtype } from '../utils/weight-dtype';
 
@@ -18,8 +19,8 @@ export function buildFluxSchnellWorkflow(
       },
       class_type: 'DualCLIPLoader',
       inputs: {
-        clip_name1: 't5xxl_fp16.safetensors',
-        clip_name2: 'clip_l.safetensors',
+        clip_name1: FLUX_MODEL_CONFIG.CLIP.T5XXL,
+        clip_name2: FLUX_MODEL_CONFIG.CLIP.CLIP_L,
         type: 'flux',
       },
     },
@@ -39,7 +40,7 @@ export function buildFluxSchnellWorkflow(
       },
       class_type: 'VAELoader',
       inputs: {
-        vae_name: 'ae.safetensors',
+        vae_name: FLUX_MODEL_CONFIG.VAE.DEFAULT,
       },
     },
     '4': {
@@ -56,7 +57,7 @@ export function buildFluxSchnellWorkflow(
             t5xxl: t5xxlPrompt,
           };
         })(),
-        guidance: 1,
+        guidance: WORKFLOW_DEFAULTS.SCHNELL.CFG, // Schnell 使用 CFG 1
       },
     },
     '5': {
@@ -65,9 +66,9 @@ export function buildFluxSchnellWorkflow(
       },
       class_type: 'EmptySD3LatentImage',
       inputs: {
-        batch_size: 1,
-        height: params.height ?? 1024,
-        width: params.width ?? 1024,
+        batch_size: WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE,
+        height: params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
+        width: params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH,
       },
     },
     '6': {
@@ -82,10 +83,10 @@ export function buildFluxSchnellWorkflow(
         model: ['2', 0],
         negative: ['4', 0],
         positive: ['4', 0],
-        sampler_name: params.samplerName ?? 'euler',
-        scheduler: params.scheduler ?? 'simple',
-        seed: params.seed ?? -1,
-        steps: params.steps ?? 4,
+        sampler_name: params.samplerName ?? WORKFLOW_DEFAULTS.SAMPLING.SAMPLER,
+        scheduler: params.scheduler ?? WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER,
+        seed: params.seed ?? WORKFLOW_DEFAULTS.NOISE.SEED,
+        steps: params.steps ?? WORKFLOW_DEFAULTS.SCHNELL.STEPS,
       },
     },
     '7': {
@@ -104,7 +105,7 @@ export function buildFluxSchnellWorkflow(
       },
       class_type: 'SaveImage',
       inputs: {
-        filename_prefix: 'LobeChat/%year%-%month%-%day%/FLUX_Schnell',
+        filename_prefix: FLUX_MODEL_CONFIG.FILENAME_PREFIXES.SCHNELL,
         images: ['7', 0],
       },
     },
