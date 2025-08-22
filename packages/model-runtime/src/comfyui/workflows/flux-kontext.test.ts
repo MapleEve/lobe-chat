@@ -7,8 +7,8 @@ import { buildFluxKontextWorkflow } from './flux-kontext';
 // Mock the utility functions
 vi.mock('../utils/prompt-splitter', () => ({
   splitPromptForDualCLIP: vi.fn((prompt: string) => ({
-    t5xxlPrompt: prompt,
     clipLPrompt: prompt,
+    t5xxlPrompt: prompt,
   })),
 }));
 
@@ -16,13 +16,19 @@ vi.mock('../utils/weight-dtype', () => ({
   selectOptimalWeightDtype: vi.fn(() => 'default'),
 }));
 
-// Mock PromptBuilder - capture constructor arguments for test access
+// Mock PromptBuilder and seed function - capture constructor arguments for test access
 vi.mock('@saintno/comfyui-sdk', () => ({
   PromptBuilder: vi.fn().mockImplementation((workflow, inputs, outputs) => {
-    return {
+    // Store the workflow reference so modifications are reflected
+    const mockInstance = {
+      input: vi.fn().mockReturnThis(),
+      setInputNode: vi.fn().mockReturnThis(),
       setOutputNode: vi.fn().mockReturnThis(),
+      workflow, // Expose the workflow for testing
     };
+    return mockInstance;
   }),
+  seed: vi.fn(() => 42),
 }));
 
 describe('buildFluxKontextWorkflow', () => {
@@ -63,11 +69,11 @@ describe('buildFluxKontextWorkflow', () => {
   it('should create workflow with custom parameters', () => {
     const modelName = 'custom_flux_kontext.safetensors';
     const params = {
-      prompt: 'Custom prompt',
-      width: 512,
+      cfg: 4,
       height: 768,
+      prompt: 'Custom prompt',
       steps: 25,
-      cfg: 4.0,
+      width: 512,
     };
 
     buildFluxKontextWorkflow(modelName, params);
@@ -79,9 +85,9 @@ describe('buildFluxKontextWorkflow', () => {
   it('should handle image-to-image parameters', () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      prompt: 'test',
-      image: 'input_image.png',
       denoise: 0.8,
+      image: 'input_image.png',
+      prompt: 'test',
     };
 
     buildFluxKontextWorkflow(modelName, params);
@@ -93,8 +99,8 @@ describe('buildFluxKontextWorkflow', () => {
   it('should support img2img workflow', () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      prompt: 'test',
       image: 'test.png',
+      prompt: 'test',
     };
 
     buildFluxKontextWorkflow(modelName, params);
@@ -176,8 +182,8 @@ describe('buildFluxKontextWorkflow', () => {
   it('should support vision capabilities', () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      prompt: 'test',
       image: 'input.jpg',
+      prompt: 'test',
     };
 
     buildFluxKontextWorkflow(modelName, params);
@@ -192,9 +198,9 @@ describe('buildFluxKontextWorkflow', () => {
   it('should create image-to-image workflow with imageUrl parameter', () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      prompt: 'Transform this image into a painting',
-      imageUrl: 'https://example.com/image.jpg',
       denoise: 0.8,
+      imageUrl: 'https://example.com/image.jpg',
+      prompt: 'Transform this image into a painting',
     };
 
     buildFluxKontextWorkflow(modelName, params);
@@ -229,9 +235,9 @@ describe('buildFluxKontextWorkflow', () => {
   it('should create image-to-image workflow with imageUrls array parameter', () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      prompt: 'Apply artistic style',
-      imageUrls: ['https://example.com/first.jpg', 'https://example.com/second.jpg'],
       denoise: 0.65,
+      imageUrls: ['https://example.com/first.jpg', 'https://example.com/second.jpg'],
+      prompt: 'Apply artistic style',
     };
 
     buildFluxKontextWorkflow(modelName, params);
@@ -265,8 +271,8 @@ describe('buildFluxKontextWorkflow', () => {
   it('should use default denoise value for image-to-image when not provided', () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      prompt: 'Edit image',
       imageUrl: 'https://example.com/test.png',
+      prompt: 'Edit image',
     };
 
     buildFluxKontextWorkflow(modelName, params);
@@ -284,9 +290,9 @@ describe('buildFluxKontextWorkflow', () => {
   it('should create text-to-image workflow when no image parameters provided', () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
+      height: 1024,
       prompt: 'Generate a new image',
       width: 1024,
-      height: 1024,
     };
 
     buildFluxKontextWorkflow(modelName, params);

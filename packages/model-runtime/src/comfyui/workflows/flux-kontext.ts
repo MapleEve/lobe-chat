@@ -144,7 +144,7 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'BasicScheduler',
       inputs: {
-        denoise: WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
+        denoise: hasInputImage ? (params.denoise ?? 0.75) : WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
         model: ['4', 0],
         scheduler: 'karras',
         steps: WORKFLOW_DEFAULTS.KONTEXT.STEPS,
@@ -160,7 +160,7 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'LoadImage',
       inputs: {
-        image: '', // 将通过SDK映射设置
+        image: params.imageUrl || params.imageUrls?.[0] || '', // 直接设置图像URL
       },
     };
 
