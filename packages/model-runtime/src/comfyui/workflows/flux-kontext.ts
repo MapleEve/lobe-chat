@@ -1,5 +1,7 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
+import { generateUniqueSeeds } from '@/utils/number';
+
 import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
 import { splitPromptForDualCLIP } from '../utils/prompt-splitter';
 import { selectOptimalWeightDtype } from '../utils/weight-dtype';
@@ -33,6 +35,7 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'SamplerCustomAdvanced',
       inputs: {
+        guider: ['6', 0], // Required parameter - use FluxGuidance output
         latent_image: hasInputImage ? ['img_encode', 0] : ['7', 0], // 根据是否有输入图像选择latent来源
         model: ['4', 0],
         negative: ['6', 0],
@@ -96,6 +99,7 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'ModelSamplingFlux',
       inputs: {
+        base_shift: 0.5, // Required parameter for FLUX models
         height: WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
         max_shift: WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT,
         model: ['2', 0],
@@ -120,8 +124,9 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'FluxGuidance',
       inputs: {
-        conditioning: ['5', 0],
+        // FluxGuidance接收positive输入，输出GUIDER类型
         guidance: WORKFLOW_DEFAULTS.KONTEXT.CFG,
+        positive: ['5', 0],
       },
     },
     '8': {
@@ -196,19 +201,22 @@ export function buildFluxKontextWorkflow(
   builder.setOutputNode('images', '12');
 
   // 添加setInputNode映射 - 修复SDK链式调用bug，改为分开调用
+  // Note: Each parameter can only be mapped to one node path with setInputNode
   builder.setInputNode('seed', '13.inputs.noise_seed');
-  builder.setInputNode('width', '4.inputs.width');
-  builder.setInputNode('height', '4.inputs.height');
   builder.setInputNode('steps', '9.inputs.steps');
-  builder.setInputNode('cfg', '5.inputs.guidance');
-  builder.setInputNode('cfg', '6.inputs.guidance');
+  builder.setInputNode('cfg', '6.inputs.guidance'); // Use FluxGuidance as primary
   builder.setInputNode('prompt_clip_l', '5.inputs.clip_l');
   builder.setInputNode('prompt_t5xxl', '5.inputs.t5xxl');
 
-  // 文生图模式下的额外映射
+  // Map width/height to the appropriate node based on mode
   if (!hasInputImage) {
+    // Text-to-image mode: Use EmptySD3LatentImage as primary (node '7' is guaranteed to exist)
     builder.setInputNode('width', '7.inputs.width');
     builder.setInputNode('height', '7.inputs.height');
+  } else {
+    // Image-to-image mode: Use ModelSamplingFlux as primary (node '4' always exists)
+    builder.setInputNode('width', '4.inputs.width');
+    builder.setInputNode('height', '4.inputs.height');
   }
 
   // 图生图模式下的额外映射
@@ -223,15 +231,35 @@ export function buildFluxKontextWorkflow(
   // 处理prompt分离
   const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
 
-  // 设置输入值
+  // Apply input values to workflow
+  const width = params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH;
+  const height = params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT;
+  const cfg = params.cfg ?? WORKFLOW_DEFAULTS.KONTEXT.CFG;
+
+  // Manually set values for nodes that need the same parameters (since setInputNode can only map one-to-one)
+  workflow['5'].inputs.guidance = cfg; // CLIPTextEncodeFlux needs guidance
+
+  if (!hasInputImage) {
+    // Text-to-image mode: ModelSamplingFlux needs width/height (EmptySD3LatentImage will get it via setInputNode)
+    workflow['4'].inputs.width = width;
+    workflow['4'].inputs.height = height;
+  } else {
+    // Image-to-image mode: EmptySD3LatentImage needs width/height (ModelSamplingFlux will get it via setInputNode)
+    if (workflow['7']) {
+      workflow['7'].inputs.width = width;
+      workflow['7'].inputs.height = height;
+    }
+  }
+
+  // 设置输入值 (these will be applied to nodes mapped via setInputNode)
   builder
     .input('prompt_clip_l', clipLPrompt)
     .input('prompt_t5xxl', t5xxlPrompt)
-    .input('width', params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH)
-    .input('height', params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT)
+    .input('width', width)
+    .input('height', height)
     .input('steps', params.steps ?? WORKFLOW_DEFAULTS.KONTEXT.STEPS)
-    .input('cfg', params.cfg ?? WORKFLOW_DEFAULTS.KONTEXT.CFG)
-    .input('seed', params.seed ?? WORKFLOW_DEFAULTS.NOISE.SEED);
+    .input('cfg', cfg)
+    .input('seed', params.seed ?? generateUniqueSeeds(1)[0]);
 
   if (hasInputImage) {
     builder

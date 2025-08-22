@@ -1,5 +1,7 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
+import { generateUniqueSeeds } from '@/utils/number';
+
 import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
 import { splitPromptForDualCLIP } from '../utils/prompt-splitter';
 import { selectOptimalWeightDtype } from '../utils/weight-dtype';
@@ -30,6 +32,7 @@ export function buildFluxDevWorkflow(
       },
       class_type: 'SamplerCustomAdvanced',
       inputs: {
+        guider: ['6', 0], // Required parameter - use FluxGuidance output
         latent_image: ['7', 0],
         model: ['4', 0],
         negative: ['6', 0],
@@ -93,6 +96,7 @@ export function buildFluxDevWorkflow(
       },
       class_type: 'ModelSamplingFlux',
       inputs: {
+        base_shift: 0.5, // Required parameter for FLUX models
         height: WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
         max_shift: WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT,
         model: ['2', 0],
@@ -117,8 +121,9 @@ export function buildFluxDevWorkflow(
       },
       class_type: 'FluxGuidance',
       inputs: {
-        conditioning: ['5', 0],
+        // FluxGuidance接收positive输入，输出GUIDER类型
         guidance: WORKFLOW_DEFAULTS.SAMPLING.CFG,
+        positive: ['5', 0],
       },
     },
     '7': {
@@ -166,29 +171,38 @@ export function buildFluxDevWorkflow(
   builder.setOutputNode('images', '12');
 
   // 添加setInputNode映射 - 修复SDK链式调用bug，改为分开调用
+  // Note: Each parameter can only be mapped to one node path with setInputNode
+  // We use the primary node for each parameter, other nodes get values via workflow definition
   builder.setInputNode('prompt_clip_l', '5.inputs.clip_l');
   builder.setInputNode('prompt_t5xxl', '5.inputs.t5xxl');
   builder.setInputNode('seed', '13.inputs.noise_seed');
-  builder.setInputNode('width', '4.inputs.width');
-  builder.setInputNode('width', '7.inputs.width');
-  builder.setInputNode('height', '4.inputs.height');
-  builder.setInputNode('height', '7.inputs.height');
+  builder.setInputNode('width', '7.inputs.width'); // Use EmptySD3LatentImage as primary
+  builder.setInputNode('height', '7.inputs.height'); // Use EmptySD3LatentImage as primary
   builder.setInputNode('steps', '9.inputs.steps');
-  builder.setInputNode('cfg', '5.inputs.guidance');
-  builder.setInputNode('cfg', '6.inputs.guidance');
+  builder.setInputNode('cfg', '6.inputs.guidance'); // Use FluxGuidance as primary
 
   // 处理prompt分离
   const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
 
-  // 设置输入值
+  // Apply input values to workflow
+  const width = params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH;
+  const height = params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT;
+  const cfg = params.cfg ?? WORKFLOW_DEFAULTS.SAMPLING.CFG;
+
+  // Set shared values directly to avoid conflicts with setInputNode mappings
+  workflow['4'].inputs.width = width; // ModelSamplingFlux needs width/height (not mapped via setInputNode)
+  workflow['4'].inputs.height = height;
+  workflow['5'].inputs.guidance = cfg; // CLIPTextEncodeFlux needs guidance (not mapped via setInputNode)
+
+  // 设置输入值 (these will be applied to nodes mapped via setInputNode)
   builder
     .input('prompt_clip_l', clipLPrompt)
     .input('prompt_t5xxl', t5xxlPrompt)
-    .input('width', params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH)
-    .input('height', params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT)
+    .input('width', width) // Applied to node '7' (EmptySD3LatentImage)
+    .input('height', height) // Applied to node '7' (EmptySD3LatentImage)
     .input('steps', params.steps ?? WORKFLOW_DEFAULTS.SAMPLING.STEPS)
-    .input('cfg', params.cfg ?? WORKFLOW_DEFAULTS.SAMPLING.CFG)
-    .input('seed', params.seed ?? WORKFLOW_DEFAULTS.NOISE.SEED);
+    .input('cfg', cfg) // Applied to node '6' (FluxGuidance)
+    .input('seed', params.seed ?? generateUniqueSeeds(1)[0]);
 
   return builder;
 }

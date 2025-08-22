@@ -1,5 +1,7 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
+import { generateUniqueSeeds } from '@/utils/number';
+
 import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
 import { splitPromptForDualCLIP } from '../utils/prompt-splitter';
 import { selectOptimalWeightDtype } from '../utils/weight-dtype';
@@ -109,7 +111,7 @@ export function buildFluxSchnellWorkflow(
   // 创建 PromptBuilder
   const builder = new PromptBuilder(
     workflow,
-    ['prompt_clip_l', 'prompt_t5xxl', 'width', 'height', 'steps', 'seed'],
+    ['prompt_clip_l', 'prompt_t5xxl', 'width', 'height', 'steps', 'cfg', 'seed'],
     ['images'],
   );
 
@@ -121,6 +123,7 @@ export function buildFluxSchnellWorkflow(
   builder.setInputNode('width', '5.inputs.width');
   builder.setInputNode('height', '5.inputs.height');
   builder.setInputNode('steps', '6.inputs.steps');
+  builder.setInputNode('cfg', '6.inputs.cfg');
   builder.setInputNode('prompt_clip_l', '4.inputs.clip_l');
   builder.setInputNode('prompt_t5xxl', '4.inputs.t5xxl');
 
@@ -134,7 +137,8 @@ export function buildFluxSchnellWorkflow(
     .input('width', params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH)
     .input('height', params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT)
     .input('steps', params.steps ?? WORKFLOW_DEFAULTS.SCHNELL.STEPS)
-    .input('seed', params.seed ?? WORKFLOW_DEFAULTS.NOISE.SEED);
+    .input('cfg', params.cfg ?? WORKFLOW_DEFAULTS.SCHNELL.CFG)
+    .input('seed', params.seed ?? generateUniqueSeeds(1)[0]);
 
   return builder;
 }
