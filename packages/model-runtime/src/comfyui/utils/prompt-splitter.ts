@@ -1,3 +1,5 @@
+import { getAllStyleKeywords } from '../constants';
+
 /**
  * FLUX 双CLIP提示词智能分割工具
  * 将单一prompt分离为T5-XXL和CLIP-L的不同输入
@@ -12,79 +14,8 @@ export function splitPromptForDualCLIP(prompt: string): {
     return { clipLPrompt: '', t5xxlPrompt: '' };
   }
 
-  // 风格关键词库（涵盖摄影、艺术、质量、光照等）
-  const styleKeywords = [
-    // 艺术风格
-    'photorealistic',
-    'photo realistic',
-    'realistic',
-    'anime',
-    'cartoon',
-    'oil painting',
-    'watercolor',
-    'sketch',
-    'digital art',
-    '3d render',
-    'pixel art',
-    'manga',
-    'cinematic',
-
-    // 光照效果
-    'dramatic lighting',
-    'soft lighting',
-    'studio lighting',
-    'golden hour',
-    'neon lights',
-    'rim lighting',
-    'volumetric lighting',
-    'natural lighting',
-    'warm lighting',
-    'cold lighting',
-
-    // 质量描述
-    'high quality',
-    'best quality',
-    '4k',
-    '8k',
-    'ultra detailed',
-    'highly detailed',
-    'masterpiece',
-    'professional',
-    'sharp focus',
-    'detailed',
-    'intricate',
-
-    // 摄影术语
-    'depth of field',
-    'bokeh',
-    'motion blur',
-    'film grain',
-    'macro',
-    'wide angle',
-    'telephoto',
-    'portrait',
-    'landscape',
-    'close-up',
-    'dof',
-
-    // 艺术家和平台
-    'by greg rutkowski',
-    'by artgerm',
-    'trending on artstation',
-    'concept art',
-    'illustration',
-    'artwork',
-    'painting',
-
-    // 渲染和效果
-    'octane render',
-    'unreal engine',
-    'ray tracing',
-    'global illumination',
-    'subsurface scattering',
-    'bloom',
-    'lens flare',
-  ];
+  // 使用框架配置的风格关键词库
+  const styleKeywords = getAllStyleKeywords();
 
   // 分离风格关键词
   const words = prompt.toLowerCase().split(/[\s,]+/);
@@ -133,19 +64,7 @@ export function splitPromptForDualCLIP(prompt: string): {
     };
   }
 
-  // 无风格词时的fallback：提取形容词
-  const adjectives = originalWords.filter((word) =>
-    /ly$|ful$|ous$|ive$|ing$|ed$|al$|ic$/.test(word.toLowerCase()),
-  );
-
-  if (adjectives.length > 0) {
-    return {
-      clipLPrompt: adjectives.join(' '),
-      t5xxlPrompt: prompt,
-    };
-  }
-
-  // 最终fallback：相同prompt（保证兼容性）
+  // 无风格词时的fallback：相同prompt（保证兼容性）
   return {
     clipLPrompt: prompt,
     t5xxlPrompt: prompt,
