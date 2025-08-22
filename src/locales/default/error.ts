@@ -152,6 +152,9 @@ export default {
     ComfyUIServiceUnavailable:
       'ComfyUI 服务连接失败，请检查 ComfyUI 是否运行正常，或检查服务地址配置是否正确',
     ComfyUIEmptyResult: 'ComfyUI 未生成任何图像，请检查模型配置或重试',
+    ComfyUIUploadFailed: 'ComfyUI 图片上传失败，请检查服务器连接或重试',
+    ComfyUIWorkflowError: 'ComfyUI 工作流执行失败，请检查工作流配置',
+    ComfyUIModelError: 'ComfyUI 模型加载失败，请检查模型文件是否存在',
 
     AgentRuntimeError: 'Lobe AI Runtime 执行出错，请根据以下信息排查或重试',
 
