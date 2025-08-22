@@ -7,8 +7,8 @@ import { buildFluxKreaWorkflow } from './flux-krea';
 // Mock the utility functions
 vi.mock('../utils/prompt-splitter', () => ({
   splitPromptForDualCLIP: vi.fn((prompt: string) => ({
-    t5xxlPrompt: prompt,
     clipLPrompt: prompt,
+    t5xxlPrompt: prompt,
   })),
 }));
 
@@ -16,13 +16,19 @@ vi.mock('../utils/weight-dtype', () => ({
   selectOptimalWeightDtype: vi.fn(() => 'default'),
 }));
 
-// Mock PromptBuilder - capture constructor arguments for test access
+// Mock PromptBuilder and seed function - capture constructor arguments for test access
 vi.mock('@saintno/comfyui-sdk', () => ({
   PromptBuilder: vi.fn().mockImplementation((workflow, inputs, outputs) => {
-    return {
+    // Store the workflow reference so modifications are reflected
+    const mockInstance = {
+      input: vi.fn().mockReturnThis(),
+      setInputNode: vi.fn().mockReturnThis(),
       setOutputNode: vi.fn().mockReturnThis(),
+      workflow, // Expose the workflow for testing
     };
+    return mockInstance;
   }),
+  seed: vi.fn(() => 42),
 }));
 
 describe('buildFluxKreaWorkflow', () => {
@@ -63,11 +69,11 @@ describe('buildFluxKreaWorkflow', () => {
   it('should create workflow with custom parameters', () => {
     const modelName = 'custom_flux_krea.safetensors';
     const params = {
-      prompt: 'Custom prompt',
-      width: 512,
-      height: 768,
-      steps: 18,
       cfg: 2.5,
+      height: 768,
+      prompt: 'Custom prompt',
+      steps: 18,
+      width: 512,
     };
 
     buildFluxKreaWorkflow(modelName, params);

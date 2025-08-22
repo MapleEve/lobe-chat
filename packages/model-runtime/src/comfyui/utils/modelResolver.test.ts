@@ -69,6 +69,9 @@ describe('ComfyUIModelResolver', () => {
 
       (mockComfyApi.fetchApi as Mock).mockResolvedValue({
         json: () => Promise.resolve(mockObjectInfo),
+        ok: true,
+        status: 200,
+        statusText: 'OK',
       });
 
       const result = await resolver.getAvailableModelFiles();
@@ -85,6 +88,9 @@ describe('ComfyUIModelResolver', () => {
 
       (mockComfyApi.fetchApi as Mock).mockResolvedValue({
         json: () => Promise.resolve(mockObjectInfo),
+        ok: true,
+        status: 200,
+        statusText: 'OK',
       });
 
       await expect(resolver.getAvailableModelFiles()).rejects.toMatchObject({
@@ -103,6 +109,9 @@ describe('ComfyUIModelResolver', () => {
 
       (mockComfyApi.fetchApi as Mock).mockResolvedValue({
         json: () => Promise.resolve(mockObjectInfo),
+        ok: true,
+        status: 200,
+        statusText: 'OK',
       });
 
       await expect(resolver.getAvailableModelFiles()).rejects.toMatchObject({
@@ -113,9 +122,8 @@ describe('ComfyUIModelResolver', () => {
     it('should throw error when fetch fails', async () => {
       (mockComfyApi.fetchApi as Mock).mockRejectedValue(new Error('Network error'));
 
-      await expect(resolver.getAvailableModelFiles()).rejects.toMatchObject({
-        errorType: AgentRuntimeErrorType.ModelNotFound,
-      });
+      // Network errors should be re-thrown as-is, not wrapped as ModelNotFound
+      await expect(resolver.getAvailableModelFiles()).rejects.toThrow('Network error');
     });
 
     it('should throw error for malformed checkpoint loader structure', async () => {
@@ -131,6 +139,9 @@ describe('ComfyUIModelResolver', () => {
 
       (mockComfyApi.fetchApi as Mock).mockResolvedValue({
         json: () => Promise.resolve(mockObjectInfo),
+        ok: true,
+        status: 200,
+        statusText: 'OK',
       });
 
       await expect(resolver.getAvailableModelFiles()).rejects.toMatchObject({
@@ -184,6 +195,9 @@ describe('ComfyUIModelResolver', () => {
 
       (mockComfyApi.fetchApi as Mock).mockResolvedValue({
         json: () => Promise.resolve(mockObjectInfo),
+        ok: true,
+        status: 200,
+        statusText: 'OK',
       });
     });
 
@@ -216,6 +230,9 @@ describe('ComfyUIModelResolver', () => {
 
       (mockComfyApi.fetchApi as Mock).mockResolvedValue({
         json: () => Promise.resolve(mockObjectInfo),
+        ok: true,
+        status: 200,
+        statusText: 'OK',
       });
 
       const result = await resolver.resolveModelFileName('comfyui/unknown-model');
@@ -246,25 +263,26 @@ describe('ComfyUIModelResolver', () => {
 
       (mockComfyApi.fetchApi as Mock).mockResolvedValue({
         json: () => Promise.resolve(mockObjectInfo),
+        ok: true,
+        status: 200,
+        statusText: 'OK',
       });
 
       await expect(resolver.resolveModelFileName('comfyui/unknown-model')).rejects.toMatchObject({
-        errorType: AgentRuntimeErrorType.ModelNotFound,
         error: {
           model: 'comfyui/unknown-model',
         },
+        errorType: AgentRuntimeErrorType.ModelNotFound,
       });
     });
 
     it('should throw ModelNotFound error when fetch fails', async () => {
       (mockComfyApi.fetchApi as Mock).mockRejectedValue(new Error('Network error'));
 
-      await expect(resolver.resolveModelFileName('comfyui/flux-dev')).rejects.toMatchObject({
-        errorType: AgentRuntimeErrorType.ModelNotFound,
-        error: {
-          model: 'Failed to fetch models from ComfyUI server',
-        },
-      });
+      // Network errors should be re-thrown as-is, not wrapped as ModelNotFound
+      await expect(resolver.resolveModelFileName('comfyui/flux-dev')).rejects.toThrow(
+        'Network error',
+      );
     });
 
     it('should handle different file extensions correctly', async () => {
@@ -280,6 +298,9 @@ describe('ComfyUIModelResolver', () => {
 
       (mockComfyApi.fetchApi as Mock).mockResolvedValue({
         json: () => Promise.resolve(mockObjectInfo),
+        ok: true,
+        status: 200,
+        statusText: 'OK',
       });
 
       const result = await resolver.resolveModelFileName('comfyui/model');
@@ -300,6 +321,9 @@ describe('ComfyUIModelResolver', () => {
 
       (mockComfyApi.fetchApi as Mock).mockResolvedValue({
         json: () => Promise.resolve(mockObjectInfo),
+        ok: true,
+        status: 200,
+        statusText: 'OK',
       });
 
       const result = await resolver.resolveModelFileName('comfyui/flux-10-dev-v2-final');
@@ -311,11 +335,12 @@ describe('ComfyUIModelResolver', () => {
     it('should throw error for malformed JSON response', async () => {
       (mockComfyApi.fetchApi as Mock).mockResolvedValue({
         json: () => Promise.reject(new Error('Invalid JSON')),
+        ok: true,
+        status: 200,
+        statusText: 'OK',
       });
 
-      await expect(resolver.getAvailableModelFiles()).rejects.toMatchObject({
-        errorType: AgentRuntimeErrorType.ModelNotFound,
-      });
+      await expect(resolver.getAvailableModelFiles()).rejects.toThrow('Invalid JSON');
     });
 
     it('should throw error for undefined checkpoint loader input', async () => {
@@ -327,6 +352,9 @@ describe('ComfyUIModelResolver', () => {
 
       (mockComfyApi.fetchApi as Mock).mockResolvedValue({
         json: () => Promise.resolve(mockObjectInfo),
+        ok: true,
+        status: 200,
+        statusText: 'OK',
       });
 
       await expect(resolver.getAvailableModelFiles()).rejects.toMatchObject({

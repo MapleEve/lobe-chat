@@ -56,10 +56,10 @@ describe('selectOptimalWeightDtype', () => {
     expect(selectOptimalWeightDtype('FLUX_INT4_MODEL.safetensors', {})).toBe('int4');
   });
 
-  it('should return auto for GGUF format', () => {
-    expect(selectOptimalWeightDtype('flux_model.gguf', {})).toBe('auto');
-    expect(selectOptimalWeightDtype('FLUX_MODEL.GGUF', {})).toBe('auto');
-    expect(selectOptimalWeightDtype('flux_dev_q4_0.gguf', {})).toBe('auto');
+  it('should return default for GGUF format', () => {
+    expect(selectOptimalWeightDtype('flux_model.gguf', {})).toBe('default');
+    expect(selectOptimalWeightDtype('FLUX_MODEL.GGUF', {})).toBe('default');
+    expect(selectOptimalWeightDtype('flux_dev_q4_0.gguf', {})).toBe('default');
   });
 
   it('should optimize Schnell models for speed with fp8_e4m3fn', () => {
@@ -67,25 +67,25 @@ describe('selectOptimalWeightDtype', () => {
     expect(selectOptimalWeightDtype('FLUX_SCHNELL_MODEL.safetensors', {})).toBe('fp8_e4m3fn');
   });
 
-  it('should use auto for Dev models for quality', () => {
-    expect(selectOptimalWeightDtype('flux_dev.safetensors', {})).toBe('auto');
-    expect(selectOptimalWeightDtype('FLUX_DEV_MODEL.safetensors', {})).toBe('auto');
+  it('should use default for Dev models for quality', () => {
+    expect(selectOptimalWeightDtype('flux_dev.safetensors', {})).toBe('default');
+    expect(selectOptimalWeightDtype('FLUX_DEV_MODEL.safetensors', {})).toBe('default');
   });
 
-  it('should use auto for Krea models for quality', () => {
-    expect(selectOptimalWeightDtype('flux_krea.safetensors', {})).toBe('auto');
-    expect(selectOptimalWeightDtype('FLUX_KREA_MODEL.safetensors', {})).toBe('auto');
+  it('should use default for Krea models for quality', () => {
+    expect(selectOptimalWeightDtype('flux_krea.safetensors', {})).toBe('default');
+    expect(selectOptimalWeightDtype('FLUX_KREA_MODEL.safetensors', {})).toBe('default');
   });
 
-  it('should use auto for Kontext models for quality', () => {
-    expect(selectOptimalWeightDtype('flux_kontext.safetensors', {})).toBe('auto');
-    expect(selectOptimalWeightDtype('FLUX_KONTEXT_MODEL.safetensors', {})).toBe('auto');
+  it('should use default for Kontext models for quality', () => {
+    expect(selectOptimalWeightDtype('flux_kontext.safetensors', {})).toBe('default');
+    expect(selectOptimalWeightDtype('FLUX_KONTEXT_MODEL.safetensors', {})).toBe('default');
   });
 
-  it('should return auto as default for unknown models', () => {
-    expect(selectOptimalWeightDtype('unknown_model.safetensors', {})).toBe('auto');
-    expect(selectOptimalWeightDtype('custom_flux.bin', {})).toBe('auto');
-    expect(selectOptimalWeightDtype('model.pt', {})).toBe('auto');
+  it('should return default as default for unknown models', () => {
+    expect(selectOptimalWeightDtype('unknown_model.safetensors', {})).toBe('default');
+    expect(selectOptimalWeightDtype('custom_flux.bin', {})).toBe('default');
+    expect(selectOptimalWeightDtype('model.pt', {})).toBe('default');
   });
 
   it('should prioritize user specification over model-based detection', () => {
@@ -110,12 +110,12 @@ describe('selectOptimalWeightDtype', () => {
   });
 
   it('should handle empty params object', () => {
-    expect(selectOptimalWeightDtype('flux_model.safetensors', {})).toBe('auto');
+    expect(selectOptimalWeightDtype('flux_model.safetensors', {})).toBe('default');
   });
 
   it('should handle null/undefined params', () => {
-    expect(selectOptimalWeightDtype('flux_model.safetensors', null)).toBe('auto');
-    expect(selectOptimalWeightDtype('flux_model.safetensors', undefined)).toBe('auto');
+    expect(selectOptimalWeightDtype('flux_model.safetensors', null)).toBe('default');
+    expect(selectOptimalWeightDtype('flux_model.safetensors', undefined)).toBe('default');
   });
 
   it('should be case-insensitive for all detections', () => {
@@ -125,8 +125,8 @@ describe('selectOptimalWeightDtype', () => {
   });
 
   it('should handle edge cases with file extensions', () => {
-    expect(selectOptimalWeightDtype('flux_model', {})).toBe('auto');
-    expect(selectOptimalWeightDtype('flux_model.', {})).toBe('auto');
-    expect(selectOptimalWeightDtype('.gguf', {})).toBe('auto');
+    expect(selectOptimalWeightDtype('flux_model', {})).toBe('default');
+    expect(selectOptimalWeightDtype('flux_model.', {})).toBe('default');
+    expect(selectOptimalWeightDtype('.gguf', {})).toBe('default');
   });
 });
