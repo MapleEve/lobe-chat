@@ -65,7 +65,7 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'RandomNoise',
       inputs: {
-        noise_seed: params.seed ?? WORKFLOW_DEFAULTS.NOISE.SEED,
+        noise_seed: WORKFLOW_DEFAULTS.NOISE.SEED,
       },
     },
     '2': {
@@ -93,10 +93,10 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'ModelSamplingFlux',
       inputs: {
-        height: params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
+        height: WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
         max_shift: WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT,
         model: ['2', 0],
-        width: params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH,
+        width: WORKFLOW_DEFAULTS.IMAGE.WIDTH,
       },
     },
     '5': {
@@ -106,14 +106,9 @@ export function buildFluxKreaWorkflow(
       class_type: 'CLIPTextEncodeFlux',
       inputs: {
         clip: ['1', 0],
-        ...(() => {
-          const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
-          return {
-            clip_l: clipLPrompt,
-            t5xxl: t5xxlPrompt,
-          };
-        })(),
-        guidance: params.cfg ?? WORKFLOW_DEFAULTS.KREA.CFG, // Krea使用较低引导获得更自然的摄影效果
+        clip_l: '',
+        guidance: WORKFLOW_DEFAULTS.KREA.CFG,
+        t5xxl: '', // Krea使用较低引导获得更自然的摄影效果
       },
     },
     '6': {
@@ -123,7 +118,7 @@ export function buildFluxKreaWorkflow(
       class_type: 'FluxGuidance',
       inputs: {
         conditioning: ['5', 0],
-        guidance: params.cfg ?? WORKFLOW_DEFAULTS.KREA.CFG, // 摄影美学优化的较低CFG
+        guidance: WORKFLOW_DEFAULTS.KREA.CFG,
       },
     },
     '7': {
@@ -133,8 +128,8 @@ export function buildFluxKreaWorkflow(
       class_type: 'EmptySD3LatentImage',
       inputs: {
         batch_size: WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE,
-        height: params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
-        width: params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH,
+        height: WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
+        width: WORKFLOW_DEFAULTS.IMAGE.WIDTH,
       },
     },
     '8': {
@@ -143,7 +138,7 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'KSamplerSelect',
       inputs: {
-        sampler_name: params.samplerName ?? 'dpmpp_2m_sde', // 摄影纹理优化
+        sampler_name: 'dpmpp_2m_sde', // 摄影纹理优化
       },
     },
     '9': {
@@ -154,8 +149,8 @@ export function buildFluxKreaWorkflow(
       inputs: {
         denoise: WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
         model: ['4', 0],
-        scheduler: params.scheduler ?? 'karras', // Karras调度器增强美学
-        steps: params.steps ?? WORKFLOW_DEFAULTS.KREA.STEPS, // Krea优化的较少步数
+        scheduler: 'karras', // Karras调度器增强美学
+        steps: WORKFLOW_DEFAULTS.KREA.STEPS, // Krea优化的较少步数
       },
     },
   };
@@ -163,12 +158,37 @@ export function buildFluxKreaWorkflow(
   // 创建 PromptBuilder
   const builder = new PromptBuilder(
     workflow,
-    ['prompt', 'width', 'height', 'steps', 'cfg', 'seed'],
+    ['prompt_clip_l', 'prompt_t5xxl', 'width', 'height', 'steps', 'cfg', 'seed'],
     ['images'],
   );
 
   // 设置输出节点
   builder.setOutputNode('images', '12');
+
+  // 添加setInputNode映射 - 修复SDK链式调用bug，改为分开调用
+  builder.setInputNode('seed', '13.inputs.noise_seed');
+  builder.setInputNode('width', '4.inputs.width');
+  builder.setInputNode('width', '7.inputs.width');
+  builder.setInputNode('height', '4.inputs.height');
+  builder.setInputNode('height', '7.inputs.height');
+  builder.setInputNode('steps', '9.inputs.steps');
+  builder.setInputNode('cfg', '5.inputs.guidance');
+  builder.setInputNode('cfg', '6.inputs.guidance');
+  builder.setInputNode('prompt_clip_l', '5.inputs.clip_l');
+  builder.setInputNode('prompt_t5xxl', '5.inputs.t5xxl');
+
+  // 处理prompt分离
+  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
+
+  // 设置输入值
+  builder
+    .input('prompt_clip_l', clipLPrompt)
+    .input('prompt_t5xxl', t5xxlPrompt)
+    .input('width', params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH)
+    .input('height', params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT)
+    .input('steps', params.steps ?? WORKFLOW_DEFAULTS.KREA.STEPS)
+    .input('cfg', params.cfg ?? WORKFLOW_DEFAULTS.KREA.CFG)
+    .input('seed', params.seed ?? WORKFLOW_DEFAULTS.NOISE.SEED);
 
   return builder;
 }

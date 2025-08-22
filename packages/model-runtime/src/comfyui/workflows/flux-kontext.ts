@@ -68,7 +68,7 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'RandomNoise',
       inputs: {
-        noise_seed: params.seed ?? WORKFLOW_DEFAULTS.NOISE.SEED,
+        noise_seed: WORKFLOW_DEFAULTS.NOISE.SEED,
       },
     },
     '2': {
@@ -96,10 +96,10 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'ModelSamplingFlux',
       inputs: {
-        height: params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
+        height: WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
         max_shift: WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT,
         model: ['2', 0],
-        width: params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH,
+        width: WORKFLOW_DEFAULTS.IMAGE.WIDTH,
       },
     },
     '5': {
@@ -109,14 +109,9 @@ export function buildFluxKontextWorkflow(
       class_type: 'CLIPTextEncodeFlux',
       inputs: {
         clip: ['1', 0],
-        ...(() => {
-          const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
-          return {
-            clip_l: clipLPrompt,
-            t5xxl: t5xxlPrompt,
-          };
-        })(),
-        guidance: params.cfg ?? WORKFLOW_DEFAULTS.KONTEXT.CFG,
+        clip_l: '',
+        guidance: WORKFLOW_DEFAULTS.KONTEXT.CFG,
+        t5xxl: '',
       },
     },
     '6': {
@@ -126,7 +121,7 @@ export function buildFluxKontextWorkflow(
       class_type: 'FluxGuidance',
       inputs: {
         conditioning: ['5', 0],
-        guidance: params.cfg ?? WORKFLOW_DEFAULTS.KONTEXT.CFG,
+        guidance: WORKFLOW_DEFAULTS.KONTEXT.CFG,
       },
     },
     '8': {
@@ -135,7 +130,7 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'KSamplerSelect',
       inputs: {
-        sampler_name: params.samplerName ?? 'dpmpp_2m', // 图生图用普通DPM++（无SDE）
+        sampler_name: 'dpmpp_2m', // 图生图用普通DPM++（无SDE）
       },
     },
     '9': {
@@ -144,10 +139,10 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'BasicScheduler',
       inputs: {
-        denoise: params.denoise ?? (hasInputImage ? 0.75 : WORKFLOW_DEFAULTS.SAMPLING.DENOISE), // 图生图使用denoise控制编辑强度
+        denoise: WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
         model: ['4', 0],
-        scheduler: params.scheduler ?? 'karras',
-        steps: params.steps ?? WORKFLOW_DEFAULTS.KONTEXT.STEPS,
+        scheduler: 'karras',
+        steps: WORKFLOW_DEFAULTS.KONTEXT.STEPS,
       },
     },
   };
@@ -160,7 +155,7 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'LoadImage',
       inputs: {
-        image: params.imageUrl || params.imageUrls[0],
+        image: '', // 将通过SDK映射设置
       },
     };
 
@@ -183,14 +178,14 @@ export function buildFluxKontextWorkflow(
       class_type: 'EmptySD3LatentImage',
       inputs: {
         batch_size: WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE,
-        height: params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
-        width: params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH,
+        height: WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
+        width: WORKFLOW_DEFAULTS.IMAGE.WIDTH,
       },
     };
   }
 
   // 创建 PromptBuilder
-  const inputParams = ['prompt', 'width', 'height', 'steps', 'cfg', 'seed'];
+  const inputParams = ['prompt_clip_l', 'prompt_t5xxl', 'width', 'height', 'steps', 'cfg', 'seed'];
   if (hasInputImage) {
     inputParams.push('imageUrl', 'denoise');
   }
@@ -199,6 +194,53 @@ export function buildFluxKontextWorkflow(
 
   // 设置输出节点
   builder.setOutputNode('images', '12');
+
+  // 添加setInputNode映射 - 修复SDK链式调用bug，改为分开调用
+  builder.setInputNode('seed', '13.inputs.noise_seed');
+  builder.setInputNode('width', '4.inputs.width');
+  builder.setInputNode('height', '4.inputs.height');
+  builder.setInputNode('steps', '9.inputs.steps');
+  builder.setInputNode('cfg', '5.inputs.guidance');
+  builder.setInputNode('cfg', '6.inputs.guidance');
+  builder.setInputNode('prompt_clip_l', '5.inputs.clip_l');
+  builder.setInputNode('prompt_t5xxl', '5.inputs.t5xxl');
+
+  // 文生图模式下的额外映射
+  if (!hasInputImage) {
+    builder.setInputNode('width', '7.inputs.width');
+    builder.setInputNode('height', '7.inputs.height');
+  }
+
+  // 图生图模式下的额外映射
+  if (hasInputImage) {
+    builder.setInputNode('imageUrl', 'img_load.inputs.image');
+    builder.setInputNode('denoise', '9.inputs.denoise');
+  } else {
+    // 文生图模式下仍然需要denoise映射，但会使用默认值
+    builder.setInputNode('denoise', '9.inputs.denoise');
+  }
+
+  // 处理prompt分离
+  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
+
+  // 设置输入值
+  builder
+    .input('prompt_clip_l', clipLPrompt)
+    .input('prompt_t5xxl', t5xxlPrompt)
+    .input('width', params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH)
+    .input('height', params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT)
+    .input('steps', params.steps ?? WORKFLOW_DEFAULTS.KONTEXT.STEPS)
+    .input('cfg', params.cfg ?? WORKFLOW_DEFAULTS.KONTEXT.CFG)
+    .input('seed', params.seed ?? WORKFLOW_DEFAULTS.NOISE.SEED);
+
+  if (hasInputImage) {
+    builder
+      .input('imageUrl', params.imageUrl || params.imageUrls?.[0] || '')
+      .input('denoise', params.denoise ?? 0.75);
+  } else {
+    // 文生图模式使用默认denoise值
+    builder.input('denoise', params.denoise ?? WORKFLOW_DEFAULTS.SAMPLING.DENOISE);
+  }
 
   return builder;
 }

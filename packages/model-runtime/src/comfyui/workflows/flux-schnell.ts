@@ -50,14 +50,9 @@ export function buildFluxSchnellWorkflow(
       class_type: 'CLIPTextEncodeFlux',
       inputs: {
         clip: ['1', 0],
-        ...(() => {
-          const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
-          return {
-            clip_l: clipLPrompt,
-            t5xxl: t5xxlPrompt,
-          };
-        })(),
-        guidance: WORKFLOW_DEFAULTS.SCHNELL.CFG, // Schnell 使用 CFG 1
+        clip_l: '',
+        guidance: WORKFLOW_DEFAULTS.SCHNELL.CFG,
+        t5xxl: '', // Schnell 使用 CFG 1
       },
     },
     '5': {
@@ -67,8 +62,8 @@ export function buildFluxSchnellWorkflow(
       class_type: 'EmptySD3LatentImage',
       inputs: {
         batch_size: WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE,
-        height: params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
-        width: params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH,
+        height: WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
+        width: WORKFLOW_DEFAULTS.IMAGE.WIDTH,
       },
     },
     '6': {
@@ -77,16 +72,16 @@ export function buildFluxSchnellWorkflow(
       },
       class_type: 'KSampler',
       inputs: {
-        cfg: 1,
-        denoise: 1,
+        cfg: WORKFLOW_DEFAULTS.SCHNELL.CFG,
+        denoise: WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
         latent_image: ['5', 0],
         model: ['2', 0],
         negative: ['4', 0],
         positive: ['4', 0],
-        sampler_name: params.samplerName ?? WORKFLOW_DEFAULTS.SAMPLING.SAMPLER,
-        scheduler: params.scheduler ?? WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER,
-        seed: params.seed ?? WORKFLOW_DEFAULTS.NOISE.SEED,
-        steps: params.steps ?? WORKFLOW_DEFAULTS.SCHNELL.STEPS,
+        sampler_name: WORKFLOW_DEFAULTS.SAMPLING.SAMPLER,
+        scheduler: WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER,
+        seed: WORKFLOW_DEFAULTS.NOISE.SEED,
+        steps: WORKFLOW_DEFAULTS.SCHNELL.STEPS,
       },
     },
     '7': {
@@ -114,12 +109,32 @@ export function buildFluxSchnellWorkflow(
   // 创建 PromptBuilder
   const builder = new PromptBuilder(
     workflow,
-    ['prompt', 'width', 'height', 'steps', 'seed'],
+    ['prompt_clip_l', 'prompt_t5xxl', 'width', 'height', 'steps', 'seed'],
     ['images'],
   );
 
   // 设置输出节点
   builder.setOutputNode('images', '8');
+
+  // 添加setInputNode映射 - 修复SDK链式调用bug，改为分开调用
+  builder.setInputNode('seed', '6.inputs.seed');
+  builder.setInputNode('width', '5.inputs.width');
+  builder.setInputNode('height', '5.inputs.height');
+  builder.setInputNode('steps', '6.inputs.steps');
+  builder.setInputNode('prompt_clip_l', '4.inputs.clip_l');
+  builder.setInputNode('prompt_t5xxl', '4.inputs.t5xxl');
+
+  // 处理prompt分离
+  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
+
+  // 设置输入值
+  builder
+    .input('prompt_clip_l', clipLPrompt)
+    .input('prompt_t5xxl', t5xxlPrompt)
+    .input('width', params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH)
+    .input('height', params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT)
+    .input('steps', params.steps ?? WORKFLOW_DEFAULTS.SCHNELL.STEPS)
+    .input('seed', params.seed ?? WORKFLOW_DEFAULTS.NOISE.SEED);
 
   return builder;
 }
