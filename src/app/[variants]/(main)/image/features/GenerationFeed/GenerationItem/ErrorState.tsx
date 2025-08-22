@@ -30,9 +30,31 @@ export const ErrorState = memo<ErrorStateProps>(
       if (errorBody) {
         // Check if the error body is an AgentRuntimeErrorType that needs translation
         const knownErrorTypes = Object.values(AgentRuntimeErrorType);
-        if (knownErrorTypes.includes(errorBody as AgentRuntimeErrorType)) {
-          // Use localized error message
-          return tError(`runtime.${errorBody}`, { provider: generationBatch.provider });
+        if (
+          knownErrorTypes.includes(
+            errorBody as (typeof AgentRuntimeErrorType)[keyof typeof AgentRuntimeErrorType],
+          )
+        ) {
+          // Use localized error message - ComfyUI errors are under 'response' namespace
+          const translationKey = `response.${errorBody}`;
+          const translated = tError(translationKey as any);
+
+          // Debug log
+          console.log('Translation attempt:', { errorBody, translated, translationKey });
+
+          // If translation key is not found, it returns the key itself
+          // Check if we got back the key (meaning translation failed)
+          if (translated === translationKey || (translated as string).startsWith('response.')) {
+            // Try without any prefix (for backwards compatibility)
+            const directTranslated = tError(errorBody as any);
+            if (directTranslated !== errorBody) {
+              return directTranslated as string;
+            }
+            // Final fallback to the original error message
+            return errorBody;
+          }
+
+          return translated as string;
         }
       }
 

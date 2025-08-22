@@ -184,6 +184,11 @@ export default {
       title: '使用自定义 {{name}} API Key',
     },
     closeMessage: '关闭提示',
+    comfyui: {
+      description: '请输入正确的 {{name}} 认证信息即可开始生图',
+      modifyBaseUrl: '修改 Comfy UI 服务地址',
+      title: '确认你的 {{name}} 认证信息',
+    },
     confirm: '确认并重试',
     oauth: {
       description: '管理员已开启统一登录认证，点击下方按钮登录，即可解锁应用',

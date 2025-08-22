@@ -20,9 +20,10 @@ const useComfyUICard = (): ProviderItem => {
   const { t } = useTranslation('modelProvider');
 
   const isLoading = useAiInfraStore(aiProviderSelectors.isAiProviderConfigLoading(providerKey));
-  
-  // Watch for auth type changes from store to enable conditional rendering
-  const authType = useAiInfraStore(s => s.aiProviderRuntimeConfig?.[providerKey]?.keyVaults?.authType) || 'none';
+
+  // Get current config and watch for auth type changes
+  const config = useAiInfraStore((s) => s.aiProviderRuntimeConfig?.[providerKey]);
+  const authType = config?.keyVaults?.authType || 'none';
 
   const authTypeOptions = [
     { label: t('comfyui.authType.options.none' as any), value: 'none' },
@@ -51,7 +52,6 @@ const useComfyUICard = (): ProviderItem => {
       ) : (
         <Select
           allowClear={false}
-          defaultValue="none"
           options={authTypeOptions}
           placeholder={t('comfyui.authType.placeholder' as any)}
         />
