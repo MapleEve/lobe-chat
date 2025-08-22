@@ -23,6 +23,9 @@ export const AgentRuntimeErrorType = {
   ComfyUIBizError: 'ComfyUIBizError',
   ComfyUIServiceUnavailable: 'ComfyUIServiceUnavailable',
   ComfyUIEmptyResult: 'ComfyUIEmptyResult',
+  ComfyUIUploadFailed: 'ComfyUIUploadFailed',
+  ComfyUIWorkflowError: 'ComfyUIWorkflowError',
+  ComfyUIModelError: 'ComfyUIModelError',
 
   InvalidBedrockCredentials: 'InvalidBedrockCredentials',
   InvalidVertexCredentials: 'InvalidVertexCredentials',
