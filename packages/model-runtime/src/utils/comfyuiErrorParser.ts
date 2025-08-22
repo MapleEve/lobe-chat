@@ -114,8 +114,8 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
     };
   }
 
-  // 如果error已经是结构化的ComfyUIError
-  if (error && typeof error === 'object' && error.message) {
+  // 如果error已经是结构化的ComfyUIError（但不是嵌套的error对象）
+  if (error && typeof error === 'object' && error.message && !error.error) {
     return {
       code: error.code,
       details: error.details,
@@ -127,65 +127,30 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
 
   // 处理其他对象类型
   if (error && typeof error === 'object') {
-    // Enhanced message extraction from various possible sources
-    const possibleMessage = [
-      error.message,
-      error.error?.message,
-      error.details,
-      error.data?.message,
-      error.body?.message,
-      error.response?.data?.message,
-      error.response?.data?.error?.message,
-      error.response?.text,
-      error.response?.body,
-      error.statusText,
-    ].find(Boolean);
+    const message =
+      error.message ||
+      error.error?.message ||
+      error.response?.data?.message ||
+      error.response?.data?.error?.message ||
+      String(error);
 
-    const message = possibleMessage || String(error);
+    const status =
+      error.status ||
+      error.statusCode ||
+      error.error?.status ||
+      error.response?.status ||
+      error.response?.statusCode;
 
-    // Enhanced status extraction from various sources
-    const possibleStatus = [
-      error.status,
-      error.statusCode,
-      error.response?.status,
-      error.response?.statusCode,
-      error.error?.status,
-      error.error?.statusCode,
-    ].find(Number.isInteger);
+    const code = error.code || error.error?.code || error.response?.data?.code;
 
-    // Enhanced code extraction
-    const possibleCode = [
-      error.code,
-      error.error?.code,
-      error.data?.code,
-      error.response?.data?.code,
-    ].find(Boolean);
-
-    // Enhanced details extraction - capture more comprehensive error info
-    const details: any = {
-      originalError: error,
-    };
-
-    // Capture response data if available
-    if (error.response?.data) {
-      details.responseData = error.response.data;
-    }
-    if (error.response?.text) {
-      details.responseText = error.response.text;
-    }
-    if (error.data) {
-      details.errorData = error.data;
-    }
-    if (error.body) {
-      details.errorBody = error.body;
-    }
+    const details = error.response?.data || error.error || undefined;
 
     return {
-      code: possibleCode,
+      code,
       details,
       message: cleanComfyUIErrorMessage(message),
-      status: possibleStatus,
-      type: error.type || error.error?.type || error.constructor?.name,
+      status: Number.isInteger(status) ? status : undefined,
+      type: error.type || error.name || error.constructor?.name,
     };
   }
 
