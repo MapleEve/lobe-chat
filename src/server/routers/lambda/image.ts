@@ -12,7 +12,6 @@ import {
 } from '@/database/schemas';
 import { authedProcedure, router } from '@/libs/trpc/lambda';
 import { keyVaults, serverDatabase } from '@/libs/trpc/lambda/middleware';
-import { initModelRuntimeWithUserPayload } from '@/server/modules/ModelRuntime';
 import { createAsyncCaller } from '@/server/routers/async/caller';
 import { FileService } from '@/server/services/file';
 import {
@@ -72,33 +71,52 @@ export const imageRouter = router({
 
     log('Starting image creation process, input: %O', input);
 
-    // ComfyUI 服务器可达性验证 - 在创建 async tasks 前确保服务器可用
-    if (provider === 'comfyui') {
-      log('Validating ComfyUI server reachability for provider: %s', provider);
-      try {
-        // 创建运行时实例，这会触发构造函数验证（配置参数）
-        const agentRuntime = await initModelRuntimeWithUserPayload(provider, ctx.jwtPayload);
+    // ComfyUI 服务器可达性验证 - 暂时注释掉
+    // if (provider === 'comfyui') {
+    //   log('Validating ComfyUI server reachability for provider: %s', provider);
+    //   try {
+    //     // 创建运行时实例，这会触发构造函数验证（配置参数）
+    //     const agentRuntime = await initModelRuntimeWithUserPayload(provider, ctx.jwtPayload);
 
-        // 验证服务器连接和可达性
-        if (agentRuntime && typeof agentRuntime.models === 'function') {
-          await agentRuntime.models();
-          log('ComfyUI server reachability validation successful');
-        } else {
-          throw new Error('ComfyUI runtime not properly initialized');
-        }
-      } catch (error: any) {
-        log('ComfyUI server reachability validation failed: %O', error);
+    //     // 验证服务器连接和可达性
+    //     if (agentRuntime && typeof agentRuntime.models === 'function') {
+    //       await agentRuntime.models();
+    //       log('ComfyUI server reachability validation successful');
+    //     } else {
+    //       throw new Error('ComfyUI runtime not properly initialized');
+    //     }
+    //   } catch (error: any) {
+    //     log('ComfyUI server reachability validation failed: %O', error);
+    //     log('Error type: %s, Error object: %O', error?.errorType, error?.error);
 
-        // 如果是 AgentRuntimeError，提取实际的错误消息
-        if (error?.errorType === 'ComfyUIBizError' && error?.error) {
-          const errorMessage = error.error.message || error.error.error || 'ComfyUI service error';
-          throw new Error(errorMessage);
-        }
+    //     // 如果是 AgentRuntimeError，提取实际的错误消息
+    //     if (error?.errorType && error?.error) {
+    //       // 尝试从不同层级提取错误消息
+    //       let errorMessage = 'ComfyUI service error';
 
-        // 对于其他错误，保持原始错误消息
-        throw error;
-      }
-    }
+    //       if (typeof error.error === 'string') {
+    //         errorMessage = error.error;
+    //       } else if (error.error?.message) {
+    //         errorMessage = error.error.message;
+    //       } else if (error.error?.error) {
+    //         errorMessage = typeof error.error.error === 'string'
+    //           ? error.error.error
+    //           : error.error.error?.message || JSON.stringify(error.error.error);
+    //       }
+
+    //       log('Extracted error message: %s', errorMessage);
+    //       throw new Error(errorMessage);
+    //     }
+
+    //     // 如果错误已经是 Error 实例，直接抛出
+    //     if (error instanceof Error) {
+    //       throw error;
+    //     }
+
+    //     // 对于其他类型，转换为 Error
+    //     throw new Error(error?.message || error?.error || String(error));
+    //   }
+    // }
 
     // 如果 params 中包含 imageUrls，将它们转换为 S3 keys 用于数据库存储
     let configForDatabase = { ...params };

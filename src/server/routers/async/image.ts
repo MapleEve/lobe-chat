@@ -59,6 +59,8 @@ const checkAbortSignal = (signal: AbortSignal) => {
 
 /**
  * Categorizes errors into appropriate AsyncTaskErrorType
+ * Returns the original error message if available, otherwise returns the error type as message
+ * Client should handle localization based on errorType
  */
 const categorizeError = (
   error: any,
@@ -67,7 +69,8 @@ const categorizeError = (
   // 处理 ComfyUI 服务不可用
   if (error.errorType === AgentRuntimeErrorType.ComfyUIServiceUnavailable) {
     return {
-      errorMessage: error.error?.message || error.message || 'ComfyUI service is unavailable',
+      errorMessage:
+        error.error?.message || error.message || AgentRuntimeErrorType.ComfyUIServiceUnavailable,
       errorType: AsyncTaskErrorType.ServerError,
     };
   }
@@ -75,7 +78,7 @@ const categorizeError = (
   // 处理 ComfyUI 业务错误
   if (error.errorType === AgentRuntimeErrorType.ComfyUIBizError) {
     return {
-      errorMessage: error.error?.message || error.message || 'ComfyUI processing error',
+      errorMessage: error.error?.message || error.message || AgentRuntimeErrorType.ComfyUIBizError,
       errorType: AsyncTaskErrorType.ServerError,
     };
   }
@@ -83,7 +86,7 @@ const categorizeError = (
   // 处理 ConnectionCheckFailed (保留向后兼容)
   if (error.errorType === AgentRuntimeErrorType.ConnectionCheckFailed) {
     return {
-      errorMessage: error.message || 'Failed to connect to image generation service',
+      errorMessage: error.message || AgentRuntimeErrorType.ConnectionCheckFailed,
       errorType: AsyncTaskErrorType.ServerError,
     };
   }
@@ -91,7 +94,7 @@ const categorizeError = (
   // 处理 PermissionDenied
   if (error.errorType === AgentRuntimeErrorType.PermissionDenied) {
     return {
-      errorMessage: error.error?.message || error.message || 'Permission denied',
+      errorMessage: error.error?.message || error.message || AgentRuntimeErrorType.PermissionDenied,
       errorType: AsyncTaskErrorType.InvalidProviderAPIKey,
     };
   }
@@ -100,9 +103,7 @@ const categorizeError = (
   if (error.errorType === AgentRuntimeErrorType.InvalidProviderAPIKey || error?.status === 401) {
     return {
       errorMessage:
-        error.error?.message ||
-        error.message ||
-        'Invalid provider API key, please check your API key',
+        error.error?.message || error.message || AgentRuntimeErrorType.InvalidProviderAPIKey,
       errorType: AsyncTaskErrorType.InvalidProviderAPIKey,
     };
   }
@@ -116,27 +117,27 @@ const categorizeError = (
 
   if (isAborted || error.message?.includes('aborted')) {
     return {
-      errorMessage: 'Image generation task timed out, please try again',
+      errorMessage: AsyncTaskErrorType.Timeout,
       errorType: AsyncTaskErrorType.Timeout,
     };
   }
 
   if (error.message?.includes('timeout') || error.name === 'TimeoutError') {
     return {
-      errorMessage: 'Image generation task timed out, please try again',
+      errorMessage: AsyncTaskErrorType.Timeout,
       errorType: AsyncTaskErrorType.Timeout,
     };
   }
 
   if (error.message?.includes('network') || error.name === 'NetworkError') {
     return {
-      errorMessage: error.message || 'Network error occurred during image generation',
+      errorMessage: error.message || AsyncTaskErrorType.ServerError,
       errorType: AsyncTaskErrorType.ServerError,
     };
   }
 
   return {
-    errorMessage: error.message || 'Unknown error occurred during image generation',
+    errorMessage: error.message || AsyncTaskErrorType.ServerError,
     errorType: AsyncTaskErrorType.ServerError,
   };
 };
