@@ -8,12 +8,18 @@ import { ChatModelCard } from '@/types/llm';
 
 import { LobeComfyUI } from '../index';
 import { AgentRuntimeError } from '../utils/createError';
+import { ComfyUIModelResolver } from './utils/modelResolver';
 
 // Mock the ComfyUI SDK
 vi.mock('@saintno/comfyui-sdk', () => ({
   ComfyApi: vi.fn(),
   CallWrapper: vi.fn(),
   PromptBuilder: vi.fn(),
+}));
+
+// Mock the ComfyUIModelResolver
+vi.mock('../utils/modelResolver', () => ({
+  ComfyUIModelResolver: vi.fn(),
 }));
 
 // Mock fetch globally
@@ -35,6 +41,7 @@ describe('LobeComfyUI', () => {
     init: Mock;
     waitForReady: Mock;
     getPathImage: Mock;
+    fetchApi: Mock;
   };
   let mockCallWrapper: {
     onFinished: Mock;
@@ -45,6 +52,11 @@ describe('LobeComfyUI', () => {
   let mockPromptBuilder: {
     setOutputNode: Mock;
   };
+  let mockModelResolver: {
+    getAvailableModelFiles: Mock;
+    resolveModelFileName: Mock;
+    transformModelFilesToList: Mock;
+  };
 
   beforeEach(() => {
     // Setup ComfyApi mock
@@ -52,6 +64,15 @@ describe('LobeComfyUI', () => {
       init: vi.fn(),
       waitForReady: vi.fn().mockResolvedValue(undefined),
       getPathImage: vi.fn().mockReturnValue('http://localhost:8188/view?filename=test.png'),
+      fetchApi: vi.fn().mockResolvedValue({
+        CheckpointLoaderSimple: {
+          input: {
+            required: {
+              ckpt_name: [['flux-schnell.safetensors', 'flux-dev.safetensors', 'sd15-base.ckpt']],
+            },
+          },
+        },
+      }),
     };
     (ComfyApi as any).mockImplementation(() => mockComfyApi);
 
@@ -69,6 +90,20 @@ describe('LobeComfyUI', () => {
       setOutputNode: vi.fn().mockReturnThis(),
     };
     (PromptBuilder as Mock).mockImplementation(() => mockPromptBuilder);
+
+    // Setup ModelResolver mock
+    mockModelResolver = {
+      getAvailableModelFiles: vi
+        .fn()
+        .mockResolvedValue(['flux-schnell.safetensors', 'flux-dev.safetensors', 'sd15-base.ckpt']),
+      resolveModelFileName: vi.fn().mockResolvedValue('flux-schnell.safetensors'),
+      transformModelFilesToList: vi.fn().mockReturnValue([
+        { id: 'flux-schnell', name: 'FLUX Schnell' },
+        { id: 'flux-dev', name: 'FLUX Dev' },
+        { id: 'sd15-base', name: 'SD 1.5 Base' },
+      ]),
+    };
+    (ComfyUIModelResolver as Mock).mockImplementation(() => mockModelResolver);
 
     // Clear all mocks
     vi.clearAllMocks();
@@ -89,33 +124,42 @@ describe('LobeComfyUI', () => {
       expect(instance.baseURL).toBe('http://localhost:8188');
     });
 
-    it('should gracefully degrade incomplete basic auth to authType "none"', () => {
-      const instance = new LobeComfyUI({
-        authType: 'basic',
-        username: 'user',
-        // missing password - should degrade to 'none'
-      });
+    it('should throw InvalidComfyUIArgs for incomplete basic auth', () => {
+      expect(() => {
+        new LobeComfyUI({
+          authType: 'basic',
+          username: 'user',
+          // missing password - should throw error
+        });
+      }).toThrow();
 
-      // Verify the instance was created successfully (no exception)
-      expect(instance).toBeDefined();
-      expect(instance.baseURL).toBe('http://localhost:8188');
-
-      // Verify authType was degraded to 'none' in options
-      expect((instance as any).options.authType).toBe('none');
+      // Verify it throws the correct error type
+      try {
+        new LobeComfyUI({
+          authType: 'basic',
+          username: 'user',
+        });
+      } catch (error: any) {
+        expect(error.errorType).toBe('InvalidComfyUIArgs');
+      }
     });
 
-    it('should gracefully degrade missing bearer token to authType "none"', () => {
-      const instance = new LobeComfyUI({
-        authType: 'bearer',
-        // missing apiKey - should degrade to 'none'
-      });
+    it('should throw InvalidProviderAPIKey for missing bearer token', () => {
+      expect(() => {
+        new LobeComfyUI({
+          authType: 'bearer',
+          // missing apiKey - should throw error
+        });
+      }).toThrow();
 
-      // Verify the instance was created successfully (no exception)
-      expect(instance).toBeDefined();
-      expect(instance.baseURL).toBe('http://localhost:8188');
-
-      // Verify authType was degraded to 'none'
-      expect((instance as any).options.authType).toBe('none');
+      // Verify it throws the correct error type
+      try {
+        new LobeComfyUI({
+          authType: 'bearer',
+        });
+      } catch (error: any) {
+        expect(error.errorType).toBe('InvalidProviderAPIKey');
+      }
     });
 
     it('should accept complete basic auth configuration', () => {
@@ -209,17 +253,22 @@ describe('LobeComfyUI', () => {
         });
       });
 
-      it('should gracefully degrade when required fields are missing for basic auth', () => {
-        const instance = new LobeComfyUI({
-          authType: 'basic',
-          // Missing username and password - should degrade to 'none'
-        });
+      it('should throw InvalidComfyUIArgs when required fields are missing for basic auth', () => {
+        expect(() => {
+          new LobeComfyUI({
+            authType: 'basic',
+            // Missing username and password - should throw error
+          });
+        }).toThrow();
 
-        // Verify the instance was created successfully (no exception)
-        expect(instance).toBeDefined();
-
-        // Verify authType was degraded to 'none'
-        expect((instance as any).options.authType).toBe('none');
+        // Verify it throws the correct error type
+        try {
+          new LobeComfyUI({
+            authType: 'basic',
+          });
+        } catch (error: any) {
+          expect(error.errorType).toBe('InvalidComfyUIArgs');
+        }
       });
 
       it('should prioritize new authType over legacy apiKey format', () => {
@@ -1587,18 +1636,22 @@ describe('LobeComfyUI', () => {
   });
 
   describe('Authentication edge cases', () => {
-    it('should gracefully degrade bearer auth without apiKey to authType "none"', () => {
-      const instance = new LobeComfyUI({
-        authType: 'bearer',
-        // No apiKey provided - should degrade to 'none'
-      });
+    it('should throw InvalidProviderAPIKey for bearer auth without apiKey', () => {
+      expect(() => {
+        new LobeComfyUI({
+          authType: 'bearer',
+          // No apiKey provided - should throw error
+        });
+      }).toThrow();
 
-      // Verify the instance was created successfully (no exception)
-      expect(instance).toBeDefined();
-      expect(instance.baseURL).toBe('http://localhost:8188');
-
-      // Verify authType was degraded to 'none'
-      expect((instance as any).options.authType).toBe('none');
+      // Verify it throws the correct error type
+      try {
+        new LobeComfyUI({
+          authType: 'bearer',
+        });
+      } catch (error: any) {
+        expect(error.errorType).toBe('InvalidProviderAPIKey');
+      }
     });
 
     it('should handle custom auth without customHeaders', () => {

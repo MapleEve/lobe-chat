@@ -28,6 +28,10 @@ const log = debug('lobe-image:comfyui');
  * ComfyUI Runtime 实现
  * 支持 FLUX 系列模型的文生图和图像编辑
  */
+// Export ComfyUI utilities and types
+export { ComfyUIModelResolver } from './utils/modelResolver';
+export * from './workflows';
+
 export class LobeComfyUI implements LobeRuntimeAI {
   private client: ComfyApi;
   private options: ComfyUIKeyVault;
@@ -44,7 +48,10 @@ export class LobeComfyUI implements LobeRuntimeAI {
   } as const;
 
   constructor(options: ComfyUIKeyVault = {}) {
-    const { baseURL = 'http://localhost:8188', authType = 'none' } = options;
+    const {
+      baseURL = process.env.COMFYUI_DEFAULT_URL || 'http://localhost:8188',
+      authType = 'none',
+    } = options;
 
     // 强制校验
     if (authType === 'basic' && (!options.username || !options.password)) {
