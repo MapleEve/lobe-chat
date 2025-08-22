@@ -16,13 +16,16 @@ vi.mock('../utils/weight-dtype', () => ({
   selectOptimalWeightDtype: vi.fn(() => 'default'),
 }));
 
-// Mock PromptBuilder - capture constructor arguments for test access
+// Mock PromptBuilder and seed function - capture constructor arguments for test access
 vi.mock('@saintno/comfyui-sdk', () => ({
   PromptBuilder: vi.fn().mockImplementation((workflow, inputs, outputs) => {
     return {
       setOutputNode: vi.fn().mockReturnThis(),
+      setInputNode: vi.fn().mockReturnThis(),
+      input: vi.fn().mockReturnThis(),
     };
   }),
+  seed: vi.fn(() => 42),
 }));
 
 describe('buildFluxDevWorkflow', () => {
@@ -64,6 +67,7 @@ describe('buildFluxDevWorkflow', () => {
         '4': expect.objectContaining({
           class_type: 'ModelSamplingFlux',
           inputs: expect.objectContaining({
+            base_shift: 0.5,
             height: 1024,
             max_shift: 1.15,
             model: ['2', 0],
@@ -110,9 +114,11 @@ describe('buildFluxDevWorkflow', () => {
         '10': expect.objectContaining({
           class_type: 'SamplerCustomAdvanced',
           inputs: expect.objectContaining({
+            guider: ['6', 0],
             latent_image: ['7', 0],
             model: ['4', 0],
             negative: ['6', 0],
+            noise: ['13', 0],
             positive: ['6', 0],
             sampler: ['8', 0],
             sigmas: ['9', 0],
@@ -132,8 +138,14 @@ describe('buildFluxDevWorkflow', () => {
             images: ['11', 0],
           }),
         }),
+        '13': expect.objectContaining({
+          class_type: 'RandomNoise',
+          inputs: expect.objectContaining({
+            noise_seed: expect.any(Number),
+          }),
+        }),
       }),
-      ['prompt', 'width', 'height', 'steps', 'cfg', 'seed'],
+      ['prompt_clip_l', 'prompt_t5xxl', 'width', 'height', 'steps', 'cfg', 'seed'],
       ['images'],
     );
 
@@ -247,6 +259,7 @@ describe('buildFluxDevWorkflow', () => {
 
     expect(workflow['4'].class_type).toBe('ModelSamplingFlux');
     expect(workflow['4'].inputs.max_shift).toBe(1.15);
+    expect(workflow['4'].inputs.base_shift).toBe(0.5);
     expect(workflow['4'].inputs.width).toBe(768);
     expect(workflow['4'].inputs.height).toBe(512);
   });

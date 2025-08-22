@@ -23,6 +23,7 @@ import { buildFluxKreaWorkflow } from './workflows/flux-krea';
 import { buildFluxSchnellWorkflow } from './workflows/flux-schnell';
 
 const log = debug('lobe-image:comfyui');
+// Removed unused debugVerbose variable
 
 /**
  * ComfyUI Runtime 实现
@@ -150,12 +151,19 @@ export class LobeComfyUI implements LobeRuntimeAI {
     // await this.ensureConnection();
 
     const { model, params } = payload;
+    const startTime = Date.now();
 
     try {
+      log('Starting waitForReady...');
+      const waitStart = Date.now();
       await this.client.waitForReady();
+      log('waitForReady completed in %d ms', Date.now() - waitStart);
 
       // Get actual model filename for workflow
+      log('Resolving model filename...');
+      const resolveStart = Date.now();
       const modelFileName = await this.modelResolver.resolveModelFileName(model);
+      log('Model resolution completed in %d ms', Date.now() - resolveStart);
       log('Model ID:', model);
       log('Resolved model filename:', modelFileName);
 
@@ -163,25 +171,87 @@ export class LobeComfyUI implements LobeRuntimeAI {
       const workflow = this.buildWorkflow(model, modelFileName, params);
       // PromptBuilder has a public prompt property
       const workflowPrompt = workflow.prompt;
-      // 只输出前500个字符，避免日志太长
+
+      // Log comprehensive workflow details for debugging
       const workflowStr = JSON.stringify(workflowPrompt, null, 2);
-      log(
-        'Built workflow (first 500 chars):',
-        workflowStr ? workflowStr.slice(0, 500) : 'undefined',
-      );
-      log('Workflow keys:', workflowPrompt ? Object.keys(workflowPrompt) : 'undefined');
+      log('🔧 === WORKFLOW DEBUG INFORMATION ===');
+      log('Model ID:', model);
+      log('Model Filename:', modelFileName);
+      log('Input Parameters:', JSON.stringify(params, null, 2));
+      log('Workflow Keys:', workflowPrompt ? Object.keys(workflowPrompt) : 'undefined');
+
+      // Log complete workflow structure (for 400 error debugging)
+      if (workflowPrompt) {
+        log('📋 Complete Workflow JSON to be sent to ComfyUI:');
+        log(workflowStr);
+
+        // Validate workflow structure
+        const nodeIds = Object.keys(workflowPrompt);
+        log('Total nodes:', nodeIds.length);
+
+        // Check for common issues
+        nodeIds.forEach((nodeId) => {
+          const node = workflowPrompt[nodeId];
+          if (!node.class_type) {
+            log(`⚠️ Node ${nodeId} missing class_type`);
+          }
+          if (!node.inputs) {
+            log(`⚠️ Node ${nodeId} missing inputs`);
+          }
+          // Check for invalid input references
+          if (node.inputs) {
+            Object.entries(node.inputs).forEach(([key, value]) => {
+              if (Array.isArray(value) && value.length === 2) {
+                const [refNodeId] = value;
+                if (!nodeIds.includes(String(refNodeId))) {
+                  log(`❌ Node ${nodeId}.${key} references non-existent node ${refNodeId}`);
+                }
+              }
+            });
+          }
+        });
+      } else {
+        log('❌ Workflow prompt is undefined or null!');
+      }
+      log('🔧 === END WORKFLOW DEBUG ===');
+
+      log('Starting CallWrapper execution at %d ms from start', Date.now() - startTime);
+      const callWrapperStart = Date.now();
 
       const result = await new Promise<any>((resolve, reject) => {
         new CallWrapper(this.client, workflow)
-          .onFinished(resolve)
+          .onFinished((result: any) => {
+            log('CallWrapper finished successfully in %d ms', Date.now() - callWrapperStart);
+            resolve(result);
+          })
           .onFailed((error: any) => {
-            log('ComfyUI request failed:', error);
-            log('Error details:', JSON.stringify(error, null, 2));
+            log(
+              '❌ ComfyUI request failed after %d ms:',
+              Date.now() - callWrapperStart,
+              error?.message || error,
+            );
+
+            // Log basic error details
+            const status = error?.response?.status || error?.status;
+            if (status) {
+              log('HTTP Status:', status);
+            }
+
+            // Log response data if available
+            const responseData = error?.response?.data || error?.data || error?.body;
+            if (responseData) {
+              log(
+                'Response:',
+                typeof responseData === 'string' ? responseData : JSON.stringify(responseData),
+              );
+            }
+
             reject(error);
           })
           .onProgress((info: any) => {
             // Handle progress updates if needed
-            log('Progress:', info);
+            const elapsed = Date.now() - callWrapperStart;
+            log('Progress at %d ms:', elapsed, info);
           })
           .run();
       });

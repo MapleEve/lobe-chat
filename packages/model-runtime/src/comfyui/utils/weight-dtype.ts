@@ -24,12 +24,12 @@ export function selectOptimalWeightDtype(modelName: string, params: any): string
   // Generic fp8 defaults to e4m3fn (faster variant)
   if (modelLower.includes('fp8')) return 'fp8_e4m3fn';
 
-  // GGUF format should use auto
-  if (modelLower.endsWith('.gguf')) return 'auto';
+  // GGUF format should use default (ComfyUI doesn't accept 'auto')
+  if (modelLower.endsWith('.gguf')) return 'default';
 
   // Model-type based optimization
   if (modelLower.includes('schnell')) return 'fp8_e4m3fn'; // Speed-optimized
 
-  // Default: auto for quality models (dev, krea, kontext)
-  return 'auto';
+  // Default: default for quality models (dev, krea, kontext) - ComfyUI doesn't accept 'auto'
+  return 'default';
 }

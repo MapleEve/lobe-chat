@@ -54,7 +54,7 @@ export const WORKFLOW_DEFAULTS = {
   },
 
   NOISE: {
-    SEED: -1,
+    SEED: 0, // Use 0 as default, will be overridden by SDK's seed() function when needed
   },
 
   SAMPLING: {
