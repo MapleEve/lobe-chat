@@ -17,9 +17,13 @@ const log = debug('lobe-image:generation-service');
 /**
  * Fetch image buffer and MIME type from URL or base64 data
  * @param url - Image URL or base64 data URI
+ * @param headers - Optional headers for authentication
  * @returns Object containing buffer and MIME type
  */
-export async function fetchImageFromUrl(url: string): Promise<{
+export async function fetchImageFromUrl(
+  url: string,
+  headers?: Record<string, string>,
+): Promise<{
   buffer: Buffer;
   mimeType: string;
 }> {
@@ -39,7 +43,7 @@ export async function fetchImageFromUrl(url: string): Promise<{
       );
     }
   } else {
-    const response = await fetch(url);
+    const response = await fetch(url, { headers });
     if (!response.ok) {
       throw new Error(
         `Failed to fetch image from ${url}: ${response.status} ${response.statusText}`,
@@ -76,15 +80,29 @@ export class GenerationService {
   /**
    * Generate width 512px image as thumbnail when width > 512, end with _512.webp
    */
-  async transformImageForGeneration(url: string): Promise<{
+  async transformImageForGeneration(
+    url: string,
+    headers?: Record<string, string>,
+  ): Promise<{
     image: ImageForGeneration;
     thumbnailImage: ImageForGeneration;
   }> {
+    const transformStart = Date.now();
     log('Starting image transformation for:', url.startsWith('data:') ? 'base64 data' : url);
+    log('Using authentication headers:', headers ? 'yes' : 'no');
 
     // Fetch image buffer and MIME type using utility function
-    const { buffer: originalImageBuffer, mimeType: originalMimeType } =
-      await fetchImageFromUrl(url);
+    const fetchStart = Date.now();
+    log('Fetching image from URL...');
+    const { buffer: originalImageBuffer, mimeType: originalMimeType } = await fetchImageFromUrl(
+      url,
+      headers,
+    );
+    log(
+      'Image fetched in %d ms, size: %d bytes',
+      Date.now() - fetchStart,
+      originalImageBuffer.length,
+    );
 
     // Calculate hash for original image
     const originalHash = sha256(originalImageBuffer);
@@ -119,7 +137,7 @@ export class GenerationService {
     // Calculate hash for thumbnail
     const thumbnailHash = sha256(thumbnailBuffer);
 
-    log('Image transformation completed successfully');
+    log('Image transformation completed successfully in %d ms', Date.now() - transformStart);
 
     // Determine extension using url utility
     let extension: string;
@@ -130,7 +148,30 @@ export class GenerationService {
       }
       extension = mimeExtension;
     } else {
+      // Try to get extension from URL path first
       extension = inferFileExtensionFromImageUrl(url);
+
+      // For ComfyUI URLs, check filename in query parameters
+      if (!extension && url.includes('filename=')) {
+        try {
+          const urlObj = new URL(url);
+          const filename = urlObj.searchParams.get('filename');
+          if (filename) {
+            extension = inferFileExtensionFromImageUrl(filename);
+          }
+        } catch {
+          // Ignore URL parsing errors
+        }
+      }
+
+      // If still no extension, try to get from MIME type
+      if (!extension && originalMimeType && originalMimeType !== 'application/octet-stream') {
+        const mimeExtension = mime.getExtension(originalMimeType);
+        if (mimeExtension) {
+          extension = mimeExtension;
+        }
+      }
+
       if (!extension) {
         throw new Error(`Unable to determine file extension from URL: ${url}`);
       }

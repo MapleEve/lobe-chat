@@ -129,7 +129,9 @@ describe('GenerationService', () => {
 
         const result = await fetchImageFromUrl('https://example.com/image.jpg');
 
-        expect(mockFetch).toHaveBeenCalledWith('https://example.com/image.jpg');
+        expect(mockFetch).toHaveBeenCalledWith('https://example.com/image.jpg', {
+          headers: undefined,
+        });
         expect(result.mimeType).toBe('image/jpeg');
         expect(result.buffer).toBeInstanceOf(Buffer);
         expect(result.buffer.equals(mockBuffer)).toBe(true);
@@ -168,7 +170,9 @@ describe('GenerationService', () => {
           'Failed to fetch image from https://example.com/nonexistent.jpg: 404 Not Found',
         );
 
-        expect(mockFetch).toHaveBeenCalledWith('https://example.com/nonexistent.jpg');
+        expect(mockFetch).toHaveBeenCalledWith('https://example.com/nonexistent.jpg', {
+          headers: undefined,
+        });
       });
 
       it('should throw error when network request fails', async () => {
