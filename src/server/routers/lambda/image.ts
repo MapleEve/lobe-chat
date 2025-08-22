@@ -86,9 +86,16 @@ export const imageRouter = router({
         } else {
           throw new Error('ComfyUI runtime not properly initialized');
         }
-      } catch (error) {
+      } catch (error: any) {
         log('ComfyUI server reachability validation failed: %O', error);
-        // 直接抛出原始错误，保持错误类型和消息
+
+        // 如果是 AgentRuntimeError，提取实际的错误消息
+        if (error?.errorType === 'ComfyUIBizError' && error?.error) {
+          const errorMessage = error.error.message || error.error.error || 'ComfyUI service error';
+          throw new Error(errorMessage);
+        }
+
+        // 对于其他错误，保持原始错误消息
         throw error;
       }
     }
