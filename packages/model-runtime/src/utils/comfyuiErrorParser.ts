@@ -176,6 +176,14 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
       };
     }
 
+    // 404 表示服务端点不存在，说明 ComfyUI 服务不可用或地址错误
+    if (status === 404) {
+      return {
+        error: comfyError,
+        errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
+      };
+    }
+
     if (status >= 500) {
       return {
         error: comfyError,
