@@ -162,12 +162,58 @@ export class LobeComfyUI implements LobeRuntimeAI {
 
       // Direct workflow building with resolved model name
       const workflow = this.buildWorkflow(model, modelFileName, params);
+      
+      // 🔍 DEBUG: Log the actual workflow being sent to ComfyUI
+      console.log('=== ACTUAL WORKFLOW BEING SENT TO COMFYUI ===');
+      console.log('Model ID:', model);
+      console.log('Model Filename:', modelFileName);
+      try {
+        const workflowJson = JSON.stringify(workflow.prompt, null, 2);
+        console.log('Full Workflow JSON:');
+        console.log(workflowJson);
+        
+        // Look for SamplerCustomAdvanced node specifically
+        const workflowNodes = workflow.prompt || {};
+        const samplerNodes = Object.entries(workflowNodes).filter(([_, node]) => 
+          (node as any).class_type === 'SamplerCustomAdvanced'
+        );
+        
+        if (samplerNodes.length > 0) {
+          console.log('Found SamplerCustomAdvanced nodes:');
+          samplerNodes.forEach(([nodeId, node]) => {
+            console.log(`Node ${nodeId}:`, JSON.stringify(node, null, 2));
+          });
+        }
+        
+        // Look for BasicGuider nodes specifically  
+        const guiderNodes = Object.entries(workflowNodes).filter(([_, node]) => 
+          (node as any).class_type === 'BasicGuider'
+        );
+        
+        if (guiderNodes.length > 0) {
+          console.log('Found BasicGuider nodes:');
+          guiderNodes.forEach(([nodeId, node]) => {
+            console.log(`Node ${nodeId}:`, JSON.stringify(node, null, 2));
+          });
+        } else {
+          console.log('❌ WARNING: No BasicGuider nodes found in workflow!');
+        }
+      } catch (error) {
+        console.log('Error serializing workflow:', error);
+      }
+      console.log('=== END WORKFLOW DEBUG ===');
 
       const result = await new Promise<any>((resolve, reject) => {
         new CallWrapper(this.client, workflow)
           .onFinished(resolve)
           .onFailed((error: any) => {
             log('❌ ComfyUI request failed:', error?.message || error);
+
+            // If error already has errorType, it's an existing structured error - re-throw as-is
+            if (error && typeof error === 'object' && 'errorType' in error) {
+              reject(error);
+              return;
+            }
 
             // Log basic error details
             const status = error?.response?.status || error?.status;
@@ -184,7 +230,19 @@ export class LobeComfyUI implements LobeRuntimeAI {
               );
             }
 
-            reject(error);
+            // Parse error using our error parser for better error categorization
+            const { error: parsedError, errorType } = parseComfyUIErrorMessage(error);
+            log('Parsed error type:', errorType);
+            log('Parsed error details:', parsedError);
+
+            // Create structured error
+            const structuredError = AgentRuntimeError.createImage({
+              error: parsedError,
+              errorType,
+              provider: 'comfyui',
+            });
+
+            reject(structuredError);
           })
           .onProgress((info: any) => {
             // Handle progress updates if needed
@@ -209,12 +267,12 @@ export class LobeComfyUI implements LobeRuntimeAI {
         width: imageInfo.width ?? params.width,
       };
     } catch (error) {
-      // 保留已有的 AgentRuntimeError
+      // 保留已有的 AgentRuntimeError (已在 onFailed 中处理)
       if (error && typeof error === 'object' && 'errorType' in error) {
         throw error;
       }
 
-      // 使用结构化错误解析器
+      // 使用结构化错误解析器处理其他未捕获的错误
       const { error: parsedError, errorType } = parseComfyUIErrorMessage(error);
 
       throw AgentRuntimeError.createImage({
@@ -237,21 +295,21 @@ export class LobeComfyUI implements LobeRuntimeAI {
     const fullModelId = model.startsWith('comfyui/') ? model : `comfyui/${model}`;
 
     // Debug logging
-    log('=== Workflow Selection Debug ===');
-    log('Original model:', model);
-    log('Full model ID:', fullModelId);
-    log('Available workflow builders:', Object.keys(LobeComfyUI.WORKFLOW_BUILDERS));
+    console.log('=== Workflow Selection Debug ===');
+    console.log('Original model:', model);
+    console.log('Full model ID:', fullModelId);
+    console.log('Available workflow builders:', Object.keys(LobeComfyUI.WORKFLOW_BUILDERS));
 
     const workflowBuilder =
       LobeComfyUI.WORKFLOW_BUILDERS[fullModelId as keyof typeof LobeComfyUI.WORKFLOW_BUILDERS];
     if (workflowBuilder) {
-      log('Found exact workflow builder for:', fullModelId);
+      console.log('Found exact workflow builder for:', fullModelId);
       try {
         const workflow = workflowBuilder(modelFileName, params);
-        log('✅ Workflow created successfully');
+        console.log('✅ Workflow created successfully');
         return workflow;
       } catch (error) {
-        log('❌ Error creating workflow:', error);
+        console.log('❌ Error creating workflow:', error);
         throw error;
       }
     }

@@ -32,12 +32,12 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'SamplerCustomAdvanced',
       inputs: {
-        guider: ['6', 0], // Required parameter - use FluxGuidance output
+        guider: ['14', 0], // Use BasicGuider output for GUIDER type
         latent_image: ['7', 0],
         model: ['4', 0],
-        negative: ['6', 0],
+        negative: ['6', 0], // Use FluxGuidance output for negative conditioning
         noise: ['13', 0],
-        positive: ['6', 0],
+        positive: ['6', 0], // Use FluxGuidance output for positive conditioning
         sampler: ['8', 0],
         sigmas: ['9', 0],
       },
@@ -69,6 +69,16 @@ export function buildFluxKreaWorkflow(
       class_type: 'RandomNoise',
       inputs: {
         noise_seed: WORKFLOW_DEFAULTS.NOISE.SEED,
+      },
+    },
+    '14': {
+      _meta: {
+        title: 'Basic Guider',
+      },
+      class_type: 'BasicGuider',
+      inputs: {
+        conditioning: ['6', 0], // FluxGuidance conditioning output
+        model: ['4', 0], // ModelSamplingFlux model
       },
     },
     '2': {
@@ -121,9 +131,9 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'FluxGuidance',
       inputs: {
-        // FluxGuidance接收positive输入，输出GUIDER类型
+        // FluxGuidance需要conditioning输入，接收CLIPTextEncodeFlux输出
+        conditioning: ['5', 0],
         guidance: WORKFLOW_DEFAULTS.KREA.CFG,
-        positive: ['5', 0],
       },
     },
     '7': {

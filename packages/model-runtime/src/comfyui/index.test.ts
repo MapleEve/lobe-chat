@@ -1306,7 +1306,7 @@ describe('LobeComfyUI', () => {
       const workflow = callArgs[0];
 
       expect(workflow).toHaveProperty('9'); // Basic Scheduler
-      expect(workflow['9'].inputs.steps).toBe(25); // WORKFLOW_DEFAULTS.SAMPLING.STEPS
+      expect(workflow['9'].inputs.steps).toBe(20); // Should use the provided steps parameter
 
       expect(workflow).toHaveProperty('5'); // CLIP Text Encode
       expect(workflow['5'].inputs.guidance).toBe(3.5);
