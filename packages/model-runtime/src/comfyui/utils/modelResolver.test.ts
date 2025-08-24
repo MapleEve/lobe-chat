@@ -157,7 +157,7 @@ describe('ComfyUIModelResolver', () => {
       const result = resolver.transformModelFilesToList(modelFiles);
 
       expect(result).toEqual([
-        { enabled: true, id: 'flux-dev' },
+        { enabled: true, id: 'flux1-dev' },  // flux_dev.safetensors has standardName 'FLUX.1-dev'
         { enabled: true, id: 'flux-schnell' },
         { enabled: true, id: 'sd-xl' },
       ]);
@@ -180,93 +180,67 @@ describe('ComfyUIModelResolver', () => {
     });
   });
 
-  describe('resolveModelFileName()', () => {
+  describe('resolveModelFileName() - Strict Validation', () => {
+    let mockValidationManager: any;
+    
     beforeEach(() => {
-      // Mock successful response for model resolution tests
-      const mockObjectInfo = {
-        CheckpointLoaderSimple: {
-          input: {
-            required: {
-              ckpt_name: [['flux_dev.safetensors', 'flux_schnell.safetensors', 'sd_xl_base.ckpt']],
-            },
-          },
-        },
+      // Mock ModelValidationManager
+      mockValidationManager = {
+        validateModelExistence: vi.fn(),
       };
-
-      (mockComfyApi.fetchApi as Mock).mockResolvedValue({
-        json: () => Promise.resolve(mockObjectInfo),
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-      });
+      
+      // Replace the validation manager in resolver
+      (resolver as any).modelValidator = mockValidationManager;
     });
 
-    it('should resolve exact model match', async () => {
+    it('should resolve model through strict validation', async () => {
+      // Mock successful validation
+      mockValidationManager.validateModelExistence.mockResolvedValue({
+        actualFileName: 'flux1-dev.safetensors',
+        exists: true,
+        timestamp: Date.now(),
+      });
+
       const result = await resolver.resolveModelFileName('comfyui/flux-dev');
-      expect(result).toBe('flux_dev.safetensors');
+      
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/flux-dev');
+      expect(result).toBe('flux1-dev.safetensors');
     });
 
-    it('should resolve fuzzy model match with keywords', async () => {
-      const result = await resolver.resolveModelFileName('comfyui/flux-schnell');
-      expect(result).toBe('flux_schnell.safetensors');
-    });
-
-    it('should fallback to FLUX model when no exact match found', async () => {
-      const result = await resolver.resolveModelFileName('comfyui/unknown-model');
-      // Should return the first FLUX model found
-      expect(result).toBe('flux_dev.safetensors');
-    });
-
-    it('should fallback to first available model when no FLUX found', async () => {
-      const mockObjectInfo = {
-        CheckpointLoaderSimple: {
-          input: {
-            required: {
-              ckpt_name: [['sd_xl_base.ckpt', 'stable_diffusion.safetensors']],
-            },
-          },
-        },
-      };
-
-      (mockComfyApi.fetchApi as Mock).mockResolvedValue({
-        json: () => Promise.resolve(mockObjectInfo),
-        ok: true,
-        status: 200,
-        statusText: 'OK',
+    it('should resolve different model variants through validation', async () => {
+      mockValidationManager.validateModelExistence.mockResolvedValue({
+        actualFileName: 'flux1-schnell.safetensors',
+        exists: true,
+        timestamp: Date.now(),
       });
 
-      const result = await resolver.resolveModelFileName('comfyui/unknown-model');
-      expect(result).toBe('sd_xl_base.ckpt');
+      const result = await resolver.resolveModelFileName('comfyui/flux-schnell');
+      
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/flux-schnell');
+      expect(result).toBe('flux1-schnell.safetensors');
     });
 
     it('should handle model ID without comfyui prefix', async () => {
-      const result = await resolver.resolveModelFileName('flux-dev');
-      expect(result).toBe('flux_dev.safetensors');
-    });
-
-    it('should handle fuzzy matching with partial keywords', async () => {
-      const result = await resolver.resolveModelFileName('comfyui/flux');
-      // Should match any model containing 'flux'
-      expect(['flux_dev.safetensors', 'flux_schnell.safetensors']).toContain(result);
-    });
-
-    it('should throw ModelNotFound error when no models available', async () => {
-      const mockObjectInfo = {
-        CheckpointLoaderSimple: {
-          input: {
-            required: {
-              ckpt_name: [[]],
-            },
-          },
-        },
-      };
-
-      (mockComfyApi.fetchApi as Mock).mockResolvedValue({
-        json: () => Promise.resolve(mockObjectInfo),
-        ok: true,
-        status: 200,
-        statusText: 'OK',
+      mockValidationManager.validateModelExistence.mockResolvedValue({
+        actualFileName: 'flux1-dev.safetensors',
+        exists: true,
+        timestamp: Date.now(),
       });
+
+      const result = await resolver.resolveModelFileName('flux-dev');
+      
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('flux-dev');
+      expect(result).toBe('flux1-dev.safetensors');
+    });
+
+    it('should throw ModelNotFound error when model does not exist', async () => {
+      // Mock validation failure
+      const mockError = {
+        error: { model: 'comfyui/unknown-model' },
+        errorType: AgentRuntimeErrorType.ModelNotFound,
+      };
+      
+      mockValidationManager.validateModelExistence.mockRejectedValue(mockError);
 
       await expect(resolver.resolveModelFileName('comfyui/unknown-model')).rejects.toMatchObject({
         error: {
@@ -274,59 +248,44 @@ describe('ComfyUIModelResolver', () => {
         },
         errorType: AgentRuntimeErrorType.ModelNotFound,
       });
+      
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/unknown-model');
     });
 
-    it('should throw ModelNotFound error when fetch fails', async () => {
-      (mockComfyApi.fetchApi as Mock).mockRejectedValue(new Error('Network error'));
+    it('should handle validation errors properly', async () => {
+      // Mock network/validation error
+      mockValidationManager.validateModelExistence.mockRejectedValue(new Error('Network error'));
 
-      // Network errors should be re-thrown as-is, not wrapped as ModelNotFound
-      await expect(resolver.resolveModelFileName('comfyui/flux-dev')).rejects.toThrow(
-        'Network error',
-      );
+      await expect(resolver.resolveModelFileName('comfyui/flux-dev')).rejects.toMatchObject({
+        errorType: AgentRuntimeErrorType.ModelNotFound,
+      });
+      
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/flux-dev');
     });
 
-    it('should handle different file extensions correctly', async () => {
-      const mockObjectInfo = {
-        CheckpointLoaderSimple: {
-          input: {
-            required: {
-              ckpt_name: [['model.safetensors', 'model.ckpt', 'model.pt']],
-            },
-          },
-        },
-      };
-
-      (mockComfyApi.fetchApi as Mock).mockResolvedValue({
-        json: () => Promise.resolve(mockObjectInfo),
-        ok: true,
-        status: 200,
-        statusText: 'OK',
+    it('should handle different file extensions through validation', async () => {
+      mockValidationManager.validateModelExistence.mockResolvedValue({
+        actualFileName: 'model.safetensors',
+        exists: true,
+        timestamp: Date.now(),
       });
 
       const result = await resolver.resolveModelFileName('comfyui/model');
-      // Should match any of the three file extensions
-      expect(['model.safetensors', 'model.ckpt', 'model.pt']).toContain(result);
+      
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/model');
+      expect(result).toBe('model.safetensors');
     });
 
-    it('should handle complex model name normalization in matching', async () => {
-      const mockObjectInfo = {
-        CheckpointLoaderSimple: {
-          input: {
-            required: {
-              ckpt_name: [['FLUX_1.0_DEV_v2_final.safetensors']],
-            },
-          },
-        },
-      };
-
-      (mockComfyApi.fetchApi as Mock).mockResolvedValue({
-        json: () => Promise.resolve(mockObjectInfo),
-        ok: true,
-        status: 200,
-        statusText: 'OK',
+    it('should handle complex model names through standardization', async () => {
+      mockValidationManager.validateModelExistence.mockResolvedValue({
+        actualFileName: 'FLUX_1.0_DEV_v2_final.safetensors',
+        exists: true,
+        timestamp: Date.now(),
       });
 
       const result = await resolver.resolveModelFileName('comfyui/flux-10-dev-v2-final');
+      
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/flux-10-dev-v2-final');
       expect(result).toBe('FLUX_1.0_DEV_v2_final.safetensors');
     });
   });

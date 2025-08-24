@@ -2,18 +2,27 @@ import { PromptBuilder } from '@saintno/comfyui-sdk';
 
 import { generateUniqueSeeds } from '@/utils/number';
 
-import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS, getOptimalT5Model } from '../constants';
 import { splitPromptForDualCLIP } from '../utils/prompt-splitter';
 import { selectOptimalWeightDtype } from '../utils/weight-dtype';
 
 /**
- * FLUX Dev 工作流构建器
- * 20步高质量生成，使用FluxGuidance和SamplerCustomAdvanced
+ * FLUX Dev 工作流构建器 / FLUX Dev Workflow Builder
+ * 
+ * @description 构建20步高质量生成工作流，使用FluxGuidance和SamplerCustomAdvanced
+ * Builds 20-step high-quality generation workflow with FluxGuidance and SamplerCustomAdvanced
+ * 
+ * @param {string} modelName - 模型文件名 / Model filename
+ * @param {Record<string, any>} params - 生成参数 / Generation parameters
+ * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow
  */
 export function buildFluxDevWorkflow(
   modelName: string,
   params: Record<string, any>,
 ): PromptBuilder<any, any, any> {
+  // 使用固定的T5模型配置
+  const selectedT5Model = getOptimalT5Model();
+
   const workflow = {
     '1': {
       _meta: {
@@ -21,7 +30,7 @@ export function buildFluxDevWorkflow(
       },
       class_type: 'DualCLIPLoader',
       inputs: {
-        clip_name1: FLUX_MODEL_CONFIG.CLIP.T5XXL,
+        clip_name1: selectedT5Model,
         clip_name2: FLUX_MODEL_CONFIG.CLIP.CLIP_L,
         type: 'flux',
       },
@@ -170,7 +179,7 @@ export function buildFluxDevWorkflow(
   // 处理prompt分离 - 在工作流构建早期进行
   const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
 
-  // 🔧 CRITICAL FIX: 直接设置prompt值到工作流节点，而不依赖PromptBuilder的输入映射
+  // 直接设置prompt值到工作流节点，而不依赖PromptBuilder的输入映射
   workflow['5'].inputs.clip_l = clipLPrompt;
   workflow['5'].inputs.t5xxl = t5xxlPrompt;
 

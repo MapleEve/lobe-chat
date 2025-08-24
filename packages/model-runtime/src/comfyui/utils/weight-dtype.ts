@@ -1,23 +1,18 @@
-import { detectQuantization, type QuantizationType } from './quantization-detector';
-import { detectVariant, isFluxModel } from './model-variant-detector';
 import { ModelNameStandardizer } from './model-name-standardizer';
 
 /**
- * FLUX 模型动态权重类型选择参数接口
+ * FLUX 模型权重类型参数接口 / FLUX Model Weight Dtype Parameters Interface
+ * 
+ * @description 权重类型选择的参数接口
+ * Parameter interface for weight type selection
  */
 export interface WeightDtypeParams {
-  /** 是否启用实验性量化优化 */
-  experimentalOptimization?: boolean;
-  /** 硬件内存限制（GB），用于智能选择 */
-  memoryLimitGB?: number;
-  /** 是否优先考虑推理速度而非质量 */
-  prioritizeSpeed?: boolean;
-  /** 用户显式指定的权重类型，优先级最高 */
+  /** 用户显式指定的权重类型 / User explicitly specified weight type */
   weightDtype?: string;
 }
 
 /**
- * 权重类型映射表 - 基于量化类型检测的映射
+ * Weight type mapping table - mapping based on quantization type detection / 权重类型映射表 - 基于量化类型检测的映射
  */
 const QUANTIZATION_TO_WEIGHT_DTYPE: Record<string, string> = {
   
@@ -25,7 +20,7 @@ const QUANTIZATION_TO_WEIGHT_DTYPE: Record<string, string> = {
 'bnb_nf4': 'nf4', 
   
 
-// 精度类型
+// Precision types / 精度类型
 'fp16': 'fp16',
   
 
@@ -34,15 +29,15 @@ const QUANTIZATION_TO_WEIGHT_DTYPE: Record<string, string> = {
   
   
   
-// FP8 量化类型
+// FP8 quantization types / FP8 量化类型
 'fp8': 'fp8_e4m3fn',
-  // 通用fp8默认使用e4m3fn（速度优化）
+  // Generic fp8 defaults to e4m3fn (speed optimization) / 通用fp8默认使用e4m3fn（速度优化）
 'fp8_e4m3fn': 'fp8_e4m3fn',
   
   
   'fp8_e5m2': 'fp8_e5m2',
   
-// GGUF 格式 - ComfyUI 兼容性，统一使用 default
+// GGUF format - ComfyUI compatibility, unified use of default / GGUF 格式 - ComfyUI 兼容性，统一使用 default
 'gguf_q2_k': 'default',
   
 
@@ -103,18 +98,14 @@ function detectDirectPatterns(modelName: string): string | null {
 }
 
 /**
- * FLUX 模型动态权重类型选择工具
+ * FLUX 模型权重类型选择工具 / FLUX Model Weight Dtype Selection Tool
  * 
- * 智能权重类型选择策略：
- * - 用户显式设置具有最高优先级
- * - 优先进行直接文件名模式匹配确保向后兼容
- * - 使用简化的量化检测和模型变体识别
- * - 针对不同模型变体提供优化策略
- * - 支持硬件内存限制和性能偏好
+ * @description 简单的权重类型选择：用户显式设置优先，否则使用ModelNameStandardizer推荐值
+ * Simple weight type selection: user explicit settings take priority, otherwise use ModelNameStandardizer recommendations
  * 
- * @param modelName 模型文件名或路径
- * @param params 权重选择参数
- * @returns 最优的权重类型字符串
+ * @param {string} modelName - 模型文件名或路径 / Model filename or path
+ * @param {WeightDtypeParams} params - 权重选择参数 / Weight selection parameters
+ * @returns {string} 权重类型字符串 / Weight type string
  */
 export function selectOptimalWeightDtype(modelName: string, params: WeightDtypeParams = {}): string {
   // 处理null/undefined参数
@@ -129,25 +120,8 @@ export function selectOptimalWeightDtype(modelName: string, params: WeightDtypeP
   // 这会在无法匹配时抛出 ModelNotFoundError，确保没有回退逻辑
   const standardizedModel = ModelNameStandardizer.standardize(modelName);
   
-  // 3. 应用用户偏好覆盖（如果有的话）
-  let recommendedDtype = standardizedModel.recommendedDtype;
-  
-  // 4. 考虑硬件内存限制
-  if (safeParams.memoryLimitGB && safeParams.memoryLimitGB < 8) {
-    // 低内存设备强制使用 fp8_e4m3fn
-    if (recommendedDtype === 'default') {
-      recommendedDtype = 'fp8_e4m3fn';
-    }
-  }
-  
-  // 5. 速度优先设置覆盖（仅当没有明确量化时）
-  if (safeParams.prioritizeSpeed && !standardizedModel.quantization) {
-    if (recommendedDtype === 'default') {
-      recommendedDtype = 'fp8_e4m3fn';
-    }
-  }
-  
-  return recommendedDtype;
+  // 3. 直接返回推荐的权重类型
+  return standardizedModel.recommendedDtype;
 }
 
 

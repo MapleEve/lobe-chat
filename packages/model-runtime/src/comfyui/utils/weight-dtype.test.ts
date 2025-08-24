@@ -154,32 +154,36 @@ describe('selectOptimalWeightDtype', () => {
     });
 
     it('should respect prioritizeSpeed parameter', () => {
-      const speedParams: WeightDtypeParams = { prioritizeSpeed: true };
-      const qualityParams: WeightDtypeParams = { prioritizeSpeed: false };
+      // 移除智能选择后，prioritizeSpeed参数不再支持
+      // 这些测试现在验证未知模型会抛出错误
       
-      // 使用会触发fallback逻辑的模型名称（包含特殊字符，避免被标准化器识别）
-      expect(selectOptimalWeightDtype('my-custom@flux#model.safetensors', speedParams)).toBe('fp8_e4m3fn');
-      expect(selectOptimalWeightDtype('my-custom@flux#model.safetensors', qualityParams)).toBe('default');
+      // 使用会触发错误的模型名称（包含特殊字符，无法被标准化器识别）
+      let result;
+      let error;
+      try {
+        result = selectOptimalWeightDtype('my-custom@flux#model.safetensors', {});
+        console.log('Unexpected result:', result);
+      } catch (e) {
+        error = e;
+      }
+      expect(error).toBeInstanceOf(ModelNotFoundError);
       
-      // 企业模型的速度/质量权衡 - 使用实际的企业模型名称
-      expect(selectOptimalWeightDtype('flux.1-lite-8B.safetensors', speedParams)).toBe('fp8_e4m3fn');
-      expect(selectOptimalWeightDtype('flux.1-lite-8B.safetensors', qualityParams)).toBe('fp8_e4m3fn'); // 企业模型本身已优化
+      // 企业模型 flux.1-lite-8B 在标准化器中定义，应该返回其推荐的dtype
+      expect(selectOptimalWeightDtype('flux.1-lite-8B.safetensors', {})).toBe('fp8_e4m3fn');
     });
 
     it('should handle memory limitations intelligently', () => {
-      const lowMemParams: WeightDtypeParams = { memoryLimitGB: 6 };
-      const midMemParams: WeightDtypeParams = { memoryLimitGB: 10 };
-      const highMemParams: WeightDtypeParams = { memoryLimitGB: 16 };
+      // 移除智能选择后，memoryLimitGB参数不再支持
+      // 这些测试现在验证未知模型会抛出错误
       
-      // 使用会触发fallback逻辑的模型名称来测试内存驱动的选择
-      expect(selectOptimalWeightDtype('weird@model&name.safetensors', lowMemParams)).toBe('fp8_e4m3fn');
+      // 使用会触发错误的模型名称（包含特殊字符，无法被标准化器识别）
+      expect(() => {
+        selectOptimalWeightDtype('weird@model&name.safetensors', {});
+      }).toThrow(ModelNotFoundError);
       
-      // 中等内存设备的权衡选择
-      expect(selectOptimalWeightDtype('weird@model&name.safetensors', { ...midMemParams, prioritizeSpeed: true })).toBe('fp8_e4m3fn');
-      expect(selectOptimalWeightDtype('weird@model&name.safetensors', { ...midMemParams, prioritizeSpeed: false })).toBe('default');
-      
-      // 高内存设备可以使用默认策略
-      expect(selectOptimalWeightDtype('weird@model&name.safetensors', highMemParams)).toBe('default');
+      // 已知模型应该返回其推荐的dtype，不考虑内存限制
+      expect(selectOptimalWeightDtype('flux1-dev.safetensors', {})).toBe('default');
+      expect(selectOptimalWeightDtype('flux1-schnell.safetensors', {})).toBe('fp8_e4m3fn');
     });
 
     it('should handle 105 official models correctly', () => {

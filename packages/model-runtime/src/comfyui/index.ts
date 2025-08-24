@@ -16,18 +16,16 @@ import { parseComfyUIErrorMessage } from '../utils/comfyuiErrorParser';
 import { AgentRuntimeError } from '../utils/createError';
 import { MODEL_LIST_CONFIGS, processModelList } from '../utils/modelParse';
 import { ComfyUIModelResolver } from './utils/modelResolver';
-import { buildFluxDevWorkflow } from './workflows/flux-dev';
-import { buildFluxKontextWorkflow } from './workflows/flux-kontext';
-import { buildFluxKreaWorkflow } from './workflows/flux-krea';
-// Import workflow builders
-import { buildFluxSchnellWorkflow } from './workflows/flux-schnell';
+import { ModelValidationManager } from './utils/modelValidationManager';
+import { WorkflowTypeDetector } from './utils/WorkflowTypeDetector';
+import { WorkflowRouter, WorkflowRoutingError } from './utils/WorkflowRouter';
 
 const log = debug('lobe-image:comfyui');
 // Removed unused debugVerbose variable
 
 /**
- * ComfyUI Runtime 实现
- * 支持 FLUX 系列模型的文生图和图像编辑
+ * ComfyUI Runtime implementation / ComfyUI Runtime 实现
+ * Supports text-to-image and image editing for FLUX series models / 支持 FLUX 系列模型的文生图和图像编辑
  */
 // Export ComfyUI utilities and types
 export { ComfyUIModelResolver } from './utils/modelResolver';
@@ -37,16 +35,14 @@ export class LobeComfyUI implements LobeRuntimeAI {
   private client: ComfyApi;
   private options: ComfyUIKeyVault;
   private modelResolver: ComfyUIModelResolver;
+  protected modelValidator: ModelValidationManager;
+
+  // Test helper method to set model validator for testing purposes
+  setModelValidatorForTesting(validator: ModelValidationManager) {
+    this.modelValidator = validator;
+  }
   private connectionValidated: boolean;
   baseURL: string;
-
-  // Direct workflow mapping - no more string parsing
-  private static readonly WORKFLOW_BUILDERS = {
-    'comfyui/flux-dev': buildFluxDevWorkflow,
-    'comfyui/flux-kontext-dev': buildFluxKontextWorkflow,
-    'comfyui/flux-krea-dev': buildFluxKreaWorkflow,
-    'comfyui/flux-schnell': buildFluxSchnellWorkflow,
-  } as const;
 
   constructor(options: ComfyUIKeyVault = {}) {
     const {
@@ -70,8 +66,9 @@ export class LobeComfyUI implements LobeRuntimeAI {
     this.client = new ComfyApi(this.baseURL, undefined, { credentials });
     this.client.init();
 
-    // 在创建客户端后，将其传递给 modelResolver 以支持认证请求
+    // 在创建客户端后，将其传递给 modelResolver 和 modelValidator 以支持认证请求
     this.modelResolver = new ComfyUIModelResolver(this.client);
+    this.modelValidator = new ModelValidationManager(() => this.modelResolver.getAvailableModelFiles());
   }
 
   /**
@@ -147,61 +144,63 @@ export class LobeComfyUI implements LobeRuntimeAI {
    * Create image
    */
   async createImage(payload: CreateImagePayload): Promise<CreateImageResponse> {
-    // 移除 ensureConnection，让错误在实际请求时被捕获并正确处理
-    // await this.ensureConnection();
 
     const { model, params } = payload;
 
     try {
       await this.client.waitForReady();
 
-      // Get actual model filename for workflow
-      const modelFileName = await this.modelResolver.resolveModelFileName(model);
+      // 1. 首先进行严格的模型存在性验证
+      const validationResult = await this.modelValidator.validateModelExistence(model);
       log('Model ID:', model);
-      log('Resolved model filename:', modelFileName);
+      log('Model validation result:', validationResult);
 
-      // Direct workflow building with resolved model name
+      // 2. 使用验证通过的实际文件名构建工作流
+      const modelFileName = validationResult.actualFileName!; // 验证通过必然有文件名
+      log('Validated model filename:', modelFileName);
+
+      // Direct workflow building with validated model name
       const workflow = this.buildWorkflow(model, modelFileName, params);
-      
+
       // 🔍 DEBUG: Log the actual workflow being sent to ComfyUI
-      console.log('=== ACTUAL WORKFLOW BEING SENT TO COMFYUI ===');
-      console.log('Model ID:', model);
-      console.log('Model Filename:', modelFileName);
+      log('=== ACTUAL WORKFLOW BEING SENT TO COMFYUI ===');
+      log('Model ID:', model);
+      log('Model Filename:', modelFileName);
       try {
         const workflowJson = JSON.stringify(workflow.prompt, null, 2);
-        console.log('Full Workflow JSON:');
-        console.log(workflowJson);
-        
+        log('Full Workflow JSON:');
+        log(workflowJson);
+
         // Look for SamplerCustomAdvanced node specifically
         const workflowNodes = workflow.prompt || {};
-        const samplerNodes = Object.entries(workflowNodes).filter(([_, node]) => 
+        const samplerNodes = Object.entries(workflowNodes).filter(([_, node]) =>
           (node as any).class_type === 'SamplerCustomAdvanced'
         );
-        
+
         if (samplerNodes.length > 0) {
-          console.log('Found SamplerCustomAdvanced nodes:');
+          log('Found SamplerCustomAdvanced nodes:');
           samplerNodes.forEach(([nodeId, node]) => {
-            console.log(`Node ${nodeId}:`, JSON.stringify(node, null, 2));
+            log(`Node ${nodeId}:`, JSON.stringify(node, null, 2));
           });
         }
-        
-        // Look for BasicGuider nodes specifically  
-        const guiderNodes = Object.entries(workflowNodes).filter(([_, node]) => 
+
+        // Look for BasicGuider nodes specifically
+        const guiderNodes = Object.entries(workflowNodes).filter(([_, node]) =>
           (node as any).class_type === 'BasicGuider'
         );
-        
+
         if (guiderNodes.length > 0) {
-          console.log('Found BasicGuider nodes:');
+          log('Found BasicGuider nodes:');
           guiderNodes.forEach(([nodeId, node]) => {
-            console.log(`Node ${nodeId}:`, JSON.stringify(node, null, 2));
+            log(`Node ${nodeId}:`, JSON.stringify(node, null, 2));
           });
         } else {
-          console.log('❌ WARNING: No BasicGuider nodes found in workflow!');
+          log('❌ WARNING: No BasicGuider nodes found in workflow!');
         }
       } catch (error) {
-        console.log('Error serializing workflow:', error);
+        log('Error serializing workflow:', error);
       }
-      console.log('=== END WORKFLOW DEBUG ===');
+      log('=== END WORKFLOW DEBUG ===');
 
       const result = await new Promise<any>((resolve, reject) => {
         new CallWrapper(this.client, workflow)
@@ -284,182 +283,62 @@ export class LobeComfyUI implements LobeRuntimeAI {
   }
 
   /**
-   * Build workflow directly from model ID
+   * Build workflow using modern type detection and routing
+   *
+   * This method has been completely refactored to:
+   * - Use strict model type detection
+   * - Remove dangerous SD fallback logic
+   * - Provide clear error messages for unsupported models
+   * - Maintain compatibility with existing API
    */
   private buildWorkflow(
     model: string,
     modelFileName: string,
     params: Record<string, any>,
   ): PromptBuilder<any, any, any> {
-    // Add comfyui/ prefix if not present for workflow lookup
-    const fullModelId = model.startsWith('comfyui/') ? model : `comfyui/${model}`;
+    log('🔧 Building workflow for model:', model);
 
-    // Debug logging
-    console.log('=== Workflow Selection Debug ===');
-    console.log('Original model:', model);
-    console.log('Full model ID:', fullModelId);
-    console.log('Available workflow builders:', Object.keys(LobeComfyUI.WORKFLOW_BUILDERS));
+    // Step 1: Detect model type using modern detection system
+    const detectionResult = WorkflowTypeDetector.detectModelType(model);
+    log('Model detection result:', detectionResult);
 
-    const workflowBuilder =
-      LobeComfyUI.WORKFLOW_BUILDERS[fullModelId as keyof typeof LobeComfyUI.WORKFLOW_BUILDERS];
-    if (workflowBuilder) {
-      console.log('Found exact workflow builder for:', fullModelId);
-      try {
-        const workflow = workflowBuilder(modelFileName, params);
-        console.log('✅ Workflow created successfully');
-        return workflow;
-      } catch (error) {
-        console.log('❌ Error creating workflow:', error);
-        throw error;
-      }
+    // Step 2: Validate model architecture compatibility
+    if (!detectionResult.isSupported) {
+      const supportedModels = WorkflowRouter.getExactlySupportedModels();
+      const supportedVariants = WorkflowRouter.getSupportedFluxVariants();
+
+      throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
+        error: `Unsupported model "${model}". ` +
+               `Architecture: ${detectionResult.architecture}. ` +
+               `Supported exact models: [${supportedModels.join(', ')}]. ` +
+               `Supported FLUX variants: [${supportedVariants.join(', ')}].`,
+        model,
+      });
     }
 
-    // Smart FLUX model detection for variants not in WORKFLOW_BUILDERS
-    const modelName = fullModelId.replace('comfyui/', '').toLowerCase();
+    // Step 3: Route to appropriate workflow builder
+    try {
+      const workflow = WorkflowRouter.routeWorkflow(
+        model,
+        detectionResult,
+        modelFileName,
+        params
+      );
 
-    log('No exact match found, checking FLUX detection...');
-    log('Model name for detection:', modelName);
-
-    if (modelName.includes('flux')) {
-      log('✅ FLUX model detected, routing to appropriate workflow');
-      // Route FLUX model variants to appropriate workflows
-      if (modelName.includes('schnell')) {
-        log('Using FluxSchnellWorkflow for:', modelName);
-        const workflow = buildFluxSchnellWorkflow(modelFileName, params);
-        log('Workflow input parameters:', (workflow as any).inputParameters);
-        log('Workflow prompt keys:', Object.keys(workflow.prompt || {}));
-        return workflow;
-      } else if (modelName.includes('krea')) {
-        log('Using FluxKreaWorkflow for:', modelName);
-        const workflow = buildFluxKreaWorkflow(modelFileName, params);
-        log('Workflow input parameters:', (workflow as any).inputParameters);
-        log('Workflow prompt keys:', Object.keys(workflow.prompt || {}));
-        return workflow;
-      } else if (modelName.includes('kontext')) {
-        log('Using FluxKontextWorkflow for:', modelName);
-        const workflow = buildFluxKontextWorkflow(modelFileName, params);
-        log('Workflow input parameters:', (workflow as any).inputParameters);
-        log('Workflow prompt keys:', Object.keys(workflow.prompt || {}));
-        return workflow;
-      } else {
-        // Default FLUX variant to dev workflow (most common)
-        log('Using FluxDevWorkflow (default) for:', modelName);
-        const workflow = buildFluxDevWorkflow(modelFileName, params);
-        log('Workflow input parameters:', (workflow as any).inputParameters);
-        log('Workflow prompt keys:', Object.keys(workflow.prompt || {}));
-        return workflow;
+      log('✅ Workflow built successfully for:', model);
+      return workflow;
+    } catch (error) {
+      if (error instanceof WorkflowRoutingError) {
+        // Convert routing error to runtime error
+        throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
+          error: error.message,
+          model: error.modelId,
+        });
       }
+
+      // Re-throw other errors as-is
+      throw error;
     }
-
-    // Fallback to generic SD workflow for unknown models
-    log('❌ No FLUX detected, falling back to generic SD workflow for:', modelName);
-    return this.buildGenericSDWorkflow(modelFileName, params);
-  }
-
-  /**
-   * Generic SD workflow for unsupported models
-   */
-  private buildGenericSDWorkflow(
-    modelFileName: string,
-    params: Record<string, any>,
-  ): PromptBuilder<any, any, any> {
-    const workflow = {
-      '1': {
-        _meta: { title: 'Load Checkpoint' },
-        class_type: 'CheckpointLoaderSimple',
-        inputs: { ckpt_name: modelFileName },
-      },
-      '2': {
-        _meta: { title: 'CLIP Text Encode (Positive)' },
-        class_type: 'CLIPTextEncode',
-        inputs: {
-          clip: ['1', 1],
-          text: params.prompt ?? '',
-        },
-      },
-      '3': {
-        _meta: { title: 'CLIP Text Encode (Negative)' },
-        class_type: 'CLIPTextEncode',
-        inputs: {
-          clip: ['1', 1],
-          text: params.negativePrompt ?? '',
-        },
-      },
-      '4': {
-        _meta: { title: 'Empty Latent Image' },
-        class_type: 'EmptyLatentImage',
-        inputs: {
-          batch_size: 1,
-          height: params.height ?? 512,
-          width: params.width ?? 512,
-        },
-      },
-      '5': {
-        _meta: { title: 'K Sampler' },
-        class_type: 'KSampler',
-        inputs: {
-          cfg: params.cfg ?? 7,
-          denoise: 1,
-          latent_image: ['4', 0],
-          model: ['1', 0],
-          negative: ['3', 0],
-          positive: ['2', 0],
-          sampler_name: params.samplerName ?? 'euler',
-          scheduler: params.scheduler ?? 'normal',
-          seed: params.seed ?? -1,
-          steps: params.steps ?? 20,
-        },
-      },
-      '6': {
-        _meta: { title: 'VAE Decode' },
-        class_type: 'VAEDecode',
-        inputs: {
-          samples: ['5', 0],
-          vae: ['1', 2],
-        },
-      },
-      '7': {
-        _meta: { title: 'Save Image' },
-        class_type: 'SaveImage',
-        inputs: {
-          filename_prefix: 'comfyui',
-          images: ['6', 0],
-        },
-      },
-    };
-
-    const builder = new PromptBuilder(
-      workflow,
-      ['prompt', 'prompt_clip_l', 'negativePrompt', 'width', 'height', 'steps', 'cfg', 'seed'],
-      ['images'],
-    );
-
-    // 设置输出节点
-    builder.setOutputNode('images', '7');
-
-    // 添加setInputNode映射以支持前端参数传递
-    builder
-      .setInputNode('prompt', '2.inputs.text')
-      .setInputNode('prompt_clip_l', '2.inputs.text') // 为兼容性映射到同一个prompt字段
-      .setInputNode('negativePrompt', '3.inputs.text')
-      .setInputNode('width', '4.inputs.width')
-      .setInputNode('height', '4.inputs.height')
-      .setInputNode('steps', '5.inputs.steps')
-      .setInputNode('cfg', '5.inputs.cfg')
-      .setInputNode('seed', '5.inputs.seed');
-
-    // 设置输入值
-    builder
-      .input('prompt', params.prompt ?? '')
-      .input('prompt_clip_l', params.prompt ?? params.prompt_clip_l ?? '')
-      .input('negativePrompt', params.negativePrompt ?? '')
-      .input('width', params.width ?? 512)
-      .input('height', params.height ?? 512)
-      .input('steps', params.steps ?? 20)
-      .input('cfg', params.cfg ?? 7)
-      .input('seed', params.seed ?? -1);
-
-    return builder;
   }
 
   /**

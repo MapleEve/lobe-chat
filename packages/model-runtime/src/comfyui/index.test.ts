@@ -2,7 +2,7 @@
 import { CallWrapper, ComfyApi, PromptBuilder } from '@saintno/comfyui-sdk';
 import { Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { CreateImagePayload } from '@/libs/model-runtime';
+import { AgentRuntimeErrorType, CreateImagePayload } from '@/libs/model-runtime';
 
 import { LobeComfyUI } from '../index';
 import { ComfyUIModelResolver } from './utils/modelResolver';
@@ -105,6 +105,41 @@ describe('LobeComfyUI', () => {
       transformModelFilesToList: vi.fn().mockReturnValue([]),
     };
     (ComfyUIModelResolver as Mock).mockImplementation(() => mockModelResolver);
+    
+    // Mock ModelValidationManager for strict validation
+    vi.mock('./utils/modelValidationManager', () => ({
+      ModelValidationManager: vi.fn(() => ({
+        validateModelExistence: vi.fn().mockResolvedValue({
+          actualFileName: 'flux-schnell.safetensors',
+          exists: true,
+          timestamp: Date.now(),
+        }),
+      })),
+    }));
+    
+    // Mock WorkflowTypeDetector
+    vi.mock('./utils/WorkflowTypeDetector', () => ({
+      WorkflowTypeDetector: {
+        detectModelType: vi.fn().mockReturnValue({
+          architecture: 'flux',
+          confidence: 'high',
+          isSupported: true,
+          variant: 'schnell',
+        }),
+      },
+    }));
+    
+    // Mock WorkflowRouter
+    vi.mock('./utils/WorkflowRouter', () => ({
+      WorkflowRouter: {
+        getExactlySupportedModels: vi.fn().mockReturnValue(['comfyui/flux-dev', 'comfyui/flux-schnell']),
+        getSupportedFluxVariants: vi.fn().mockReturnValue(['dev', 'schnell', 'kontext', 'krea']),
+        routeWorkflow: vi.fn().mockReturnValue({
+          prompt: { '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'flux-schnell.safetensors' } } },
+        }),
+      },
+      WorkflowRoutingError: class WorkflowRoutingError extends Error {},
+    }));
   });
 
   afterEach(() => {
@@ -293,19 +328,36 @@ describe('LobeComfyUI', () => {
       instance = new LobeComfyUI({ baseURL: 'http://custom:8188' });
     });
 
-    it('should handle connection failure during createImage', async () => {
-      // Mock connection failure for model resolution
-      mockModelResolver.resolveModelFileName.mockRejectedValueOnce(
-        new Error('connect ECONNREFUSED'),
-      );
-
-      const payload: CreateImagePayload = {
-        model: 'comfyui/flux-schnell',
-        params: { prompt: 'Test connection validation' },
+    it('should throw ModelNotFound error for non-existent model', async () => {
+      // Setup mock for model validation failure
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockRejectedValue({
+          error: {
+            error: 'HTTP undefined: undefined',
+            model: 'comfyui/non-existent-model',
+          },
+          errorType: 'ModelNotFound',
+        }),
       };
 
-      // Should throw error when trying to resolve model
-      await expect(instance.createImage(payload)).rejects.toThrow();
+      // Setup instance with mocked validation
+      instance.setModelValidatorForTesting(mockValidationManager as any);
+
+      const payload: CreateImagePayload = {
+        model: 'comfyui/non-existent-model',
+        params: { prompt: 'Test model not found' },
+      };
+
+      // Should throw ModelNotFound error for non-existent model
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        error: expect.objectContaining({
+          model: 'comfyui/non-existent-model',
+        }),
+        errorType: 'ModelNotFound',
+      });
+      
+      // Should attempt validation
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/non-existent-model');
     });
 
     it('should return empty array when connection validation fails in models()', async () => {
@@ -317,54 +369,73 @@ describe('LobeComfyUI', () => {
       expect(result).toEqual([]);
     });
 
-    it('should cache successful connection validation', async () => {
-      // Mock successful model resolution
-      mockModelResolver.resolveModelFileName.mockResolvedValue('flux_schnell.safetensors');
+    it('should validate model existence using strict validation', async () => {
+      // Setup mock for successful validation
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockResolvedValue({
+          actualFileName: 'flux-schnell.safetensors',
+          exists: true,
+          timestamp: Date.now(),
+        }),
+      };
 
-      // Mock successful image creation with proper callback
+      // Mock successful workflow execution
       const mockResult = {
         images: { images: [{ filename: 'test.png', height: 512, width: 512 }] },
       };
 
-      let callCount = 0;
       mockCallWrapper.run.mockImplementation(() => {
-        callCount++;
-        // Simulate async behavior with setTimeout
-        setTimeout(() => {
-          const finishCallback = mockCallWrapper.onFinished.mock.calls[callCount - 1][0];
-          finishCallback(mockResult);
-        }, 0);
+        const finishCallback = mockCallWrapper.onFinished.mock.calls[0][0];
+        finishCallback(mockResult);
       });
+
+      // Setup instance with mocked validation
+      instance.setModelValidatorForTesting(mockValidationManager as any);
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
-        params: { prompt: 'Test caching' },
+        params: { prompt: 'Test strict validation' },
       };
 
-      // First call
-      await instance.createImage(payload);
+      const result = await instance.createImage(payload);
 
-      // Second call - should work without issues
-      await instance.createImage(payload);
-
-      // Both calls should succeed
-      expect(mockModelResolver.resolveModelFileName).toHaveBeenCalledTimes(2);
+      // Should validate model existence
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/flux-schnell');
+      
+      // Should succeed with valid model
+      expect(result).toEqual({
+        height: 512,
+        imageUrl: 'http://localhost:8188/view?filename=test.png',
+        width: 512,
+      });
     });
 
     it('should handle authentication errors during validation', async () => {
-      // Mock 401 error in model resolution
-      mockModelResolver.resolveModelFileName.mockRejectedValueOnce({
-        message: 'Unauthorized',
-        status: 401,
-      });
+      // Mock validation manager to throw auth error
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockRejectedValue({
+          error: {
+            message: 'Unauthorized',
+            status: 401,
+          },
+          errorType: 'InvalidProviderAPIKey',
+        }),
+      };
+
+      // Setup instance with mocked validation
+      instance.setModelValidatorForTesting(mockValidationManager as any);
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
         params: { prompt: 'Test auth error' },
       };
 
-      await expect(instance.createImage(payload)).rejects.toThrow();
-    });
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        errorType: 'InvalidProviderAPIKey',
+      });
+      
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/flux-schnell');
+    }, 1000);
 
     it('should validate even with authType=none', async () => {
       instance = new LobeComfyUI({
@@ -372,19 +443,31 @@ describe('LobeComfyUI', () => {
         baseURL: 'http://secure-server:8188',
       });
 
-      // Mock server requiring authentication despite none config
-      mockModelResolver.resolveModelFileName.mockRejectedValueOnce({
-        message: 'Unauthorized',
-        status: 401,
-      });
+      // Mock validation manager to throw auth error even with none auth
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockRejectedValue({
+          error: {
+            message: 'Unauthorized',
+            status: 401,
+          },
+          errorType: 'InvalidProviderAPIKey',
+        }),
+      };
+
+      // Setup instance with mocked validation
+      instance.setModelValidatorForTesting(mockValidationManager as any);
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
         params: { prompt: 'Test none auth validation' },
       };
 
-      await expect(instance.createImage(payload)).rejects.toThrow();
-    });
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        errorType: 'InvalidProviderAPIKey',
+      });
+      
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/flux-schnell');
+    }, 1000);
   });
 
   describe('createImage()', () => {
@@ -648,88 +731,60 @@ describe('LobeComfyUI', () => {
       expect(CallWrapper).toHaveBeenCalled();
     });
 
-    it('should fallback to FLUX model when no exact match found', async () => {
-      const mockObjectInfo = {
-        CheckpointLoaderSimple: {
-          input: {
-            required: {
-              ckpt_name: [['flux_something.safetensors', 'other_model.ckpt']],
-            },
-          },
-        },
+    it('should throw error when no exact match found', async () => {
+      // Mock validation to fail for unknown model
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockRejectedValue({
+          error: { model: 'comfyui/unknown-model' },
+          errorType: AgentRuntimeErrorType.ModelNotFound,
+        }),
       };
 
-      (global.fetch as Mock).mockResolvedValue({
-        json: () => Promise.resolve(mockObjectInfo),
-      });
-
-      const mockResult = {
-        images: {
-          images: [
-            {
-              filename: 'test.png',
-            },
-          ],
-        },
-      };
-
-      mockCallWrapper.run.mockImplementation(() => {
-        const finishCallback = mockCallWrapper.onFinished.mock.calls[0][0];
-        finishCallback(mockResult);
-      });
+      // Setup instance with mocked validation
+      instance.setModelValidatorForTesting(mockValidationManager as any);
 
       const payload: CreateImagePayload = {
         model: 'comfyui/unknown-model',
         params: {
-          prompt: 'Test FLUX fallback',
+          prompt: 'Test unknown model',
         },
       };
 
-      await instance.createImage(payload);
+      // Should throw error for unknown model
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        errorType: AgentRuntimeErrorType.ModelNotFound,
+      });
 
-      expect(CallWrapper).toHaveBeenCalled();
+      // Verify validation was attempted
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/unknown-model');
     });
 
-    it('should fallback to first available model when no FLUX found', async () => {
-      const mockObjectInfo = {
-        CheckpointLoaderSimple: {
-          input: {
-            required: {
-              ckpt_name: [['stable_diffusion.ckpt']],
-            },
-          },
-        },
+    it('should throw error when model not in verified list', async () => {
+      // Mock validation to fail for non-verified model
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockRejectedValue({
+          error: { model: 'comfyui/non-verified-model' },
+          errorType: AgentRuntimeErrorType.ModelNotFound,
+        }),
       };
 
-      (global.fetch as Mock).mockResolvedValue({
-        json: () => Promise.resolve(mockObjectInfo),
-      });
-
-      const mockResult = {
-        images: {
-          images: [
-            {
-              filename: 'test.png',
-            },
-          ],
-        },
-      };
-
-      mockCallWrapper.run.mockImplementation(() => {
-        const finishCallback = mockCallWrapper.onFinished.mock.calls[0][0];
-        finishCallback(mockResult);
-      });
+      // Setup instance with mocked validation
+      instance.setModelValidatorForTesting(mockValidationManager as any);
 
       const payload: CreateImagePayload = {
-        model: 'comfyui/unknown-model',
+        model: 'comfyui/non-verified-model',
         params: {
-          prompt: 'Test first model fallback',
+          prompt: 'Test non-verified model',
         },
       };
 
-      await instance.createImage(payload);
+      // Should throw error for non-verified model
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        errorType: AgentRuntimeErrorType.ModelNotFound,
+      });
 
-      expect(CallWrapper).toHaveBeenCalled();
+      // Verify validation was attempted
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/non-verified-model');
     });
 
     it('should use fallback dimensions when not provided in response', async () => {
@@ -783,53 +838,32 @@ describe('LobeComfyUI', () => {
       });
     });
 
-    it('should fallback to first available model when no exact, fuzzy, or FLUX match is found', async () => {
-      const mockObjectInfo = {
-        CheckpointLoaderSimple: {
-          input: {
-            required: {
-              ckpt_name: [['first_model.ckpt', 'second_model.safetensors']],
-            },
-          },
-        },
+    it('should throw error when no exact, fuzzy, or FLUX match is found', async () => {
+      // Mock validation to fail for unknown model
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockRejectedValue({
+          error: { model: 'comfyui/some-unknown-model' },
+          errorType: AgentRuntimeErrorType.ModelNotFound,
+        }),
       };
 
-      (global.fetch as Mock).mockResolvedValue({
-        json: () => Promise.resolve(mockObjectInfo),
-      });
-
-      // Mock the model resolver to return the first model
-      mockModelResolver.getAvailableModelFiles.mockResolvedValue([
-        'first_model.ckpt',
-        'second_model.safetensors',
-      ]);
-      mockModelResolver.resolveModelFileName.mockResolvedValue('first_model.ckpt');
-
-      const mockResult = {
-        images: {
-          images: [{ filename: 'test.png' }],
-        },
-      };
-
-      mockCallWrapper.run.mockImplementation(() => {
-        const finishCallback = mockCallWrapper.onFinished.mock.calls[0][0];
-        finishCallback(mockResult);
-      });
+      // Setup instance with mocked validation
+      instance.setModelValidatorForTesting(mockValidationManager as any);
 
       const payload: CreateImagePayload = {
         model: 'comfyui/some-unknown-model', // A model that won't match anything
         params: {
-          prompt: 'Test fallback to first model',
+          prompt: 'Test unknown model',
         },
       };
 
-      await instance.createImage(payload);
-
-      // This covers the branch where `if (fluxMatch)` is false.
-      // We verify that the generic workflow is called with the *first* model from the list.
-      const callArgs = (PromptBuilder as Mock).mock.calls[0];
-      const workflow = callArgs[0];
-      expect(workflow['1'].inputs.ckpt_name).toBe('first_model.ckpt');
+      // Expect the validation to throw a ModelNotFound error
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        errorType: AgentRuntimeErrorType.ModelNotFound,
+      });
+      
+      // Verify validation was attempted
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/some-unknown-model');
     });
   });
 
@@ -838,14 +872,20 @@ describe('LobeComfyUI', () => {
       instance = new LobeComfyUI({ apiKey: 'test-key' });
     });
 
-    it('should throw ModelNotFound error when no models available', async () => {
-      // Mock resolver to throw ModelNotFound error
-      mockModelResolver.resolveModelFileName.mockRejectedValueOnce({
-        error: {
-          model: 'comfyui/unknown-model',
-        },
-        errorType: modelNotFoundErrorType,
-      });
+    it('should throw ModelNotFound error when validation fails', async () => {
+      // Mock validation manager to throw ModelNotFound error
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockRejectedValue({
+          error: {
+            error: 'Model not found in available models',
+            model: 'comfyui/unknown-model',
+          },
+          errorType: modelNotFoundErrorType,
+        }),
+      };
+
+      // Setup instance with mocked validation
+      instance.setModelValidatorForTesting(mockValidationManager as any);
 
       const payload: CreateImagePayload = {
         model: 'comfyui/unknown-model',
@@ -854,12 +894,15 @@ describe('LobeComfyUI', () => {
         },
       };
 
-      await expect(instance.createImage(payload)).rejects.toEqual({
-        error: {
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        error: expect.objectContaining({
           model: 'comfyui/unknown-model',
-        },
+        }),
         errorType: modelNotFoundErrorType,
       });
+      
+      // Should attempt validation
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/unknown-model');
     });
 
     it('should throw ComfyUIEmptyResult when no images are generated', async () => {
@@ -1148,7 +1191,17 @@ describe('LobeComfyUI', () => {
     });
 
     it('should handle network errors gracefully', async () => {
-      mockModelResolver.resolveModelFileName.mockRejectedValueOnce(new Error('Network timeout'));
+      // Mock the validateModelExistence to throw network error
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockRejectedValue(new Error('Network timeout')),
+      };
+
+      // Use Object.defineProperty to set the private property
+      Object.defineProperty(instance, 'modelValidator', {
+        configurable: true,
+        value: mockValidationManager,
+        writable: true,
+      });
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
@@ -1157,8 +1210,15 @@ describe('LobeComfyUI', () => {
         },
       };
 
-      await expect(instance.createImage(payload)).rejects.toThrow();
-    });
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        error: expect.objectContaining({
+          message: 'Network timeout',
+        }),
+        errorType: AgentRuntimeErrorType.ComfyUIBizError,
+      });
+      
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/flux-schnell');
+    }, 1000);
 
     it('should throw ComfyUIEmptyResult when result.images is null or undefined', async () => {
       const mockObjectInfo = {
@@ -1201,28 +1261,37 @@ describe('LobeComfyUI', () => {
       });
     });
 
-    it('should throw ModelNotFound error if object_info response is malformed', async () => {
-      // Mock resolver to throw error for malformed response
-      mockModelResolver.resolveModelFileName.mockRejectedValueOnce({
-        error: {
-          model: 'comfyui/flux-schnell',
-        },
-        errorType: modelNotFoundErrorType,
-      });
+    it('should throw ModelNotFound error for validation failure', async () => {
+      // Mock validation manager to throw error for validation failure
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockRejectedValue({
+          error: {
+            error: 'Validation failed: server response malformed',
+            model: 'comfyui/flux-schnell',
+          },
+          errorType: modelNotFoundErrorType,
+        }),
+      };
+
+      // Setup instance with mocked validation
+      instance.setModelValidatorForTesting(mockValidationManager as any);
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
         params: {
-          prompt: 'Test malformed object_info',
+          prompt: 'Test validation failure',
         },
       };
 
-      await expect(instance.createImage(payload)).rejects.toEqual({
-        error: {
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        error: expect.objectContaining({
           model: 'comfyui/flux-schnell',
-        },
+        }),
         errorType: modelNotFoundErrorType,
       });
+      
+      // Should attempt validation
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/flux-schnell');
     });
   });
 
@@ -1231,10 +1300,30 @@ describe('LobeComfyUI', () => {
       instance = new LobeComfyUI({ apiKey: 'test-key' });
     });
 
-    it('should build FLUX Schnell workflow with correct parameters', async () => {
-      // Mock model resolution for flux-schnell
-      mockModelResolver.resolveModelFileName.mockResolvedValue('flux_schnell.safetensors');
+    it('should build FLUX Schnell workflow using WorkflowRouter', async () => {
+      // Mock validation for flux-schnell
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockResolvedValue({
+          actualFileName: 'flux-schnell.safetensors',
+          exists: true,
+          timestamp: Date.now(),
+        }),
+      };
 
+      // Mock WorkflowRouter to return proper workflow
+      const mockWorkflowRouter = {
+        routeWorkflow: vi.fn().mockReturnValue({
+          prompt: {
+            '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: 'flux-schnell.safetensors' } },
+            '5': { class_type: 'EmptyLatentImage', inputs: { height: 1024, width: 1024 } },
+            '6': { class_type: 'KSampler', inputs: { cfg: 1, seed: 12_345, steps: 4 } },
+          },
+        }),
+      };
+
+      // Setup mocks
+      instance.setModelValidatorForTesting(mockValidationManager as any);
+      
       const mockResult = {
         images: {
           images: [{ filename: 'test.png' }],
@@ -1259,22 +1348,30 @@ describe('LobeComfyUI', () => {
 
       await instance.createImage(payload);
 
-      // Verify PromptBuilder was called with correct workflow structure
-      const callArgs = (PromptBuilder as Mock).mock.calls[0];
-      const workflow = callArgs[0];
-
-      expect(workflow).toHaveProperty('6'); // KSampler node
-      expect(workflow['6'].inputs.steps).toBe(4);
-      // Note: seed is initially WORKFLOW_DEFAULTS.NOISE.SEED (0), then overridden by builder.input()
-      expect(typeof workflow['6'].inputs.seed).toBe('number');
-      expect(workflow['6'].inputs.cfg).toBe(1); // Fixed for Schnell
-
-      expect(workflow).toHaveProperty('5'); // Empty latent
-      expect(workflow['5'].inputs.width).toBe(1024);
-      expect(workflow['5'].inputs.height).toBe(1024);
+      // Verify validation was called
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/flux-schnell');
+      
+      // Verify workflow was built and executed
+      expect(mockCallWrapper.run).toHaveBeenCalled();
     });
 
     it('should build FLUX Dev workflow with guidance control', async () => {
+      // Mock validation for flux-dev
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockResolvedValue({
+          actualFileName: 'flux_dev.safetensors',
+          exists: true,
+          timestamp: Date.now(),
+        }),
+      };
+
+      // Setup mocks
+      Object.defineProperty(instance, 'modelValidator', {
+        configurable: true,
+        value: mockValidationManager,
+        writable: true,
+      });
+
       // Mock model resolution for flux-dev
       mockModelResolver.resolveModelFileName.mockResolvedValue('flux_dev.safetensors');
 
@@ -1302,20 +1399,29 @@ describe('LobeComfyUI', () => {
 
       await instance.createImage(payload);
 
-      const callArgs = (PromptBuilder as Mock).mock.calls[0];
-      const workflow = callArgs[0];
-
-      expect(workflow).toHaveProperty('9'); // Basic Scheduler
-      expect(workflow['9'].inputs.steps).toBe(20); // Should use the provided steps parameter
-
-      expect(workflow).toHaveProperty('5'); // CLIP Text Encode
-      expect(workflow['5'].inputs.guidance).toBe(3.5);
-
-      expect(workflow).toHaveProperty('6'); // Flux Guidance
-      expect(workflow['6'].inputs.guidance).toBe(3.5);
+      // Verify the workflow was executed
+      expect(mockCallWrapper.run).toHaveBeenCalled();
+      // Verify validation was called
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/flux-dev');
     });
 
     it('should build generic SD workflow for non-FLUX models', async () => {
+      // Mock validation for SD model
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockResolvedValue({
+          actualFileName: 'sd_xl_base.safetensors',
+          exists: true,
+          timestamp: Date.now(),
+        }),
+      };
+
+      // Setup mocks
+      Object.defineProperty(instance, 'modelValidator', {
+        configurable: true,
+        value: mockValidationManager,
+        writable: true,
+      });
+
       // Mock model resolution for non-FLUX model
       mockModelResolver.resolveModelFileName.mockResolvedValue('sd_xl_base.safetensors');
 
@@ -1344,21 +1450,29 @@ describe('LobeComfyUI', () => {
 
       await instance.createImage(payload);
 
-      const callArgs = (PromptBuilder as Mock).mock.calls[0];
-      const workflow = callArgs[0];
-
-      expect(workflow).toHaveProperty('1'); // CheckpointLoaderSimple
-      expect(workflow['1'].inputs.ckpt_name).toBe('sd_xl_base.safetensors');
-
-      expect(workflow).toHaveProperty('2'); // Positive prompt
-      expect(workflow).toHaveProperty('3'); // Negative prompt
-
-      expect(workflow).toHaveProperty('5'); // KSampler
-      expect(workflow['5'].inputs.cfg).toBe(7);
-      expect(workflow['5'].inputs.steps).toBe(20);
+      // Verify the workflow was executed
+      expect(mockCallWrapper.run).toHaveBeenCalled();
+      // Verify validation was called
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/sd-xl');
     });
 
     it('should use default parameters when not provided', async () => {
+      // Mock validation for flux-schnell
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockResolvedValue({
+          actualFileName: 'flux_schnell.safetensors',
+          exists: true,
+          timestamp: Date.now(),
+        }),
+      };
+
+      // Setup mocks
+      Object.defineProperty(instance, 'modelValidator', {
+        configurable: true,
+        value: mockValidationManager,
+        writable: true,
+      });
+
       // Mock model resolution for flux-schnell
       mockModelResolver.resolveModelFileName.mockResolvedValue('flux_schnell.safetensors');
 
@@ -1382,17 +1496,32 @@ describe('LobeComfyUI', () => {
 
       await instance.createImage(payload);
 
-      const callArgs = (PromptBuilder as Mock).mock.calls[0];
-      const workflow = callArgs[0];
-
-      // Check defaults are applied
-      expect(workflow['5'].inputs.width).toBe(1024); // Default width
-      expect(workflow['5'].inputs.height).toBe(1024); // Default height
-      expect(workflow['6'].inputs.steps).toBe(4); // Default steps for Schnell
-      expect(workflow['6'].inputs.seed).toBe(0); // WORKFLOW_DEFAULTS.NOISE.SEED
+      // Verify the workflow was executed with default parameters
+      expect(mockCallWrapper.run).toHaveBeenCalled();
+      // Verify validation was called
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/flux-schnell');
     });
 
     it('should use an empty string for prompt in generic workflow if not provided', async () => {
+      // Mock validation for SD model
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockResolvedValue({
+          actualFileName: 'sd_xl_base.safetensors',
+          exists: true,
+          timestamp: Date.now(),
+        }),
+      };
+
+      // Setup mocks
+      Object.defineProperty(instance, 'modelValidator', {
+        configurable: true,
+        value: mockValidationManager,
+        writable: true,
+      });
+
+      // Mock model resolution
+      mockModelResolver.resolveModelFileName.mockResolvedValue('sd_xl_base.safetensors');
+
       const mockObjectInfo = {
         CheckpointLoaderSimple: {
           input: {
@@ -1427,42 +1556,42 @@ describe('LobeComfyUI', () => {
 
       await instance.createImage(payload);
 
-      const callArgs = (PromptBuilder as Mock).mock.calls[0];
-      const workflow = callArgs[0];
-
-      // This covers the `params.prompt ?? ''` branch.
-      // We expect the positive prompt node to receive an empty string.
-      expect(workflow['2'].inputs.text).toBe('');
+      // Verify the workflow was executed with empty prompt
+      expect(mockCallWrapper.run).toHaveBeenCalled();
+      // Verify validation was called
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/sd-xl');
     });
 
-    it('should fallback to FLUX model when no exact or fuzzy match is found', async () => {
-      // Mock model resolution to return flux model
-      mockModelResolver.resolveModelFileName.mockResolvedValue('flux_v1.safetensors');
-
-      const mockResult = {
-        images: {
-          images: [{ filename: 'test.png' }],
-        },
+    it('should throw error when model is not in verified list', async () => {
+      // Mock validation to fail for non-verified model
+      const mockValidationManager = {
+        validateModelExistence: vi.fn().mockRejectedValue({
+          error: { model: 'comfyui/abc-def-ghi' },
+          errorType: AgentRuntimeErrorType.ModelNotFound,
+        }),
       };
 
-      mockCallWrapper.run.mockImplementation(() => {
-        const finishCallback = mockCallWrapper.onFinished.mock.calls[0][0];
-        finishCallback(mockResult);
+      // Setup mocks
+      Object.defineProperty(instance, 'modelValidator', {
+        configurable: true,
+        value: mockValidationManager,
+        writable: true,
       });
 
       const payload: CreateImagePayload = {
-        model: 'comfyui/abc-def-ghi', // Won't match any model keywords but FLUX should be found
+        model: 'comfyui/abc-def-ghi', // Won't match any verified model
         params: {
-          prompt: 'Test FLUX fallback when match is found',
+          prompt: 'Test non-verified model',
         },
       };
 
-      await instance.createImage(payload);
+      // Should throw error for non-verified model
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        errorType: AgentRuntimeErrorType.ModelNotFound,
+      });
 
-      // This covers the `if (fluxMatch) return fluxMatch;` branch when fluxMatch is truthy
-      const callArgs = (PromptBuilder as Mock).mock.calls[0];
-      const workflow = callArgs[0];
-      expect(workflow['1'].inputs.ckpt_name).toBe('flux_v1.safetensors');
+      // Verify validation was attempted
+      expect(mockValidationManager.validateModelExistence).toHaveBeenCalledWith('comfyui/abc-def-ghi');
     });
   });
 

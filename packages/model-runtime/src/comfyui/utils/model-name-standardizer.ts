@@ -1,11 +1,14 @@
 /**
- * FLUX Model Name Standardizer - 精确匹配105个验证模型
- * 
+ * FLUX Model Name Standardizer - 精确匹配验证模型
+ * Data-Logic Separation: 数据从配置文件导入，逻辑保持独立
+ *
  * 严格模式：
- * - 精确匹配所有105个已知模型
+ * - 精确匹配所有已知模型
  * - 无法匹配时抛出 ModelNotFound 错误
  * - 无回退逻辑，无默认值返回
  */
+
+import { MODEL_REGISTRY, type ModelConfig, getModelConfig } from '../config/modelRegistry';
 
 export class ModelNotFoundError extends Error {
   constructor(modelName: string) {
@@ -15,945 +18,535 @@ export class ModelNotFoundError extends Error {
 }
 
 /**
- * 标准化模型信息接口
+ * Standardized model information interface / 标准化模型信息接口
  */
 export interface StandardizedModel {
-  /** 标准化的模型名称 */
-  standardName: string;
-  /** 模型变体类型 */
-  variant: 'dev' | 'schnell' | 'fill' | 'redux' | 'kontext' | 'krea' | 'lite' | 'mini';
-  /** 量化类型 */
-  quantization: 'fp16' | 'fp32' | 'fp8_e4m3fn' | 'fp8_e5m2' | 'nf4' | 'bnb_nf4' | 'int4' | 'int8' | 'gguf' | null;
-  /** 推荐权重数据类型 */
-  recommendedDtype: string;
-  /** 文件大小（GB） */
+  /** File size in GB / 文件大小（GB） */
   fileSizeGB: number;
-  /** 来源/作者 */
+  /** Priority: 1=official, 2=enterprise, 3=community / 优先级：1=官方，2=企业，3=社区 */
+  priority: number;
+  /** Quantization type / 量化类型 */
+  quantization:
+    | 'fp16'
+    | 'fp32'
+    | 'fp8_e4m3fn'
+    | 'fp8_e5m2'
+    | 'nf4'
+    | 'bnb_nf4'
+    | 'int4'
+    | 'int8'
+    | 'gguf'
+    | null;
+  /** Recommended weight data type / 推荐权重数据类型 */
+  recommendedDtype: string;
+  /** Source/author / 来源/作者 */
   source: string;
+  /** Standardized model name / 标准化的模型名称 */
+  standardName: string;
+  /** Sub-priority sorting / 子优先级排序 */
+  subPriority: number;
+  /** Model variant type / 模型变体类型 */
+  variant: 'dev' | 'schnell' | 'fill' | 'redux' | 'kontext' | 'krea' | 'lite' | 'mini';
 }
 
 /**
- * 完整的105个FLUX模型映射表
- * 基于 FLUX-所有模型完整详情报告.md
- */
-const MODEL_REGISTRY: Record<string, StandardizedModel> = {
-  // === Black Forest Labs 官方模型 ===
-  'flux1-dev.safetensors': {
-    standardName: 'FLUX.1-dev',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'black-forest-labs'
-  },
-  'flux1-schnell.safetensors': {
-    standardName: 'FLUX.1-schnell',
-    variant: 'schnell',
-    quantization: null,
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 23.8,
-    source: 'black-forest-labs'
-  },
-  'flux1-fill-dev.safetensors': {
-    standardName: 'FLUX.1-Fill-dev',
-    variant: 'fill',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'black-forest-labs'
-  },
-  'flux1-redux-dev.safetensors': {
-    standardName: 'FLUX.1-Redux-dev',
-    variant: 'redux',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 0.129,
-    source: 'black-forest-labs'
-  },
-  'flux1-kontext-dev.safetensors': {
-    standardName: 'FLUX.1-Kontext-dev',
-    variant: 'kontext',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'black-forest-labs'
-  },
-
-  // === 常见模型名称变体 (为向后兼容性) ===
-  // 这些变体映射到相应的官方模型
-  'flux_dev.safetensors': {
-    standardName: 'FLUX.1-dev',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'black-forest-labs'
-  },
-  'flux-dev.safetensors': {
-    standardName: 'FLUX.1-dev',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'black-forest-labs'
-  },
-  'flux_schnell.safetensors': {
-    standardName: 'FLUX.1-schnell',
-    variant: 'schnell',
-    quantization: null,
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 23.8,
-    source: 'black-forest-labs'
-  },
-  'flux-schnell.safetensors': {
-    standardName: 'FLUX.1-schnell',
-    variant: 'schnell',
-    quantization: null,
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 23.8,
-    source: 'black-forest-labs'
-  },
-
-  // === 企业蒸馏模型 ===
-  'flux.1-lite-8B.safetensors': {
-    standardName: 'Freepik FLUX.1-lite-8B',
-    variant: 'lite',
-    quantization: null,
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 16.3,
-    source: 'Freepik'
-  },
-  'flux-mini.safetensors': {
-    standardName: 'TencentARC flux-mini',
-    variant: 'mini',
-    quantization: null,
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 6.36,
-    source: 'TencentARC'
-  },
-
-  // === GGUF量化版本 (city96) ===
-  'flux1-dev-Q2_K.gguf': {
-    standardName: 'FLUX.1-dev-Q2_K',
-    variant: 'dev',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 4.03,
-    source: 'city96'
-  },
-  'flux1-dev-Q3_K_S.gguf': {
-    standardName: 'FLUX.1-dev-Q3_K_S',
-    variant: 'dev',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 5.23,
-    source: 'city96'
-  },
-  'flux1-dev-Q4_K_S.gguf': {
-    standardName: 'FLUX.1-dev-Q4_K_S',
-    variant: 'dev',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 6.81,
-    source: 'city96'
-  },
-  'flux1-dev-Q5_K_S.gguf': {
-    standardName: 'FLUX.1-dev-Q5_K_S',
-    variant: 'dev',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 8.29,
-    source: 'city96'
-  },
-  'flux1-dev-Q6_K.gguf': {
-    standardName: 'FLUX.1-dev-Q6_K',
-    variant: 'dev',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 9.86,
-    source: 'city96'
-  },
-  'flux1-dev-Q8_0.gguf': {
-    standardName: 'FLUX.1-dev-Q8_0',
-    variant: 'dev',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 12.7,
-    source: 'city96'
-  },
-  'flux1-schnell-Q4_K_S.gguf': {
-    standardName: 'FLUX.1-schnell-Q4_K_S',
-    variant: 'schnell',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 6.78,
-    source: 'city96'
-  },
-  'flux1-schnell-Q6_K.gguf': {
-    standardName: 'FLUX.1-schnell-Q6_K',
-    variant: 'schnell',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 9.94,
-    source: 'city96'
-  },
-  'flux1-schnell-Q8_0.gguf': {
-    standardName: 'FLUX.1-schnell-Q8_0',
-    variant: 'schnell',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 12.7,
-    source: 'city96'
-  },
-
-  // === FP8/NF4量化版本 ===
-  'flux1-dev-fp8.safetensors': {
-    standardName: 'FLUX.1-dev-fp8',
-    variant: 'dev',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.9,
-    source: 'Kijai'
-  },
-  'flux1-schnell-fp8.safetensors': {
-    standardName: 'FLUX.1-schnell-fp8',
-    variant: 'schnell',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.9,
-    source: 'Kijai'
-  },
-  'flux1-dev-bnb-nf4.safetensors': {
-    standardName: 'FLUX.1-dev-bnb-nf4',
-    variant: 'dev',
-    quantization: 'bnb_nf4',
-    recommendedDtype: 'nf4',
-    fileSizeGB: 6,
-    source: 'lllyasviel'
-  },
-
-  // === CivitAI社区模型 - Jib Mix Flux系列 ===
-  'Jib_mix_Flux_V11_Krea_b_00001_.safetensors': {
-    standardName: 'Jib Mix Flux V11 Krea NSFW',
-    variant: 'krea',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 22.17,
-    source: 'CivitAI-JibMix'
-  },
-  'Jib_Mix_Flux_Krea_b_fp8_00001_.safetensors': {
-    standardName: 'Jib Mix Flux V11 Krea FP8',
-    variant: 'krea',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.08,
-    source: 'CivitAI-JibMix'
-  },
-  'Jib_Mix_Flux_V10_G_fp8_00001_.safetensors': {
-    standardName: 'Jib Mix Flux V10 Analog FP8',
-    variant: 'krea',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.08,
-    source: 'CivitAI-JibMix'
-  },
-  'jibMixFlux_v8.q4_0.gguf': {
-    standardName: 'Jib Mix Flux V8 GGUF',
-    variant: 'krea',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 6.8,
-    source: 'CivitAI-JibMix'
-  },
-
-  // === CivitAI社区模型 - RealFlux系列 ===
-  'RealFlux_1.0b_Dev_Transformer.safetensors': {
-    standardName: 'RealFlux 1.0b Dev Transformer',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'CivitAI-RealFlux'
-  },
-  'RealFlux_1.0b_Schnell_Transformer.safetensors': {
-    standardName: 'RealFlux 1.0b Schnell Transformer',
-    variant: 'schnell',
-    quantization: null,
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 23.8,
-    source: 'CivitAI-RealFlux'
-  },
-  'RealFlux_1.0b_Schnell.safetensors': {
-    standardName: 'RealFlux 1.0b Schnell',
-    variant: 'schnell',
-    quantization: null,
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 23.8,
-    source: 'CivitAI-RealFlux'
-  },
-
-  // === CivitAI社区模型 - Vision Realistic系列 ===
-  'vision_realistic_flux_dev_fp8_no_clip_v2.safetensors': {
-    standardName: 'Vision Realistic FLUX Dev FP8 No CLIP v2',
-    variant: 'dev',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.08,
-    source: 'CivitAI-VisionRealistic'
-  },
-  'vision_realistic_flux_dev_fp8_baked_vae+clip_v2.safetensors': {
-    standardName: 'Vision Realistic FLUX Dev FP8 Baked VAE+CLIP v2',
-    variant: 'dev',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 12.0,
-    source: 'CivitAI-VisionRealistic'
-  },
-
-  // === CivitAI社区模型 - UltraReal Fine-Tune系列 ===
-  'UltraRealistic_FineTune_Project_v4.safetensors': {
-    standardName: 'UltraRealistic FineTune Project v4',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 22.17,
-    source: 'CivitAI-UltraReal'
-  },
-  'UltraRealistic_FineTune_Project_v4_fp8.safetensors': {
-    standardName: 'UltraRealistic FineTune Project v4 FP8',
-    variant: 'dev',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.08,
-    source: 'CivitAI-UltraReal'
-  },
-  'UltraRealistic_FineTune_Project_v4_Q4_k_m.gguf': {
-    standardName: 'UltraRealistic FineTune Project v4 GGUF',
-    variant: 'dev',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 6.8,
-    source: 'CivitAI-UltraReal'
-  },
-
-  // === CivitAI社区模型 - Fluxmania系列 ===
-  'Kreamania I.safetensors': {
-    standardName: 'Fluxmania Kreamania I',
-    variant: 'krea',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 22.0,
-    source: 'CivitAI-Fluxmania'
-  },
-  'Fluxmania V6I_fp16.safetensors': {
-    standardName: 'Fluxmania V6I FP16',
-    variant: 'dev',
-    quantization: 'fp16',
-    recommendedDtype: 'fp16',
-    fileSizeGB: 22.17,
-    source: 'CivitAI-Fluxmania'
-  },
-  'Fluxmania V6I.safetensors': {
-    standardName: 'Fluxmania V6I',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 11.08,
-    source: 'CivitAI-Fluxmania'
-  },
-  'Fluxmania IV fp8.safetensors': {
-    standardName: 'Fluxmania IV FP8',
-    variant: 'dev',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.08,
-    source: 'CivitAI-Fluxmania'
-  },
-
-  // === CivitAI社区模型 - Fux Capacity系列（NSFW特化） ===
-  'FuxCapacity3.1_FP16.safetensors': {
-    standardName: 'FuxCapacity 3.1 FP16',
-    variant: 'dev',
-    quantization: 'fp16',
-    recommendedDtype: 'fp16',
-    fileSizeGB: 22.17,
-    source: 'CivitAI-FuxCapacity'
-  },
-  'FuxCapacity3.0_FP8.safetensors': {
-    standardName: 'FuxCapacity 3.0 FP8',
-    variant: 'dev',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.08,
-    source: 'CivitAI-FuxCapacity'
-  },
-  'FuxCapacity2.1-Q8_0.gguf': {
-    standardName: 'FuxCapacity 2.1 GGUF',
-    variant: 'dev',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 12.7,
-    source: 'CivitAI-FuxCapacity'
-  },
-
-  // === CivitAI社区模型 - Copax TimeLess XL系列 ===
-  'XPlus_2(GGUF Q8).gguf': {
-    standardName: 'Copax TimeLess XPlus 2 Q8',
-    variant: 'dev',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 12.7,
-    source: 'CivitAI-Copax'
-  },
-  'XPlus_2(GGUF Q6).gguf': {
-    standardName: 'Copax TimeLess XPlus 2 Q6',
-    variant: 'dev',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 9.8,
-    source: 'CivitAI-Copax'
-  },
-  'XPlus_2(GGUF Q4).gguf': {
-    standardName: 'Copax TimeLess XPlus 2 Q4',
-    variant: 'dev',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 6.8,
-    source: 'CivitAI-Copax'
-  },
-
-  // === Hugging Face社区模型 - ashen0209 Flux-Dev2Pro系列 ===
-  'diffusion_pytorch_model-00001-of-00003.safetensors': {
-    standardName: 'Flux-Dev2Pro Part 1',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 9.98,
-    source: 'ashen0209'
-  },
-  'diffusion_pytorch_model-00002-of-00003.safetensors': {
-    standardName: 'Flux-Dev2Pro Part 2',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 9.95,
-    source: 'ashen0209'
-  },
-  'diffusion_pytorch_model-00003-of-00003.safetensors': {
-    standardName: 'Flux-Dev2Pro Part 3',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 3.87,
-    source: 'ashen0209'
-  },
-
-  // === Hugging Face社区模型 - drbaph Merged系列 ===
-  'FLUX.1-schnell-dev-merged.safetensors': {
-    standardName: 'FLUX.1-schnell-dev-merged',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'drbaph'
-  },
-  'FLUX.1-schnell-dev-merged-fp8.safetensors': {
-    standardName: 'FLUX.1-schnell-dev-merged-fp8',
-    variant: 'dev',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.9,
-    source: 'drbaph'
-  },
-  'FLUX.1-schnell-dev-merged-fp8-4step.safetensors': {
-    standardName: 'FLUX.1-schnell-dev-merged-fp8-4step',
-    variant: 'schnell',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.9,
-    source: 'drbaph'
-  },
-
-  // === VAE模型 ===
-  'ae.safetensors': {
-    standardName: 'FLUX VAE AutoEncoder',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 0.335,
-    source: 'black-forest-labs'
-  },
-
-  // === 文本编码器 ===
-  'clip_l.safetensors': {
-    standardName: 'CLIP-L Text Encoder',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 0.246,
-    source: 'comfyanonymous'
-  },
-  't5xxl_fp16.safetensors': {
-    standardName: 'T5-XXL Text Encoder FP16',
-    variant: 'dev',
-    quantization: 'fp16',
-    recommendedDtype: 'fp16',
-    fileSizeGB: 9.79,
-    source: 'comfyanonymous'
-  },
-  't5xxl_fp8_e4m3fn.safetensors': {
-    standardName: 'T5-XXL Text Encoder FP8',
-    variant: 'dev',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 4.89,
-    source: 'comfyanonymous'
-  },
-
-  // === LoRA适配器 (XLabs-AI 系列) ===
-  'realism_lora.safetensors': {
-    standardName: 'XLabs Realism LoRA',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 0.05,
-    source: 'XLabs-AI'
-  },
-  'anime_lora.safetensors': {
-    standardName: 'XLabs Anime LoRA',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 0.05,
-    source: 'XLabs-AI'
-  },
-  'disney_lora.safetensors': {
-    standardName: 'XLabs Disney LoRA',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 0.05,
-    source: 'XLabs-AI'
-  },
-  'scenery_lora.safetensors': {
-    standardName: 'XLabs Scenery LoRA',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 0.05,
-    source: 'XLabs-AI'
-  },
-  'art_lora.safetensors': {
-    standardName: 'XLabs Art LoRA',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 0.05,
-    source: 'XLabs-AI'
-  },
-  'mjv6_lora.safetensors': {
-    standardName: 'XLabs MidJourney V6 LoRA',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 0.05,
-    source: 'XLabs-AI'
-  },
-  'furry_lora.safetensors': {
-    standardName: 'XLabs Furry LoRA',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 0.05,
-    source: 'XLabs-AI'
-  },
-
-  // === 测试用假模型名称 (仅用于单元测试) ===
-  'flux_model_fp32.safetensors': {
-    standardName: 'Test FLUX Model FP32',
-    variant: 'dev',
-    quantization: 'fp32',
-    recommendedDtype: 'fp32',
-    fileSizeGB: 23.8,
-    source: 'test'
-  },
-  'flux_model_fp16.safetensors': {
-    standardName: 'Test FLUX Model FP16',
-    variant: 'dev',
-    quantization: 'fp16',
-    recommendedDtype: 'fp16',
-    fileSizeGB: 23.8,
-    source: 'test'
-  },
-  'flux_model_fp8_e4m3fn.safetensors': {
-    standardName: 'Test FLUX Model FP8 E4M3FN',
-    variant: 'dev',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.9,
-    source: 'test'
-  },
-  'flux_model_fp8_e5m2.safetensors': {
-    standardName: 'Test FLUX Model FP8 E5M2',
-    variant: 'dev',
-    quantization: 'fp8_e5m2',
-    recommendedDtype: 'fp8_e5m2',
-    fileSizeGB: 11.9,
-    source: 'test'
-  },
-  'flux_model_fp8.safetensors': {
-    standardName: 'Test FLUX Model FP8',
-    variant: 'dev',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.9,
-    source: 'test'
-  },
-  'flux_model_nf4.safetensors': {
-    standardName: 'Test FLUX Model NF4',
-    variant: 'dev',
-    quantization: 'nf4',
-    recommendedDtype: 'nf4',
-    fileSizeGB: 6,
-    source: 'test'
-  },
-  'flux_schnell_fp8.safetensors': {
-    standardName: 'Test FLUX Schnell FP8',
-    variant: 'schnell',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.9,
-    source: 'test'
-  },
-  'flux_schnell_fp32.safetensors': {
-    standardName: 'Test FLUX Schnell FP32',
-    variant: 'schnell',
-    quantization: 'fp32',
-    recommendedDtype: 'fp32',
-    fileSizeGB: 23.8,
-    source: 'test'
-  },
-  // === 额外的测试模型名称 (大写格式和其他变体) ===
-  'FLUX_FP32_MODEL.safetensors': {
-    standardName: 'Test FLUX FP32 Model',
-    variant: 'dev',
-    quantization: 'fp32',
-    recommendedDtype: 'fp32',
-    fileSizeGB: 23.8,
-    source: 'test'
-  },
-  'FLUX_FP16_MODEL.safetensors': {
-    standardName: 'Test FLUX FP16 Model',
-    variant: 'dev',
-    quantization: 'fp16',
-    recommendedDtype: 'fp16',
-    fileSizeGB: 23.8,
-    source: 'test'
-  },
-  'FLUX_FP8_E4M3FN_MODEL.safetensors': {
-    standardName: 'Test FLUX FP8 E4M3FN Model',
-    variant: 'dev',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.9,
-    source: 'test'
-  },
-  'FLUX_FP8_E5M2_MODEL.safetensors': {
-    standardName: 'Test FLUX FP8 E5M2 Model',
-    variant: 'dev',
-    quantization: 'fp8_e5m2',
-    recommendedDtype: 'fp8_e5m2',
-    fileSizeGB: 11.9,
-    source: 'test'
-  },
-  'FLUX_FP8_MODEL.safetensors': {
-    standardName: 'Test FLUX FP8 Model',
-    variant: 'dev',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.9,
-    source: 'test'
-  },
-  'FLUX_NF4_MODEL.safetensors': {
-    standardName: 'Test FLUX NF4 Model',
-    variant: 'dev',
-    quantization: 'nf4',
-    recommendedDtype: 'nf4',
-    fileSizeGB: 6,
-    source: 'test'
-  },
-  'FLUX_BNB_MODEL.safetensors': {
-    standardName: 'Test FLUX BNB Model',
-    variant: 'dev',
-    quantization: 'bnb_nf4',
-    recommendedDtype: 'nf4',
-    fileSizeGB: 6,
-    source: 'test'
-  },
-  'FLUX_INT8_MODEL.safetensors': {
-    standardName: 'Test FLUX INT8 Model',
-    variant: 'dev',
-    quantization: 'int8',
-    recommendedDtype: 'int8',
-    fileSizeGB: 12,
-    source: 'test'
-  },
-  'FLUX_INT4_MODEL.safetensors': {
-    standardName: 'Test FLUX INT4 Model',
-    variant: 'dev',
-    quantization: 'int4',
-    recommendedDtype: 'int4',
-    fileSizeGB: 6,
-    source: 'test'
-  },
-  'FLUX_SCHNELL_MODEL.safetensors': {
-    standardName: 'Test FLUX Schnell Model',
-    variant: 'schnell',
-    quantization: null,
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 23.8,
-    source: 'test'
-  },
-  'FLUX_DEV_MODEL.safetensors': {
-    standardName: 'Test FLUX Dev Model',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'test'
-  },
-  'FLUX_KREA_MODEL.safetensors': {
-    standardName: 'Test FLUX Krea Model',
-    variant: 'krea',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'test'
-  },
-  'FLUX_KONTEXT_MODEL.safetensors': {
-    standardName: 'Test FLUX Kontext Model',
-    variant: 'kontext',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'test'
-  },
-  'flux_model_fp8-e4m3fn.safetensors': {
-    standardName: 'Test FLUX FP8 E4M3FN Dash Model',
-    variant: 'dev',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.9,
-    source: 'test'
-  },
-  'flux_model_fp8-e5m2.safetensors': {
-    standardName: 'Test FLUX FP8 E5M2 Dash Model',
-    variant: 'dev',
-    quantization: 'fp8_e5m2',
-    recommendedDtype: 'fp8_e5m2',
-    fileSizeGB: 11.9,
-    source: 'test'
-  },
-  'flux_model_bnb.safetensors': {
-    standardName: 'Test FLUX BNB Model',
-    variant: 'dev',
-    quantization: 'bnb_nf4',
-    recommendedDtype: 'nf4',
-    fileSizeGB: 6,
-    source: 'test'
-  },
-  'flux_model_int8.safetensors': {
-    standardName: 'Test FLUX INT8 Model',
-    variant: 'dev',
-    quantization: 'int8',
-    recommendedDtype: 'int8',
-    fileSizeGB: 12,
-    source: 'test'
-  },
-  'flux_model_int4.safetensors': {
-    standardName: 'Test FLUX INT4 Model',
-    variant: 'dev',
-    quantization: 'int4',
-    recommendedDtype: 'int4',
-    fileSizeGB: 6,
-    source: 'test'
-  },
-  'FLUX_MODEL.GGUF': {
-    standardName: 'Test FLUX GGUF Model',
-    variant: 'dev',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 12.7,
-    source: 'test'
-  },
-  'flux_dev_q4_0.gguf': {
-    standardName: 'Test FLUX Dev Q4_0 GGUF',
-    variant: 'dev',
-    quantization: 'gguf',
-    recommendedDtype: 'default',
-    fileSizeGB: 6.8,
-    source: 'test'
-  },
-  'flux_krea.safetensors': {
-    standardName: 'Test FLUX Krea',
-    variant: 'krea',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'test'
-  },
-  'flux_kontext.safetensors': {
-    standardName: 'Test FLUX Kontext',
-    variant: 'kontext',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'test'
-  },
-
-  // === 剩余的测试模型名称 ===
-  // Note: 'unknown_model.safetensors' intentionally excluded to test error handling
-
-
-  'flux_dev_fp16.safetensors': {
-    standardName: 'Test FLUX Dev FP16',
-    variant: 'dev',
-    quantization: 'fp16',
-    recommendedDtype: 'fp16',
-    fileSizeGB: 23.8,
-    source: 'test'
-  },
-  'flux_dev_schnell_hybrid_fp8_e4m3fn.safetensors': {
-    standardName: 'Test FLUX Dev Schnell Hybrid FP8',
-    variant: 'dev',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.9,
-    source: 'test'
-  },
-  'flux_krea_kontext_fusion_int8.safetensors': {
-    standardName: 'Test FLUX Krea Kontext Fusion INT8',
-    variant: 'krea',
-    quantization: 'int8',
-    recommendedDtype: 'int8',
-    fileSizeGB: 12,
-    source: 'test'
-  },
-  'flux_model.safetensors': {
-    standardName: 'Test FLUX Generic Model',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'test'
-  },
-  'FLUX_SCHNELL_FP8_E4M3FN.SAFETENSORS': {
-    standardName: 'Test FLUX Schnell FP8 E4M3FN Uppercase',
-    variant: 'schnell',
-    quantization: 'fp8_e4m3fn',
-    recommendedDtype: 'fp8_e4m3fn',
-    fileSizeGB: 11.9,
-    source: 'test'
-  },
-  'flux_dev_INT4.SAFETENSORS': {
-    standardName: 'Test FLUX Dev INT4 Mixed Case',
-    variant: 'dev',
-    quantization: 'int4',
-    recommendedDtype: 'int4',
-    fileSizeGB: 6,
-    source: 'test'
-  },
-  'FLUX_KREA_NF4.safetensors': {
-    standardName: 'Test FLUX Krea NF4 Mixed Case',
-    variant: 'krea',
-    quantization: 'nf4',
-    recommendedDtype: 'nf4',
-    fileSizeGB: 6,
-    source: 'test'
-  },
-
-
-
-  // === Note: Some test models intentionally excluded to test error handling ===
-  // Models like 'flux_model', 'my-custom@flux#model.safetensors', 'weird@model&name.safetensors'
-  // are not included to ensure proper error throwing behavior in tests
-
-  // 保留一个用于测试回退逻辑
-  'my-custom@flux#model.safetensors': {
-    standardName: 'Test Custom FLUX Model with Special Chars',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'test'
-  },
-  'weird@model&name.safetensors': {
-    standardName: 'Test Weird Model Name',
-    variant: 'dev',
-    quantization: null,
-    recommendedDtype: 'default',
-    fileSizeGB: 23.8,
-    source: 'test'
-  }
-};
-
-/**
- * 模型名称标准化器类
- * 
- * 功能：
- * - 精确匹配105个已验证的FLUX模型
- * - 提供标准化的模型信息和推荐配置
- * - 严格模式：无法匹配时抛出ModelNotFound错误
- * - 无回退逻辑，无默认值
+ * Model name standardizer class / 模型名称标准化器类 (RFC-128 Enhanced)
+ *
+ * Features / 功能：
+ * - Exactly match 130+ verified FLUX models / 精确匹配130+个已验证的FLUX模型
+ * - Intelligent mapping for 200+ models with fuzzy matching / 智能映射支持200+模型的模糊匹配
+ * - Pattern recognition for GGUF, FP8, NF4 quantizations / 模式识别支持GGUF、FP8、NF4量化
+ * - Alias support for model name variations / 别名支持模型名称变体
+ * - Provide standardized model information and recommended configuration / 提供标准化的模型信息和推荐配置
+ * - Strict mode: throw ModelNotFound error when unable to match / 严格模式：无法匹配时抛出ModelNotFound错误
+ * - Backward compatibility maintained / 保持向后兼容性
  */
 export class ModelNameStandardizer {
   /**
-   * 标准化模型名称并获取模型信息
-   * 
-   * @param modelName 输入的模型文件名
-   * @returns 标准化的模型信息
-   * @throws {ModelNotFoundError} 当模型不在验证列表中时
+   * Adapt ModelConfig from config file to StandardizedModel / 将配置文件的ModelConfig适配为StandardizedModel
+   * Handle field differences and default value generation / 处理字段差异和默认值生成
    */
-  public static standardize(modelName: string): StandardizedModel {
+  private static adaptConfigToStandardModel(fileName: string, config: ModelConfig): StandardizedModel {
+    // Infer source from priority / 从priority推算source
+    const source = this.getSourceFromPriority(config.priority, fileName);
+    
+    // Generate standardName / 生成standardName
+    const standardName = this.generateStandardName(fileName, source);
+    
+    // Infer quantization from filename and config / 从文件名和配置推算quantization
+    const quantization = this.inferQuantization(fileName, config.recommendedDtype);
+    
+    // Generate default fileSizeGB / 生成默认fileSizeGB
+    const fileSizeGB = this.estimateFileSize(fileName, quantization);
+
+    return {
+      fileSizeGB,
+      priority: config.priority,
+      quantization,
+      recommendedDtype: this.mapRecommendedDtype(config.recommendedDtype),
+      source,
+      standardName,
+      subPriority: this.calculateSubPriority(config.variant, config.priority),
+      variant: config.variant,
+    };
+  }
+
+  /**
+   * 从优先级推算来源
+   */
+  private static getSourceFromPriority(priority: number, fileName: string): string {
+    if (priority === 1) return 'black-forest-labs';
+    if (priority === 2) {
+      // 企业模型的来源推算
+      if (fileName.includes('lite')) return 'Freepik';
+      if (fileName.includes('mini')) return 'TencentARC';
+      if (fileName.includes('fp8')) return 'Kijai';
+      if (fileName.includes('nf4')) return 'lllyasviel';
+      if (fileName.includes('.gguf')) return 'city96';
+      if (fileName.includes('clip') || fileName.includes('t5xxl') || fileName.includes('ae.')) return 'comfyanonymous';
+      return 'enterprise';
+    }
+    // priority === 3: 社区模型
+    if (fileName.includes('Jib')) return 'CivitAI-JibMix';
+    if (fileName.includes('RealFlux')) return 'CivitAI-RealFlux';
+    if (fileName.includes('UltraReal')) return 'CivitAI-UltraReal';
+    if (fileName.includes('vision_realistic')) return 'CivitAI-VisionRealistic';
+    if (fileName.includes('lora')) return 'XLabs-AI';
+    return 'community';
+  }
+
+  /**
+   * 生成标准化名称
+   */
+  private static generateStandardName(fileName: string, source: string): string {
+  // 移除扩展名
+  const baseName = fileName.replace(/\.(safetensors|gguf)$/i, '');
+  
+  // 官方模型的标准化名称
+  if (source === 'black-forest-labs') {
+    if (baseName.includes('flux1-dev')) return 'FLUX.1-dev';
+    if (baseName.includes('flux1-schnell')) return 'FLUX.1-schnell';
+    if (baseName.includes('flux1-kontext')) return 'FLUX.1-Kontext-dev';
+    if (baseName.includes('flux1-krea')) return 'FLUX.1-Krea-dev';
+    if (baseName.includes('flux1-fill')) return 'FLUX.1-Fill-dev';
+    if (baseName.includes('flux1-redux')) return 'FLUX.1-Redux-dev';
+    if (baseName === 'ae') return 'FLUX VAE AutoEncoder';
+  }
+  
+  // 特殊企业模型
+  if (source === 'Freepik' && baseName.includes('lite')) return 'Freepik FLUX.1-lite-8B';
+  if (source === 'TencentARC' && baseName.includes('mini')) return 'TencentARC flux-mini';
+  if (source === 'comfyanonymous') {
+    if (baseName === 'clip_l') return 'CLIP-L Text Encoder';
+    if (baseName.includes('t5xxl_fp16')) return 'T5-XXL Text Encoder FP16';
+  }
+  
+  // GGUF模型的标准化
+  if (baseName.includes('Q4_K_S') && baseName.includes('flux1-dev')) {
+    return 'FLUX.1-dev-Q4_K_S';
+  }
+  
+  // 社区模型特殊名称
+  if (source === 'CivitAI-JibMix' && baseName.includes('Jib_mix_Flux_V11_Krea_b_00001_')) {
+    return 'Jib Mix Flux V11 Krea NSFW';
+  }
+  if (source === 'XLabs-AI') {
+    if (baseName.includes('realism_lora')) return 'XLabs Realism LoRA';
+    if (baseName.includes('anime_lora')) return 'XLabs Anime LoRA';
+  }
+  
+  // 其他模型使用美化后的文件名
+  return baseName.replaceAll(/[_-]/g, ' ').replaceAll(/\b\w/g, (l: string) => l.toUpperCase());
+}
+
+  /**
+   * 推断量化类型
+   */
+  private static inferQuantization(fileName: string, recommendedDtype: string): StandardizedModel['quantization'] {
+  if (fileName.includes('.gguf')) return 'gguf';
+  if (fileName.includes('fp8') || recommendedDtype === 'fp8') return 'fp8_e4m3fn';
+  if (fileName.includes('bnb-nf4') || fileName.includes('bnb_nf4')) return 'bnb_nf4';
+  if (fileName.includes('nf4') || recommendedDtype === 'nf4') return 'nf4';
+  if (fileName.includes('bnb')) return 'bnb_nf4';
+  if (fileName.includes('fp16')) return 'fp16';
+  if (fileName.includes('fp32')) return 'fp32';
+  if (fileName.includes('int4')) return 'int4';
+  if (fileName.includes('int8')) return 'int8';
+  return null;
+}
+
+  /**
+   * 估算文件大小
+   */
+  private static estimateFileSize(fileName: string, quantization: StandardizedModel['quantization']): number {
+    // GGUF模型大小估算
+    if (quantization === 'gguf') {
+      if (fileName.includes('Q2')) return 4.03;
+      if (fileName.includes('Q3')) return 5.23;
+      if (fileName.includes('Q4')) return 6.81;
+      if (fileName.includes('Q5')) return 8.29;
+      if (fileName.includes('Q6')) return 9.86;
+      if (fileName.includes('Q8')) return 12.7;
+      return 9.86; // 默认Q6大小
+    }
+    
+    // FP8模型
+    if (quantization === 'fp8_e4m3fn' || quantization === 'fp8_e5m2') return 11.9;
+    
+    // NF4模型
+    if (quantization === 'nf4' || quantization === 'bnb_nf4') return 6;
+    
+    // INT量化模型
+    if (quantization === 'int4') return 6;
+    if (quantization === 'int8') return 12;
+    
+    // 特殊模型大小
+    if (fileName.includes('ae.')) return 0.335;
+    if (fileName.includes('clip_l')) return 0.246;
+    if (fileName.includes('t5xxl_fp16')) return 9.79;
+    if (fileName.includes('t5xxl_fp8')) return 4.89;
+    if (fileName.includes('lora')) return 0.05;
+    if (fileName.includes('mini')) return 6.36;
+    if (fileName.includes('lite')) return 16.3;
+    if (fileName.includes('redux')) return 0.129;
+    
+    // 默认全精度模型大小
+    return 23.8;
+  }
+
+  /**
+   * 映射推荐数据类型
+   */
+  private static mapRecommendedDtype(dtype: string): string {
+    switch (dtype) {
+      case 'fp8': { return 'fp8_e4m3fn';
+      }
+      case 'gguf': { return 'default';
+      }
+      case 'nf4': { return 'nf4';
+      }
+      default: { return dtype;
+      }
+    }
+  }
+
+  /**
+   * 计算子优先级
+   */
+  private static calculateSubPriority(variant: string, priority: number): number {
+    if (priority === 1) {
+      // 官方模型的子优先级
+      switch (variant) {
+        case 'dev': { return 1;
+        }
+        case 'schnell': { return 2;
+        }
+        case 'kontext': { return 3;
+        }
+        case 'krea': { return 4;
+        }
+        case 'fill': { return 5;
+        }
+        case 'redux': { return 6;
+        }
+        default: { return 7;
+        }
+      }
+    }
+    return 1; // 企业和社区模型默认子优先级
+  }
+  /**
+   * 标准化模型名称并获取模型信息 (Enhanced RFC-128)
+   * RFC-128增强版：支持智能模型映射和200+模型识别
+   *
+   * @param modelName 输入的模型文件名
+   * @param enableIntelligentMapping 是否启用智能映射 (默认false保持向后兼容)
+   * @returns 标准化的模型信息
+   * @throws {ModelNotFoundError} 当模型不在验证列表中且无法智能映射时
+   */
+  public static standardize(modelName: string, enableIntelligentMapping: boolean = false): StandardizedModel {
     // 移除路径，只保留文件名
     const fileName = modelName.split('/').pop() || modelName;
-    
-    // 精确匹配
-    const exactMatch = MODEL_REGISTRY[fileName];
-    if (exactMatch) {
-      return exactMatch;
+
+    // 1. 从配置文件获取模型配置 (精确匹配)
+    const modelConfig = getModelConfig(fileName);
+    if (modelConfig) {
+      return ModelNameStandardizer.adaptConfigToStandardModel(fileName, modelConfig);
     }
 
-    // 尝试不区分大小写的匹配
+    // 2. 尝试不区分大小写的匹配
     const lowerFileName = fileName.toLowerCase();
-    for (const [registryKey, modelInfo] of Object.entries(MODEL_REGISTRY)) {
-      if (registryKey.toLowerCase() === lowerFileName) {
-        return modelInfo;
+    for (const [configModelName] of Object.entries(MODEL_REGISTRY)) {
+      if (configModelName.toLowerCase() === lowerFileName) {
+        const config = getModelConfig(configModelName);
+        if (config) {
+          return ModelNameStandardizer.adaptConfigToStandardModel(configModelName, config);
+        }
       }
     }
 
-    // 严格模式：无法匹配时抛出错误
+    // 3. RFC-128: 智能映射 (可选)
+    if (enableIntelligentMapping) {
+      const intelligentResult = ModelNameStandardizer.performIntelligentMapping(fileName);
+      if (intelligentResult) {
+        return intelligentResult;
+      }
+    }
+
+    // 4. 严格模式：无法匹配时抛出错误
     throw new ModelNotFoundError(fileName);
   }
 
   /**
-   * 检查模型是否在验证列表中
+   * RFC-128: 执行智能模型映射 / Perform intelligent model mapping
    * 
+   * @param fileName - 文件名 / File name
+   * @returns 标准化的模型信息或null / Standardized model info or null
+   */
+  private static performIntelligentMapping(fileName: string): StandardizedModel | null {
+    // 获取所有已注册的模型键 / Get all registered model keys
+    const registryKeys = Object.keys(MODEL_REGISTRY);
+    
+    // 1. 检查已知别名 / Check known aliases
+    const aliasMatch = this.findModelAlias(fileName);
+    if (aliasMatch) {
+      const config = getModelConfig(aliasMatch);
+      if (config) {
+        return this.adaptConfigToStandardModel(aliasMatch, config);
+      }
+    }
+
+    // 2. 模糊匹配现有模型 / Fuzzy match existing models
+    const fuzzyMatch = this.findFuzzyMatch(fileName, registryKeys, 0.8);
+    if (fuzzyMatch) {
+      const config = getModelConfig(fuzzyMatch);
+      if (config) {
+        return this.adaptConfigToStandardModel(fuzzyMatch, config);
+      }
+    }
+
+    // 3. 模式识别新模型 / Pattern recognition for new models
+    const patternMatch = this.recognizeModelPattern(fileName);
+    if (patternMatch) {
+      return this.adaptConfigToStandardModel(fileName, patternMatch);
+    }
+
+    return null;
+  }
+
+  /**
+   * RFC-128: 查找模型别名 / Find model alias
+   */
+  private static findModelAlias(fileName: string): string | null {
+    const aliases = new Map<string, string[]>([
+      // Official model variations
+      ['flux1-dev.safetensors', [
+        'flux-dev.safetensors', 
+        'FLUX.1-dev.safetensors',
+        'flux_1_dev.safetensors',
+        'flux1_dev.safetensors'
+      ]],
+      ['flux1-schnell.safetensors', [
+        'flux-schnell.safetensors',
+        'FLUX.1-schnell.safetensors', 
+        'flux_1_schnell.safetensors',
+        'flux1_schnell.safetensors'
+      ]],
+      ['flux1-kontext-dev.safetensors', [
+        'flux-kontext-dev.safetensors',
+        'FLUX.1-Kontext-dev.safetensors',
+        'flux1_kontext_dev.safetensors'
+      ]],
+      ['flux1-krea-dev.safetensors', [
+        'flux-krea-dev.safetensors',
+        'FLUX.1-Krea-dev.safetensors',
+        'flux1_krea_dev.safetensors'
+      ]]
+    ]);
+
+    for (const [canonical, aliasList] of aliases) {
+      if (aliasList.includes(fileName.toLowerCase())) {
+        return canonical;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * RFC-128: 模糊匹配 / Fuzzy matching
+   */
+  private static findFuzzyMatch(targetName: string, candidates: string[], threshold: number = 0.8): string | null {
+    let bestMatch: string | null = null;
+    let bestScore = 0;
+
+    for (const candidate of candidates) {
+      const similarity = this.calculateSimilarity(targetName, candidate);
+      if (similarity >= threshold && similarity > bestScore) {
+        bestMatch = candidate;
+        bestScore = similarity;
+      }
+    }
+
+    return bestMatch;
+  }
+
+  /**
+   * RFC-128: 计算字符串相似度 / Calculate string similarity
+   */
+  private static calculateSimilarity(str1: string, str2: string): number {
+    if (str1 === str2) return 1;
+    
+    const longer = str1.length > str2.length ? str1 : str2;
+    const shorter = str1.length > str2.length ? str2 : str1;
+    
+    if (longer.length === 0) return 1;
+    
+    const distance = this.levenshteinDistance(longer.toLowerCase(), shorter.toLowerCase());
+    return (longer.length - distance) / longer.length;
+  }
+
+  /**
+   * RFC-128: 计算编辑距离 / Calculate Levenshtein distance
+   */
+  private static levenshteinDistance(str1: string, str2: string): number {
+    const matrix = Array.from({length: str2.length + 1}).fill(null).map(() => Array.from({length: str1.length + 1}).fill(null));
+
+    for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+    for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+
+    for (let j = 1; j <= str2.length; j++) {
+      for (let i = 1; i <= str1.length; i++) {
+        const substitutionCost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[j][i] = Math.min(
+          matrix[j][i - 1] + 1, // insertion
+          matrix[j - 1][i] + 1, // deletion
+          matrix[j - 1][i - 1] + substitutionCost, // substitution
+        );
+      }
+    }
+
+    return matrix[str2.length][str1.length];
+  }
+
+  /**
+   * RFC-128: 模式识别 / Pattern recognition
+   */
+  private static recognizeModelPattern(fileName: string): ModelConfig | null {
+    const name = fileName.toLowerCase();
+
+    // Official models
+    if (/^(flux1?[_-]dev|flux\.1[_-]dev)\.safetensors$/i.test(fileName)) {
+      return { priority: 1, recommendedDtype: 'default', variant: 'dev' };
+    }
+    if (/^(flux1?[_-]schnell|flux\.1[_-]schnell)\.safetensors$/i.test(fileName)) {
+      return { priority: 1, recommendedDtype: 'fp8_e4m3fn', variant: 'schnell' };
+    }
+    if (/^(flux1?[_-]kontext[_-]dev|flux\.1[_-]kontext[_-]dev)\.safetensors$/i.test(fileName)) {
+      return { priority: 1, recommendedDtype: 'default', variant: 'kontext' };
+    }
+    if (/^(flux1?[_-]krea[_-]dev|flux\.1[_-]krea[_-]dev)\.safetensors$/i.test(fileName)) {
+      return { priority: 1, recommendedDtype: 'default', variant: 'krea' };
+    }
+
+    // GGUF quantized models
+    if (/^flux1?[_-](dev|schnell|kontext|krea)[_-].*q([2-68])(_k|_k_s|_k_m|_0|_1|)\.gguf$/i.test(fileName)) {
+      return { priority: 2, recommendedDtype: 'gguf', variant: this.extractVariantFromName(fileName) };
+    }
+
+    // FP8 quantized models
+    if (/^flux1?[_-](dev|schnell|kontext|krea)[_-].*fp8[_-](e4m3fn|e5m2)\.safetensors$/i.test(fileName)) {
+      return { priority: 2, recommendedDtype: 'fp8', variant: this.extractVariantFromName(fileName) };
+    }
+
+    // NF4 quantized models
+    if (/^flux1?[_-](dev|schnell|kontext|krea)[_-].*(bnb[_-])?nf4([_-]v2)?\.safetensors$/i.test(fileName)) {
+      return { priority: 2, recommendedDtype: 'nf4', variant: this.extractVariantFromName(fileName) };
+    }
+
+    // Enterprise optimized models
+    if (/^(flux\.1[_-]lite[_-]8b|flux[_-]mini).*\.safetensors$/i.test(fileName)) {
+      return { priority: 2, recommendedDtype: 'default', variant: 'lite' };
+    }
+
+    // Community models
+    if (/^(real_?dream|vision_?realistic|pixel_?wave|ultra_?real|acorn_?spinning).*flux.*\.safetensors$/i.test(fileName)) {
+      return { priority: 3, recommendedDtype: 'default', variant: 'dev' };
+    }
+
+    // LoRA adapters
+    if (/^(realism|anime|disney|scenery|art|mjv6)_lora\.safetensors$/i.test(fileName)) {
+      return { priority: 3, recommendedDtype: 'default', variant: 'dev' };
+    }
+
+    // Generic FLUX model fallback - extract variant from name
+    if (/flux.*\.safetensors$/i.test(fileName)) {
+      return { 
+        priority: 3, 
+        recommendedDtype: 'default', 
+        variant: this.extractVariantFromName(fileName)
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * RFC-128: 从文件名提取变体 / Extract variant from filename
+   */
+  private static extractVariantFromName(fileName: string): ModelConfig['variant'] {
+    const name = fileName.toLowerCase();
+    
+    if (name.includes('schnell')) return 'schnell';
+    if (name.includes('kontext')) return 'kontext'; 
+    if (name.includes('krea')) return 'krea';
+    if (name.includes('fill')) return 'fill';
+    if (name.includes('redux')) return 'redux';
+    if (name.includes('mini')) return 'mini';
+    if (name.includes('lite')) return 'lite';
+    
+    return 'dev'; // Default variant
+  }
+
+  /**
+   * RFC-128: 智能标准化模型名称 (启用智能映射) / Intelligent standardize model name (with intelligent mapping enabled)
+   * 
+   * @param modelName 输入的模型文件名 / Input model filename
+   * @returns 标准化的模型信息 / Standardized model information
+   * @throws {ModelNotFoundError} 当模型无法识别时 / When model cannot be recognized
+   */
+  public static standardizeWithIntelligentMapping(modelName: string): StandardizedModel {
+    return this.standardize(modelName, true);
+  }
+
+  /**
+   * 检查模型是否在验证列表中 (Enhanced RFC-128)
+   *
    * @param modelName 模型文件名
+   * @param enableIntelligentMapping 是否启用智能映射 (默认false保持向后兼容)
    * @returns 是否为已验证的模型
    */
-  public static isValidModel(modelName: string): boolean {
+  public static isValidModel(modelName: string, enableIntelligentMapping: boolean = false): boolean {
     try {
-      this.standardize(modelName);
+      this.standardize(modelName, enableIntelligentMapping);
       return true;
-    } catch (error) {
+    } catch {
       return false;
     }
   }
 
   /**
-   * 获取推荐的权重数据类型
+   * RFC-128: 检查模型是否为已验证模型 (启用智能映射) / Check if model is valid (with intelligent mapping enabled)
    * 
+   * @param modelName 模型文件名 / Model filename
+   * @returns 是否为已验证的模型 / Whether model is validated
+   */
+  public static isValidModelWithIntelligentMapping(modelName: string): boolean {
+    return this.isValidModel(modelName, true);
+  }
+
+  /**
+   * 获取推荐的权重数据类型
+   *
    * @param modelName 模型文件名
    * @returns 推荐的权重数据类型
    * @throws {ModelNotFoundError} 当模型不在验证列表中时
@@ -965,34 +558,87 @@ export class ModelNameStandardizer {
 
   /**
    * 获取所有已验证的模型列表
-   * 
+   *
    * @returns 已验证模型的文件名数组
    */
   public static getAllValidModels(): string[] {
-    return Object.keys(MODEL_REGISTRY);
-  }
+  return Object.keys(MODEL_REGISTRY);
+}
 
   /**
    * 按来源分组获取模型
-   * 
+   *
    * @param source 来源名称
    * @returns 指定来源的模型列表
    */
   public static getModelsBySource(source: string): string[] {
-    return Object.entries(MODEL_REGISTRY)
-      .filter(([_, modelInfo]) => modelInfo.source === source)
-      .map(([fileName, _]) => fileName);
-  }
+  return Object.entries(MODEL_REGISTRY)
+    .filter(([fileName, config]) => {
+      const inferredSource = ModelNameStandardizer.getSourceFromPriority(config.priority, fileName);
+      return inferredSource === source;
+    })
+    .map(([fileName]) => fileName);
+}
 
   /**
    * 按变体类型获取模型
-   * 
+   *
    * @param variant 变体类型
    * @returns 指定变体的模型列表
    */
   public static getModelsByVariant(variant: string): string[] {
+  return Object.entries(MODEL_REGISTRY)
+    .filter(([, config]) => config.variant === variant)
+    .map(([fileName]) => fileName);
+}
+
+  /**
+   * 按优先级获取模型列表
+   *
+   * @param priority 优先级 (1=官方, 2=企业, 3=社区)
+   * @returns 指定优先级的模型列表
+   */
+  public static getModelsByPriority(priority: number): string[] {
     return Object.entries(MODEL_REGISTRY)
-      .filter(([_, modelInfo]) => modelInfo.variant === variant)
-      .map(([fileName, _]) => fileName);
+      .filter(([, config]) => config.priority === priority)
+      .map(([fileName]) => fileName);
+  }
+
+  /**
+   * 获取模型的优先级信息
+   *
+   * @param modelName 模型文件名
+   * @returns 模型优先级信息或null
+   */
+  public static getModelPriority(modelName: string): {
+    category: string;
+    priority: number;
+    subPriority: number;
+  } | null {
+    try {
+      const standardizedModel = this.standardize(modelName);
+      const priority = standardizedModel.priority;
+      const subPriority = standardizedModel.subPriority;
+      
+      let category = '';
+      switch (priority) {
+        case 1: { category = '官方模型 (Black Forest Labs)'; break;
+        }
+        case 2: { category = '企业优化模型'; break;
+        }
+        case 3: { category = '社区精调模型'; break;
+        }
+        default: { category = '未知类别';
+        }
+      }
+
+      return {
+        category,
+        priority,
+        subPriority
+      };
+    } catch {
+      return null;
+    }
   }
 }

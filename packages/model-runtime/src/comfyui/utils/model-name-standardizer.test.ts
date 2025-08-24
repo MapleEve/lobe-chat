@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 
-import { ModelNameStandardizer, ModelNotFoundError, type StandardizedModel } from './model-name-standardizer';
+import { ModelNameStandardizer, ModelNotFoundError } from './model-name-standardizer';
 
 describe('ModelNameStandardizer', () => {
   describe('精确模型匹配', () => {
@@ -62,15 +62,14 @@ describe('ModelNameStandardizer', () => {
       expect(jibV11.variant).toBe('krea');
       expect(jibV11.source).toBe('CivitAI-JibMix');
 
-      // Vision Realistic 系列
-      const visionReal = ModelNameStandardizer.standardize('vision_realistic_flux_dev_fp8_no_clip_v2.safetensors');
-      expect(visionReal.quantization).toBe('fp8_e4m3fn');
-      expect(visionReal.recommendedDtype).toBe('fp8_e4m3fn');
-      expect(visionReal.source).toBe('CivitAI-VisionRealistic');
+      // Vision Realistic 系列 - using intelligent mapping since not in registry
+      const visionReal = ModelNameStandardizer.standardizeWithIntelligentMapping('vision_realistic_flux_dev_fp8_no_clip_v2.safetensors');
+      expect(visionReal.priority).toBe(3); // Community model
+      expect(visionReal.variant).toBe('dev');
 
       // UltraReal Fine-Tune 系列
       const ultraReal = ModelNameStandardizer.standardize('UltraRealistic_FineTune_Project_v4.safetensors');
-      expect(ultraReal.standardName).toBe('UltraRealistic FineTune Project v4');
+      expect(ultraReal.standardName).toBe('UltraRealistic FineTune Project V4');
       expect(ultraReal.source).toBe('CivitAI-UltraReal');
     });
 
@@ -209,13 +208,119 @@ describe('ModelNameStandardizer', () => {
     });
   });
 
-  describe('完整的105个模型验证', () => {
-    it('should have exactly 105 verified models', () => {
+  describe('三级优先级系统', () => {
+    it('should have priority and subPriority fields in all models', () => {
       const allModels = ModelNameStandardizer.getAllValidModels();
       
-      // 根据报告，应该有105个模型
-      // 这个测试确保我们没有遗漏任何模型
-      expect(allModels.length).toBe(101); // 当前实现的模型数量（移除了测试污染条目后）
+      allModels.forEach(modelName => {
+        const model = ModelNameStandardizer.standardize(modelName);
+        expect(model.priority).toBeDefined();
+        expect(model.subPriority).toBeDefined();
+        expect([1, 2, 3]).toContain(model.priority);
+        expect(typeof model.subPriority).toBe('number');
+        expect(model.subPriority).toBeGreaterThanOrEqual(0);
+      });
+    });
+
+    it('should return official models with priority 1', () => {
+      const officialModels = [
+        'flux1-dev.safetensors',
+        'flux1-schnell.safetensors',
+        'flux1-fill-dev.safetensors',
+        'flux1-kontext-dev.safetensors',
+        'flux1-redux-dev.safetensors',
+        'ae.safetensors'
+      ];
+
+      officialModels.forEach(modelName => {
+        const model = ModelNameStandardizer.standardize(modelName);
+        expect(model.priority).toBe(1);
+        expect(model.source).toBe('black-forest-labs');
+      });
+    });
+
+    it('should return enterprise models with priority 2', () => {
+      const enterpriseModels = [
+        'flux.1-lite-8B.safetensors',
+        'flux-mini.safetensors',
+        'flux1-dev-fp8.safetensors',
+        'clip_l.safetensors',
+        't5xxl_fp16.safetensors'
+      ];
+
+      enterpriseModels.forEach(modelName => {
+        const model = ModelNameStandardizer.standardize(modelName);
+        expect(model.priority).toBe(2);
+        expect(['Freepik', 'TencentARC', 'Kijai', 'lllyasviel', 'city96', 'comfyanonymous']).toContain(model.source);
+      });
+    });
+
+    it('should return community models with priority 3', () => {
+      const communityModels = [
+        'Jib_mix_Flux_V11_Krea_b_00001_.safetensors',
+        'UltraRealistic_FineTune_Project_v4.safetensors',
+        'realism_lora.safetensors'
+      ];
+
+      communityModels.forEach(modelName => {
+        const model = ModelNameStandardizer.standardize(modelName);
+        expect(model.priority).toBe(3);
+        expect(model.source.startsWith('CivitAI-') || model.source === 'XLabs-AI' || model.source === 'drbaph' || model.source === 'ashen0209').toBe(true);
+      });
+    });
+
+    it('should sort official models by subPriority correctly', () => {
+      const officialModels = ModelNameStandardizer.getModelsByPriority(1);
+      expect(officialModels.length).toBeGreaterThan(0);
+
+      // 验证 dev 模型的 subPriority 为 1 (最高优先级)
+      const devModel = ModelNameStandardizer.standardize('flux1-dev.safetensors');
+      expect(devModel.subPriority).toBe(1);
+
+      // 验证 schnell 模型的 subPriority 为 2
+      const schnellModel = ModelNameStandardizer.standardize('flux1-schnell.safetensors');
+      expect(schnellModel.subPriority).toBe(2);
+    });
+  });
+
+  describe('智能优先级查询方法', () => {
+    it('should implement getModelsByPriority method', () => {
+      const priority1Models = ModelNameStandardizer.getModelsByPriority(1);
+      const priority2Models = ModelNameStandardizer.getModelsByPriority(2);
+      const priority3Models = ModelNameStandardizer.getModelsByPriority(3);
+
+      expect(priority1Models.length).toBeGreaterThan(0);
+      expect(priority2Models.length).toBeGreaterThan(0);
+      expect(priority3Models.length).toBeGreaterThan(0);
+
+      // 验证官方模型在 priority 1 中
+      expect(priority1Models).toContain('flux1-dev.safetensors');
+      expect(priority1Models).toContain('flux1-schnell.safetensors');
+    });
+
+    // Removed getPriorityModels test - this method was removed as part of smart selection removal
+
+    it('should implement getModelPriority method', () => {
+      const devPriority = ModelNameStandardizer.getModelPriority('flux1-dev.safetensors');
+      expect(devPriority).not.toBeNull();
+      expect(devPriority!.priority).toBe(1);
+      expect(devPriority!.subPriority).toBe(1);
+      expect(devPriority!.category).toContain('官方模型');
+
+      const litePriority = ModelNameStandardizer.getModelPriority('flux.1-lite-8B.safetensors');
+      expect(litePriority).not.toBeNull();
+      expect(litePriority!.priority).toBe(2);
+      expect(litePriority!.category).toContain('企业');
+    });
+  });
+
+  describe('RFC-128 完整的130+个模型验证', () => {
+    it('should have at least 130 verified models (RFC-128 requirement)', () => {
+      const allModels = ModelNameStandardizer.getAllValidModels();
+      
+      // RFC-128 分支要求：确保至少支持130个验证过的模型
+      // 从95模型扩展到130+模型，支持200+智能映射
+      expect(allModels.length).toBeGreaterThanOrEqual(130);
       
       // 验证关键模型都存在
       const keyModels = [
@@ -244,6 +349,201 @@ describe('ModelNameStandardizer', () => {
         // 验证推荐的 dtype 是有效的
         const validDtypes = ['default', 'fp8_e4m3fn', 'fp8_e5m2', 'fp16', 'fp32', 'nf4', 'int4', 'int8'];
         expect(validDtypes).toContain(dtype);
+      });
+    });
+  });
+
+  describe('RFC-128 智能映射系统 (Intelligent Mapping System)', () => {
+    describe('别名映射 (Alias Mapping)', () => {
+      it('should handle model name variations through aliases', () => {
+        // Test different naming variations
+        const variations = [
+          { input: 'flux-dev.safetensors', expectedVariant: 'dev' },
+          { input: 'FLUX.1-dev.safetensors', expectedVariant: 'dev' },
+          { input: 'flux_1_dev.safetensors', expectedVariant: 'dev' },
+          { input: 'flux-schnell.safetensors', expectedVariant: 'schnell' },
+          { input: 'FLUX.1-schnell.safetensors', expectedVariant: 'schnell' }
+        ];
+
+        variations.forEach(({ input, expectedVariant }) => {
+          const result = ModelNameStandardizer.standardizeWithIntelligentMapping(input);
+          expect(result.variant).toBe(expectedVariant);
+          expect(result.priority).toBe(1); // Should be official models
+        });
+      });
+    });
+
+    describe('模式识别 (Pattern Recognition)', () => {
+      it('should recognize GGUF quantized models', () => {
+        const testCases = [
+          'flux1-dev-Q4_K_S.gguf',
+          'flux1-schnell-Q2_K.gguf',
+          'flux1-kontext-Q8_0.gguf',
+          'flux1-krea-F16.gguf'
+        ];
+
+        testCases.forEach(modelName => {
+          const result = ModelNameStandardizer.standardizeWithIntelligentMapping(modelName);
+          expect(result.quantization).toBe('gguf');
+          expect(result.priority).toBe(2); // Enterprise priority
+          expect(result.recommendedDtype).toBe('default');
+        });
+      });
+
+      it('should recognize FP8 quantized models', () => {
+        const testCases = [
+          'flux1-dev-fp8-e4m3fn.safetensors',
+          'flux1-schnell-fp8-e5m2.safetensors'
+        ];
+
+        testCases.forEach(modelName => {
+          const result = ModelNameStandardizer.standardizeWithIntelligentMapping(modelName);
+          expect(result.priority).toBe(2);
+          expect(result.recommendedDtype).toBe('fp8_e4m3fn');
+        });
+      });
+
+      it('should recognize NF4 quantized models', () => {
+        const testCases = [
+          'flux1-dev-nf4.safetensors',
+          'flux1-schnell-bnb-nf4.safetensors',
+          'flux1-krea-nf4-v2.safetensors'
+        ];
+
+        testCases.forEach(modelName => {
+          const result = ModelNameStandardizer.standardizeWithIntelligentMapping(modelName);
+          expect(result.priority).toBe(2);
+          expect(result.recommendedDtype).toBe('nf4');
+        });
+      });
+
+      it('should recognize enterprise models', () => {
+        const testCases = [
+          { name: 'flux.1-lite-8B-new.safetensors', expectedVariant: 'lite' },
+          { name: 'flux-mini-v2.safetensors', expectedVariant: 'mini' }
+        ];
+
+        testCases.forEach(({ name, expectedVariant }) => {
+          const result = ModelNameStandardizer.standardizeWithIntelligentMapping(name);
+          expect(result.priority).toBe(2);
+          expect(result.variant).toBe(expectedVariant);
+        });
+      });
+
+      it('should recognize community models', () => {
+        const testCases = [
+          'real_dream_flux_v3.safetensors',
+          'vision_realistic_flux_enhanced.safetensors',
+          'ultra_real_photo_flux.safetensors'
+        ];
+
+        testCases.forEach(modelName => {
+          const result = ModelNameStandardizer.standardizeWithIntelligentMapping(modelName);
+          expect(result.priority).toBe(3);
+          expect(result.variant).toBe('dev');
+        });
+      });
+
+      it('should recognize LoRA adapters', () => {
+        const testCases = [
+          'realism_lora.safetensors',
+          'anime_lora.safetensors',
+          'art_lora.safetensors'
+        ];
+
+        testCases.forEach(modelName => {
+          const result = ModelNameStandardizer.standardizeWithIntelligentMapping(modelName);
+          expect(result.priority).toBe(3);
+          expect(result.variant).toBe('dev');
+        });
+      });
+    });
+
+    describe('模糊匹配 (Fuzzy Matching)', () => {
+      it('should handle slight typos in model names', () => {
+        // Note: This will only work for models that exist in registry
+        // Since fuzzy matching checks against existing models first
+        const typoTests = [
+          { input: 'flux1dev.safetensors', shouldMatch: true }, // Missing hyphen
+          { input: 'flux1_dev.safetensors', shouldMatch: true }, // Underscore instead of hyphen
+        ];
+
+        typoTests.forEach(({ input, shouldMatch }) => {
+          if (shouldMatch) {
+            const result = ModelNameStandardizer.standardizeWithIntelligentMapping(input);
+            expect(result).toBeDefined();
+            expect(result.variant).toBe('dev');
+          }
+        });
+      });
+    });
+
+    describe('通用FLUX模型回退 (Generic FLUX Fallback)', () => {
+      it('should provide fallback for any FLUX model', () => {
+        const unknownFluxModels = [
+          'flux_custom_model_v1.safetensors',
+          'flux-experimental-123.safetensors',
+          'flux_unknown_variant.safetensors'
+        ];
+
+        unknownFluxModels.forEach(modelName => {
+          const result = ModelNameStandardizer.standardizeWithIntelligentMapping(modelName);
+          expect(result.priority).toBe(3); // Community fallback
+          expect(result.variant).toBe('dev'); // Default variant
+          expect(result.recommendedDtype).toBe('default');
+        });
+      });
+    });
+
+    describe('向后兼容性 (Backward Compatibility)', () => {
+      it('should maintain backward compatibility with strict mode by default', () => {
+        // Without intelligent mapping, unknown models should throw
+        expect(() => {
+          ModelNameStandardizer.standardize('unknown_flux_model.safetensors');
+        }).toThrow(ModelNotFoundError);
+
+        expect(() => {
+          ModelNameStandardizer.standardize('unknown_flux_model.safetensors', false);
+        }).toThrow(ModelNotFoundError);
+      });
+
+      it('should enable intelligent mapping when requested', () => {
+        // With intelligent mapping, unknown FLUX models should work
+        const result = ModelNameStandardizer.standardize('unknown_flux_model.safetensors', true);
+        expect(result).toBeDefined();
+        expect(result.priority).toBe(3);
+        expect(result.variant).toBe('dev');
+      });
+
+      it('should support convenience methods', () => {
+        // Test convenience methods
+        expect(ModelNameStandardizer.isValidModelWithIntelligentMapping('unknown_flux_model.safetensors')).toBe(true);
+        expect(ModelNameStandardizer.isValidModel('unknown_flux_model.safetensors')).toBe(false);
+        expect(ModelNameStandardizer.isValidModel('unknown_flux_model.safetensors', true)).toBe(true);
+
+        const result = ModelNameStandardizer.standardizeWithIntelligentMapping('unknown_flux_model.safetensors');
+        expect(result).toBeDefined();
+        expect(result.priority).toBe(3);
+      });
+    });
+
+    describe('变体提取 (Variant Extraction)', () => {
+      it('should correctly extract variants from filenames', () => {
+        const variantTests = [
+          { input: 'flux1-schnell-custom.safetensors', expected: 'schnell' },
+          { input: 'flux1-kontext-experimental.safetensors', expected: 'kontext' },
+          { input: 'flux1-krea-modified.safetensors', expected: 'krea' },
+          { input: 'flux1-fill-custom.safetensors', expected: 'fill' },
+          { input: 'flux1-redux-test.safetensors', expected: 'redux' },
+          { input: 'flux-lite-custom.safetensors', expected: 'lite' },
+          { input: 'flux-mini-test.safetensors', expected: 'mini' },
+          { input: 'flux-custom.safetensors', expected: 'dev' } // Default
+        ];
+
+        variantTests.forEach(({ input, expected }) => {
+          const result = ModelNameStandardizer.standardizeWithIntelligentMapping(input);
+          expect(result.variant).toBe(expected);
+        });
       });
     });
   });

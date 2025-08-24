@@ -2,18 +2,27 @@ import { PromptBuilder } from '@saintno/comfyui-sdk';
 
 import { generateUniqueSeeds } from '@/utils/number';
 
-import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS, getOptimalT5Model } from '../constants';
 import { splitPromptForDualCLIP } from '../utils/prompt-splitter';
 import { selectOptimalWeightDtype } from '../utils/weight-dtype';
 
 /**
- * FLUX Krea 工作流构建器
- * 15步摄影美学生成，针对自然真实感优化
+ * FLUX Krea 工作流构建器 / FLUX Krea Workflow Builder
+ * 
+ * @description 构建15步摄影美学生成工作流，针对自然真实感优化
+ * Builds 15-step photographic aesthetic generation workflow optimized for natural realism
+ * 
+ * @param {string} modelName - 模型文件名 / Model filename
+ * @param {Record<string, any>} params - 生成参数 / Generation parameters
+ * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow
  */
 export function buildFluxKreaWorkflow(
   modelName: string,
   params: Record<string, any>,
 ): PromptBuilder<any, any, any> {
+  // 使用固定的T5模型配置
+  const selectedT5Model = getOptimalT5Model();
+
   const workflow = {
     '1': {
       _meta: {
@@ -21,7 +30,7 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'DualCLIPLoader',
       inputs: {
-        clip_name1: FLUX_MODEL_CONFIG.CLIP.T5XXL,
+        clip_name1: selectedT5Model,
         clip_name2: FLUX_MODEL_CONFIG.CLIP.CLIP_L,
         type: 'flux',
       },

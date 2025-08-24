@@ -2,18 +2,27 @@ import { PromptBuilder } from '@saintno/comfyui-sdk';
 
 import { generateUniqueSeeds } from '@/utils/number';
 
-import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS, getOptimalT5Model } from '../constants';
 import { splitPromptForDualCLIP } from '../utils/prompt-splitter';
 import { selectOptimalWeightDtype } from '../utils/weight-dtype';
 
 /**
- * FLUX Kontext 工作流构建器
- * 28步图像编辑生成，支持文生图和图生图
+ * FLUX Kontext 工作流构建器 / FLUX Kontext Workflow Builder
+ * 
+ * @description 构建28步图像编辑生成工作流，支持文生图和图生图
+ * Builds 28-step image editing workflow supporting text-to-image and image-to-image
+ * 
+ * @param {string} modelName - 模型文件名 / Model filename
+ * @param {Record<string, any>} params - 生成参数 / Generation parameters
+ * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow
  */
 export function buildFluxKontextWorkflow(
   modelName: string,
   params: Record<string, any>,
 ): PromptBuilder<any, any, any> {
+  // 使用固定的T5模型配置
+  const selectedT5Model = getOptimalT5Model();
+
   // 检查是否有输入图像
   const hasInputImage = Boolean(params.imageUrl || params.imageUrls?.[0]);
 
@@ -24,7 +33,7 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'DualCLIPLoader',
       inputs: {
-        clip_name1: FLUX_MODEL_CONFIG.CLIP.T5XXL,
+        clip_name1: selectedT5Model,
         clip_name2: FLUX_MODEL_CONFIG.CLIP.CLIP_L,
         type: 'flux',
       },
