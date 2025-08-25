@@ -239,7 +239,7 @@ export class ModelResolver {
       'flux-krea-dev': 'krea',
       'flux-redux-dev': 'redux',
       'flux-schnell': 'schnell',
-      'sd35': 'sd35', // 前端只有一个 SD3.5 选择，后端按优先级选择 Large 或 Medium
+      'stable-diffusion-3.5': 'sd35', // 前端使用 stable-diffusion-3.5，映射到 sd35 variant
     };
 
     // Determine if we have a variant (either direct variant name or model ID)
