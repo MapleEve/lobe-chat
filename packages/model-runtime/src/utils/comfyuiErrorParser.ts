@@ -166,6 +166,15 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
  * @returns 解析后的错误对象和错误类型
  */
 export function parseComfyUIErrorMessage(error: any): ParsedError {
+  console.log('🔍 ComfyUI Error Parser DEBUG:', {
+    error,
+    errorCode: error?.code,
+    errorMessage: error?.message,
+    errorName: error?.name,
+    errorStatus: error?.status,
+    errorStatusCode: error?.statusCode,
+    errorType: typeof error,
+  });
   const comfyError = extractComfyUIErrorInfo(error);
 
   // 1. 网络连接错误
