@@ -46,13 +46,6 @@ config.overrides = [
       'typescript-sort-keys/string-enum': 0,
     },
   },
-
-  {
-    files: ['**/comfyui/config/**/*.ts'],
-    rules: {
-      'sort-keys-fix/sort-keys-fix': 0,
-    },
-  },
 ];
 
 module.exports = config;
