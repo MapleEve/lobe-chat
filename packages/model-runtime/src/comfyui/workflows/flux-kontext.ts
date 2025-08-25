@@ -2,7 +2,8 @@ import { PromptBuilder } from '@saintno/comfyui-sdk';
 
 import { generateUniqueSeeds } from '@/utils/number';
 
-import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS, getOptimalT5Model } from '../constants';
+import { getOptimalComponent } from '../config/systemComponents';
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
 import { splitPromptForDualCLIP } from '../utils/promptSplitter';
 import { selectOptimalWeightDtype } from '../utils/weightDType';
 
@@ -20,8 +21,10 @@ export function buildFluxKontextWorkflow(
   modelName: string,
   params: Record<string, any>,
 ): PromptBuilder<any, any, any> {
-  // 使用固定的T5模型配置
-  const selectedT5Model = getOptimalT5Model();
+  // 获取最优组件
+  const selectedT5Model = getOptimalComponent('t5');
+  const selectedVAE = getOptimalComponent('vae');
+  const selectedCLIP = getOptimalComponent('clip');
 
   // 检查是否有输入图像
   const hasInputImage = Boolean(params.imageUrl || params.imageUrls?.[0]);
@@ -34,7 +37,7 @@ export function buildFluxKontextWorkflow(
       class_type: 'DualCLIPLoader',
       inputs: {
         clip_name1: selectedT5Model,
-        clip_name2: FLUX_MODEL_CONFIG.CLIP.CLIP_L,
+        clip_name2: selectedCLIP,
         type: 'flux',
       },
     },
@@ -109,7 +112,7 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'VAELoader',
       inputs: {
-        vae_name: FLUX_MODEL_CONFIG.VAE.DEFAULT,
+        vae_name: selectedVAE,
       },
     },
     '4': {
@@ -208,8 +211,15 @@ export function buildFluxKontextWorkflow(
     };
   }
 
-  // 创建 PromptBuilder
-  const inputParams = ['prompt_clip_l', 'prompt_t5xxl', 'width', 'height', 'steps', 'cfg', 'seed'];
+  // 处理prompt分离 - 在工作流构建早期进行
+  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
+
+  // 直接设置prompt值到工作流节点，而不依赖PromptBuilder的输入映射
+  workflow['5'].inputs.clip_l = clipLPrompt;
+  workflow['5'].inputs.t5xxl = t5xxlPrompt;
+
+  // 创建 PromptBuilder - 移除prompt相关的输入参数，因为已直接设置
+  const inputParams = ['width', 'height', 'steps', 'cfg', 'seed']; // 移除 'prompt_clip_l', 'prompt_t5xxl'
   if (hasInputImage) {
     inputParams.push('imageUrl', 'denoise');
   }
@@ -219,13 +229,10 @@ export function buildFluxKontextWorkflow(
   // 设置输出节点
   builder.setOutputNode('images', '12');
 
-  // 添加setInputNode映射 - 修复SDK链式调用bug，改为分开调用
-  // Note: Each parameter can only be mapped to one node path with setInputNode
+  // 保留其他参数的输入映射（不包括prompt相关）
   builder.setInputNode('seed', '13.inputs.noise_seed');
   builder.setInputNode('steps', '9.inputs.steps');
-  builder.setInputNode('cfg', '6.inputs.guidance'); // Use FluxGuidance as primary
-  builder.setInputNode('prompt_clip_l', '5.inputs.clip_l');
-  builder.setInputNode('prompt_t5xxl', '5.inputs.t5xxl');
+  builder.setInputNode('cfg', '6.inputs.guidance');
 
   // Map width/height to the appropriate node based on mode
   if (!hasInputImage) {
@@ -247,9 +254,6 @@ export function buildFluxKontextWorkflow(
     builder.setInputNode('denoise', '9.inputs.denoise');
   }
 
-  // 处理prompt分离
-  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
-
   // Apply input values to workflow
   const width = params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH;
   const height = params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT;
@@ -270,10 +274,8 @@ export function buildFluxKontextWorkflow(
     }
   }
 
-  // 设置输入值 (these will be applied to nodes mapped via setInputNode)
+  // 设置输入值（不包括prompt，已直接设置到工作流）
   builder
-    .input('prompt_clip_l', clipLPrompt)
-    .input('prompt_t5xxl', t5xxlPrompt)
     .input('width', width)
     .input('height', height)
     .input('steps', params.steps ?? WORKFLOW_DEFAULTS.KONTEXT.STEPS)

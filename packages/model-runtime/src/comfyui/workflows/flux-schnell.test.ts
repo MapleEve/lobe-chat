@@ -50,8 +50,8 @@ describe('buildFluxSchnellWorkflow', () => {
         '1': expect.objectContaining({
           class_type: 'DualCLIPLoader',
           inputs: expect.objectContaining({
-            clip_name1: FLUX_MODEL_CONFIG.CLIP.T5XXL,
-            clip_name2: FLUX_MODEL_CONFIG.CLIP.CLIP_L,
+            clip_name1: 't5xxl_fp16.safetensors',
+            clip_name2: 'clip_l.safetensors',
             type: 'flux',
           }),
         }),
@@ -65,7 +65,7 @@ describe('buildFluxSchnellWorkflow', () => {
         '3': expect.objectContaining({
           class_type: 'VAELoader',
           inputs: expect.objectContaining({
-            vae_name: FLUX_MODEL_CONFIG.VAE.DEFAULT,
+            vae_name: 'ae.safetensors',
           }),
         }),
         '4': expect.objectContaining({

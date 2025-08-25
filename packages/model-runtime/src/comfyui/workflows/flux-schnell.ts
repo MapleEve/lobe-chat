@@ -2,7 +2,8 @@ import { PromptBuilder } from '@saintno/comfyui-sdk';
 
 import { generateUniqueSeeds } from '@/utils/number';
 
-import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS, getOptimalT5Model } from '../constants';
+import { getOptimalComponent } from '../config/systemComponents';
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
 import { splitPromptForDualCLIP } from '../utils/promptSplitter';
 import { selectOptimalWeightDtype } from '../utils/weightDType';
 
@@ -20,8 +21,10 @@ export function buildFluxSchnellWorkflow(
   modelName: string,
   params: Record<string, any>,
 ): PromptBuilder<any, any, any> {
-  // 使用固定的T5模型配置
-  const selectedT5Model = getOptimalT5Model();
+  // 获取最优组件
+  const selectedT5Model = getOptimalComponent('t5');
+  const selectedVAE = getOptimalComponent('vae');
+  const selectedCLIP = getOptimalComponent('clip');
 
   const workflow = {
     '1': {
@@ -31,7 +34,7 @@ export function buildFluxSchnellWorkflow(
       class_type: 'DualCLIPLoader',
       inputs: {
         clip_name1: selectedT5Model,
-        clip_name2: FLUX_MODEL_CONFIG.CLIP.CLIP_L,
+        clip_name2: selectedCLIP,
         type: 'flux',
       },
     },
@@ -51,7 +54,7 @@ export function buildFluxSchnellWorkflow(
       },
       class_type: 'VAELoader',
       inputs: {
-        vae_name: FLUX_MODEL_CONFIG.VAE.DEFAULT,
+        vae_name: selectedVAE,
       },
     },
     '4': {

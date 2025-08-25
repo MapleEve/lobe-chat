@@ -3,13 +3,6 @@
  * Unified management of hardcoded values with environment variable overrides / 统一管理硬编码值，支持环境变量覆盖
  * Architectural honesty: removed over-engineered dynamic selection and false component declarations / 架构诚实化：移除过度工程化的动态选择和虚假组件声明
  */
-import { AgentRuntimeErrorType } from '../error';
-import { AgentRuntimeError } from '../utils/createError';
-import {
-  SYSTEM_COMPONENTS,
-  getAllComponentConfigs,
-  getComponentConfig,
-} from './config/systemComponents';
 
 /**
  * Default configuration / 默认配置
@@ -26,61 +19,13 @@ export const COMFYUI_DEFAULTS = {
  * Removed over-engineered dynamic T5 selection, maintain simple fixed configuration / 移除过度工程化的动态T5选择，保持简单固定配置
  */
 export const FLUX_MODEL_CONFIG = {
-  CLIP: {
-    CLIP_L: 'clip_l.safetensors',
-    // Maintain backward-compatible hardcoded interface / 保持向后兼容的硬编码接口
-    T5XXL: 't5xxl_fp16.safetensors',
-  },
   FILENAME_PREFIXES: {
     DEV: 'LobeChat/%year%-%month%-%day%/FLUX_Dev',
     KONTEXT: 'LobeChat/%year%-%month%-%day%/FLUX_Kontext',
     KREA: 'LobeChat/%year%-%month%-%day%/FLUX_Krea',
     SCHNELL: 'LobeChat/%year%-%month%-%day%/FLUX_Schnell',
   },
-  VAE: {
-    DEFAULT: 'ae.safetensors',
-  },
 } as const;
-
-/**
- * 获取最优T5模型文件名 / Get Optimal T5 Model Filename
- *
- * @description 基于系统组件配置和优先级选择最优的T5模型
- * Selects optimal T5 model based on system component configuration and priority
- *
- * @param availableModels 服务器可用模型列表（可选）/ Optional list of available models on server
- * @returns {string} T5模型文件名 / T5 model filename
- * @throws {AgentRuntimeError} 当没有找到可用的T5模型时 / When no available T5 model is found
- */
-export function getOptimalT5Model(availableModels?: string[]): string {
-  // 获取所有T5组件并按优先级排序（优先级1最高）
-  // Get all T5 components and sort by priority (priority 1 is highest)
-  const t5Configs = getAllComponentConfigs({ type: 't5' });
-  const t5Components = Object.keys(SYSTEM_COMPONENTS)
-    .filter((name) => t5Configs.includes(SYSTEM_COMPONENTS[name]))
-    .map((name) => ({ config: getComponentConfig(name)!, name }))
-    .sort((a, b) => a.config.priority - b.config.priority);
-
-  // 如果提供了可用模型列表，检查可用性
-  // If available models list is provided, check availability
-  if (availableModels !== undefined) {
-    for (const { name } of t5Components) {
-      if (availableModels.includes(name)) {
-        return name;
-      }
-    }
-
-    // 没找到可用的T5组件，抛出详细错误信息
-    // No available T5 components found, throw detailed error
-    throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
-      message: `No available T5 components found in server. Available: [${availableModels.join(', ')}], Required: [${t5Components.map((c) => c.name).join(', ')}]`,
-    });
-  }
-
-  // 没有提供availableModels，返回优先级最高的（向后兼容）
-  // No availableModels provided, return highest priority one (backward compatibility)
-  return t5Components[0]?.name || FLUX_MODEL_CONFIG.CLIP.T5XXL;
-}
 
 /**
  * Default workflow node parameters / 工作流节点默认参数
