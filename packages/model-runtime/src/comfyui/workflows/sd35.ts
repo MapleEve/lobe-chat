@@ -17,10 +17,11 @@ export function buildSD35Workflow(
   modelFileName: string,
   params: Record<string, any>,
 ): PromptBuilder<any, any, any> {
-  const { prompt, negativePrompt, width, height, steps, seed } = params;
+  const { prompt, width, height, steps, seed, cfg } = params;
 
   const actualSeed = seed ?? generateUniqueSeeds(1)[0];
-  const actualNegativePrompt = negativePrompt || DEFAULT_NEGATIVE_PROMPT;
+  // SD3.5 always uses the default negative prompt
+  const actualNegativePrompt = DEFAULT_NEGATIVE_PROMPT;
 
   const workflow = {
     '1': {
@@ -69,14 +70,14 @@ export function buildSD35Workflow(
       },
       class_type: 'KSampler',
       inputs: {
-        cfg: 7,
+        cfg: cfg || 4,
         denoise: 1,
         latent_image: ['4', 0],
         model: ['1', 0],
         negative: ['3', 0],
         positive: ['2', 0],
         sampler_name: 'euler',
-        scheduler: 'normal',
+        scheduler: 'sgm_uniform',
         seed: actualSeed,
         steps,
       },
@@ -106,7 +107,7 @@ export function buildSD35Workflow(
   // Create PromptBuilder
   const builder = new PromptBuilder(
     workflow,
-    ['prompt', 'negativePrompt', 'width', 'height', 'steps', 'seed'],
+    ['prompt', 'width', 'height', 'steps', 'seed', 'cfg'],
     ['images'],
   );
 
@@ -115,11 +116,11 @@ export function buildSD35Workflow(
 
   // Set input node mappings
   builder.setInputNode('prompt', '2.inputs.text');
-  builder.setInputNode('negativePrompt', '3.inputs.text');
   builder.setInputNode('width', '4.inputs.width');
   builder.setInputNode('height', '4.inputs.height');
   builder.setInputNode('steps', '5.inputs.steps');
   builder.setInputNode('seed', '5.inputs.seed');
+  builder.setInputNode('cfg', '5.inputs.cfg');
 
   return builder;
 }

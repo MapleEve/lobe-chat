@@ -97,9 +97,8 @@ export const sd35ParamsSchema: ModelParamsSchema = {
     default: '1:1',
     enum: FLUX_ASPECT_RATIOS, // SD3.5 也支持多种宽高比
   },
-  cfg: { default: 7, max: 20, min: 1, step: 0.5 },
+  cfg: { default: 4, max: 20, min: 1, step: 0.5 },
   height: { default: 1024, max: 2048, min: 512, step: 8 },
-  negativePrompt: { default: '' }, // SD3.5 支持负面提示词
   prompt: { default: '' },
   seed: { default: null },
   steps: { default: 20, max: 50, min: 10, step: 1 },
