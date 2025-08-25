@@ -154,7 +154,7 @@ const comfyuiImageModels: AIImageModelCard[] = [
       'Stable Diffusion 3.5 是新一代文生图模型，支持 Large 和 Medium 两个版本，后端自动按优先级选择可用模型。',
     displayName: 'Stable Diffusion 3.5',
     enabled: true,
-    id: 'sd35',
+    id: 'stable-diffusion-3.5',
     parameters: sd35ParamsSchema,
     releasedAt: '2024-10-22',
     type: 'image',
