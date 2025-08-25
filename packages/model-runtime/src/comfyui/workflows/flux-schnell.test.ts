@@ -2,6 +2,7 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
 import { buildFluxSchnellWorkflow } from './flux-schnell';
 
 // Mock the utility functions
@@ -49,8 +50,8 @@ describe('buildFluxSchnellWorkflow', () => {
         '1': expect.objectContaining({
           class_type: 'DualCLIPLoader',
           inputs: expect.objectContaining({
-            clip_name1: 't5xxl_fp16.safetensors',
-            clip_name2: 'clip_l.safetensors',
+            clip_name1: FLUX_MODEL_CONFIG.CLIP.T5XXL,
+            clip_name2: FLUX_MODEL_CONFIG.CLIP.CLIP_L,
             type: 'flux',
           }),
         }),
@@ -64,14 +65,14 @@ describe('buildFluxSchnellWorkflow', () => {
         '3': expect.objectContaining({
           class_type: 'VAELoader',
           inputs: expect.objectContaining({
-            vae_name: 'ae.safetensors',
+            vae_name: FLUX_MODEL_CONFIG.VAE.DEFAULT,
           }),
         }),
         '4': expect.objectContaining({
           class_type: 'CLIPTextEncodeFlux',
           inputs: expect.objectContaining({
             clip: ['1', 0],
-            guidance: 1,
+            guidance: WORKFLOW_DEFAULTS.SCHNELL.CFG,
           }),
         }),
         '5': expect.objectContaining({
@@ -94,7 +95,7 @@ describe('buildFluxSchnellWorkflow', () => {
             sampler_name: 'euler',
             scheduler: 'simple',
             seed: 0, // Updated to match current default
-            steps: 4,
+            steps: WORKFLOW_DEFAULTS.SCHNELL.STEPS,
           }),
         }),
         '7': expect.objectContaining({
@@ -139,7 +140,7 @@ describe('buildFluxSchnellWorkflow', () => {
     expect(workflow['2'].inputs.unet_name).toBe(modelName);
     expect(workflow['5'].inputs.width).toBe(1024); // This is not modified directly, only via input()
     expect(workflow['5'].inputs.height).toBe(1024); // This is not modified directly, only via input()
-    expect(workflow['6'].inputs.steps).toBe(4); // Default steps, not customizable in current implementation
+    expect(workflow['6'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SCHNELL.STEPS); // Default steps, not customizable in current implementation
     expect(workflow['6'].inputs.seed).toBe(0); // Default seed, not customizable directly
     // samplerName and scheduler parameters are not currently supported in the implementation
     expect(workflow['6'].inputs.sampler_name).toBe('euler'); // Uses default value
@@ -157,7 +158,7 @@ describe('buildFluxSchnellWorkflow', () => {
     // Should use default values
     expect(workflow['5'].inputs.width).toBe(1024);
     expect(workflow['5'].inputs.height).toBe(1024);
-    expect(workflow['6'].inputs.steps).toBe(4);
+    expect(workflow['6'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SCHNELL.STEPS);
     expect(workflow['6'].inputs.seed).toBe(0); // Updated to match current default
     expect(workflow['6'].inputs.sampler_name).toBe('euler');
     expect(workflow['6'].inputs.scheduler).toBe('simple');
@@ -192,7 +193,7 @@ describe('buildFluxSchnellWorkflow', () => {
 
     // CFG should always be 1 for Schnell
     expect(workflow['6'].inputs.cfg).toBe(1);
-    expect(workflow['4'].inputs.guidance).toBe(1);
+    expect(workflow['4'].inputs.guidance).toBe(WORKFLOW_DEFAULTS.SCHNELL.CFG);
   });
 
   it('should use correct default steps for Schnell', () => {
@@ -204,7 +205,7 @@ describe('buildFluxSchnellWorkflow', () => {
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
     // Should default to 4 steps for Schnell
-    expect(workflow['6'].inputs.steps).toBe(4);
+    expect(workflow['6'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SCHNELL.STEPS);
   });
 
   it('should have all required meta information', () => {

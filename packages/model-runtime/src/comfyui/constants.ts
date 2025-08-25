@@ -199,8 +199,12 @@ export const getAllStyleKeywords = (): readonly string[] => {
 export const WEIGHT_DTYPES = {
   AUTO: 'default',
   FP16: 'fp16',
+  FP32: 'fp32',
   FP8_E4M3FN: 'fp8_e4m3fn',
   FP8_E5M2: 'fp8_e5m2',
+  INT4: 'int4',
+  INT8: 'int8',
+  NF4: 'nf4',
 } as const;
 
 /**

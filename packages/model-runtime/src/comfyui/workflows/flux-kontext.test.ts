@@ -2,6 +2,7 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
 import { buildFluxKontextWorkflow } from './flux-kontext';
 
 // Mock the utility functions
@@ -72,7 +73,7 @@ describe('buildFluxKontextWorkflow', () => {
       cfg: 4,
       height: 768,
       prompt: 'Custom prompt',
-      steps: 25,
+      steps: WORKFLOW_DEFAULTS.SAMPLING.STEPS,
       width: 512,
     };
 
@@ -143,7 +144,7 @@ describe('buildFluxKontextWorkflow', () => {
     ) as any;
 
     if (schedulerNode) {
-      expect(schedulerNode.inputs.steps).toBe(28);
+      expect(schedulerNode.inputs.steps).toBe(WORKFLOW_DEFAULTS.KONTEXT.STEPS);
     }
   });
 

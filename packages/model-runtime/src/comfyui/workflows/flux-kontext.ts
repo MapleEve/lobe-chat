@@ -100,7 +100,7 @@ export function buildFluxKontextWorkflow(
       class_type: 'UNETLoader',
       inputs: {
         unet_name: modelName,
-        weight_dtype: selectOptimalWeightDtype(modelName, params),
+        weight_dtype: selectOptimalWeightDtype(modelName),
       },
     },
     '3': {

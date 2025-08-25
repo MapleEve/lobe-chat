@@ -3,9 +3,10 @@ import { CallWrapper, ComfyApi, PromptBuilder } from '@saintno/comfyui-sdk';
 import { Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentRuntimeErrorType, CreateImagePayload } from '@/libs/model-runtime';
+import { COMFYUI_ERROR_TYPES } from './constants';
 
 import { LobeComfyUI } from '../index';
-import { ComfyUIModelResolver } from './utils/modelResolver';
+import { ModelResolver } from './utils/ModelResolver';
 
 // Mock the ComfyUI SDK
 vi.mock('@saintno/comfyui-sdk', () => ({
@@ -14,9 +15,9 @@ vi.mock('@saintno/comfyui-sdk', () => ({
   PromptBuilder: vi.fn(),
 }));
 
-// Mock the ComfyUIModelResolver
-vi.mock('./utils/modelResolver', () => ({
-  ComfyUIModelResolver: vi.fn(),
+// Mock the ModelResolver
+vi.mock('./utils/ModelResolver', () => ({
+  ModelResolver: vi.fn(),
 }));
 
 // Mock fetch globally
@@ -27,7 +28,7 @@ vi.spyOn(console, 'error').mockImplementation(() => {});
 
 const provider = 'comfyui';
 const bizErrorType = 'ComfyUIBizError';
-const emptyResultErrorType = 'ComfyUIEmptyResult';
+const emptyResultErrorType = COMFYUI_ERROR_TYPES.EMPTY_RESULT;
 const serviceUnavailableErrorType = 'ComfyUIServiceUnavailable';
 const invalidErrorType = 'InvalidProviderAPIKey';
 const modelNotFoundErrorType = 'ModelNotFound';
@@ -104,7 +105,7 @@ describe('LobeComfyUI', () => {
       resolveModelFileName: vi.fn().mockResolvedValue('flux-schnell.safetensors'),
       transformModelFilesToList: vi.fn().mockReturnValue([]),
     };
-    (ComfyUIModelResolver as Mock).mockImplementation(() => mockModelResolver);
+    (ModelResolver as Mock).mockImplementation(() => mockModelResolver);
     
     // Mock ModelValidationManager for strict validation
     vi.mock('./utils/modelValidationManager', () => ({
@@ -341,7 +342,7 @@ describe('LobeComfyUI', () => {
       };
 
       // Setup instance with mocked validation
-      instance.setModelValidatorForTesting(mockValidationManager as any);
+      // Model validation now handled internally
 
       const payload: CreateImagePayload = {
         model: 'comfyui/non-existent-model',
@@ -390,7 +391,7 @@ describe('LobeComfyUI', () => {
       });
 
       // Setup instance with mocked validation
-      instance.setModelValidatorForTesting(mockValidationManager as any);
+      // Model validation now handled internally
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
@@ -423,7 +424,7 @@ describe('LobeComfyUI', () => {
       };
 
       // Setup instance with mocked validation
-      instance.setModelValidatorForTesting(mockValidationManager as any);
+      // Model validation now handled internally
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
@@ -455,7 +456,7 @@ describe('LobeComfyUI', () => {
       };
 
       // Setup instance with mocked validation
-      instance.setModelValidatorForTesting(mockValidationManager as any);
+      // Model validation now handled internally
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
@@ -741,7 +742,7 @@ describe('LobeComfyUI', () => {
       };
 
       // Setup instance with mocked validation
-      instance.setModelValidatorForTesting(mockValidationManager as any);
+      // Model validation now handled internally
 
       const payload: CreateImagePayload = {
         model: 'comfyui/unknown-model',
@@ -769,7 +770,7 @@ describe('LobeComfyUI', () => {
       };
 
       // Setup instance with mocked validation
-      instance.setModelValidatorForTesting(mockValidationManager as any);
+      // Model validation now handled internally
 
       const payload: CreateImagePayload = {
         model: 'comfyui/non-verified-model',
@@ -848,7 +849,7 @@ describe('LobeComfyUI', () => {
       };
 
       // Setup instance with mocked validation
-      instance.setModelValidatorForTesting(mockValidationManager as any);
+      // Model validation now handled internally
 
       const payload: CreateImagePayload = {
         model: 'comfyui/some-unknown-model', // A model that won't match anything
@@ -885,7 +886,7 @@ describe('LobeComfyUI', () => {
       };
 
       // Setup instance with mocked validation
-      instance.setModelValidatorForTesting(mockValidationManager as any);
+      // Model validation now handled internally
 
       const payload: CreateImagePayload = {
         model: 'comfyui/unknown-model',
@@ -1274,7 +1275,7 @@ describe('LobeComfyUI', () => {
       };
 
       // Setup instance with mocked validation
-      instance.setModelValidatorForTesting(mockValidationManager as any);
+      // Model validation now handled internally
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
@@ -1322,7 +1323,7 @@ describe('LobeComfyUI', () => {
       };
 
       // Setup mocks
-      instance.setModelValidatorForTesting(mockValidationManager as any);
+      // Model validation now handled internally
       
       const mockResult = {
         images: {

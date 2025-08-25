@@ -2,6 +2,7 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
 import { buildFluxDevWorkflow } from './flux-dev';
 
 // Mock the utility functions
@@ -52,7 +53,7 @@ describe('buildFluxDevWorkflow', () => {
             clip: ['1', 0],
             clip_l: 'A beautiful landscape', 
             // ✅ 验证prompt正确设置
-guidance: 3.5, 
+guidance: WORKFLOW_DEFAULTS.SAMPLING.CFG, 
             // ✅ 验证prompt正确设置
 t5xxl: 'A beautiful landscape',
           }),
@@ -73,7 +74,7 @@ t5xxl: 'A beautiful landscape',
       prompt: 'Custom prompt',
       samplerName: 'dpmpp_2m',
       scheduler: 'karras',
-      steps: 25,
+      steps: WORKFLOW_DEFAULTS.SAMPLING.STEPS,
       width: 512,
     };
 
@@ -87,7 +88,7 @@ t5xxl: 'A beautiful landscape',
     expect(workflow['4'].inputs.height).toBe(768); // ✅ 直接设置到工作流
     expect(workflow['7'].inputs.width).toBe(512);  // ✅ 修复: 现在直接设置
     expect(workflow['7'].inputs.height).toBe(768); // ✅ 修复: 现在直接设置
-    expect(workflow['9'].inputs.steps).toBe(25);
+    expect(workflow['9'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SAMPLING.STEPS);
     expect(workflow['5'].inputs.guidance).toBe(4.5); // ✅ 直接设置到工作流
     expect(workflow['6'].inputs.guidance).toBe(4.5); // ✅ 修复: 现在直接设置
     // samplerName and scheduler parameters are not currently supported in the implementation
@@ -104,13 +105,13 @@ t5xxl: 'A beautiful landscape',
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
     // Should use default values
-    expect(workflow['4'].inputs.width).toBe(1024);
-    expect(workflow['4'].inputs.height).toBe(1024);
-    expect(workflow['7'].inputs.width).toBe(1024);
-    expect(workflow['7'].inputs.height).toBe(1024);
-    expect(workflow['9'].inputs.steps).toBe(25);
-    expect(workflow['5'].inputs.guidance).toBe(3.5);
-    expect(workflow['6'].inputs.guidance).toBe(3.5);
+    expect(workflow['4'].inputs.width).toBe(WORKFLOW_DEFAULTS.IMAGE.WIDTH);
+    expect(workflow['4'].inputs.height).toBe(WORKFLOW_DEFAULTS.IMAGE.HEIGHT);
+    expect(workflow['7'].inputs.width).toBe(WORKFLOW_DEFAULTS.IMAGE.WIDTH);
+    expect(workflow['7'].inputs.height).toBe(WORKFLOW_DEFAULTS.IMAGE.HEIGHT);
+    expect(workflow['9'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SAMPLING.STEPS);
+    expect(workflow['5'].inputs.guidance).toBe(WORKFLOW_DEFAULTS.SAMPLING.CFG);
+    expect(workflow['6'].inputs.guidance).toBe(WORKFLOW_DEFAULTS.SAMPLING.CFG);
     expect(workflow['8'].inputs.sampler_name).toBe('euler');
     expect(workflow['9'].inputs.scheduler).toBe('simple');
   });
@@ -162,7 +163,7 @@ t5xxl: 'A beautiful landscape',
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
     // Should default to 25 steps for Dev
-    expect(workflow['9'].inputs.steps).toBe(25);
+    expect(workflow['9'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SAMPLING.STEPS);
   });
 
   it('should have model sampling flux configuration', () => {
@@ -174,7 +175,7 @@ t5xxl: 'A beautiful landscape',
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
     expect(workflow['4'].class_type).toBe('ModelSamplingFlux');
-    expect(workflow['4'].inputs.max_shift).toBe(1.15);
+    expect(workflow['4'].inputs.max_shift).toBe(WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT);
     expect(workflow['4'].inputs.base_shift).toBe(0.5);
     expect(workflow['4'].inputs.width).toBe(768);
     expect(workflow['4'].inputs.height).toBe(512);

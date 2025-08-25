@@ -2,6 +2,7 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
 import { buildFluxKreaWorkflow } from './flux-krea';
 
 // Mock the utility functions
@@ -106,7 +107,7 @@ describe('buildFluxKreaWorkflow', () => {
     ) as any;
 
     if (schedulerNode) {
-      expect(schedulerNode.inputs.steps).toBe(15);
+      expect(schedulerNode.inputs.steps).toBe(WORKFLOW_DEFAULTS.KREA.STEPS);
     }
   });
 
