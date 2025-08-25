@@ -229,7 +229,8 @@ export class LobeComfyUI implements LobeRuntimeAI {
   ): PromptBuilder<any, any, any> {
     log('🔧 Building workflow for model:', model);
 
-    const detectionResult = WorkflowDetector.detectModelType(model);
+    // Use the resolved filename for detection, not the original model ID
+    const detectionResult = WorkflowDetector.detectModelType(modelFileName);
     log('Model detection result:', detectionResult);
 
     if (!detectionResult.isSupported) {
