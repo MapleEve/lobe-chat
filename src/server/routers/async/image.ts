@@ -66,6 +66,15 @@ const categorizeError = (
   error: any,
   isAborted: boolean,
 ): { errorMessage: string; errorType: AsyncTaskErrorType } => {
+  // 添加详细的错误调试日志
+  console.log('🔥🔥🔥 [ASYNC] categorizeError called:', {
+    errorMessage: error?.message,
+    errorName: error?.name,
+    errorStatus: error?.status,
+    errorType: error?.errorType,
+    fullError: JSON.stringify(error, null, 2),
+    isAborted,
+  });
   // 处理 ComfyUI 服务不可用
   if (error.errorType === AgentRuntimeErrorType.ComfyUIServiceUnavailable) {
     return {
@@ -83,7 +92,7 @@ const categorizeError = (
     };
   }
 
-  // 处理 ConnectionCheckFailed (保留向后兼容)
+  // 处理 ConnectionCheckFailed
   if (error.errorType === AgentRuntimeErrorType.ConnectionCheckFailed) {
     return {
       errorMessage: error.message || AgentRuntimeErrorType.ConnectionCheckFailed,
@@ -96,6 +105,14 @@ const categorizeError = (
     return {
       errorMessage: error.error?.message || error.message || AgentRuntimeErrorType.PermissionDenied,
       errorType: AsyncTaskErrorType.InvalidProviderAPIKey,
+    };
+  }
+
+  // 处理 ModelNotFound
+  if (error.errorType === AgentRuntimeErrorType.ModelNotFound) {
+    return {
+      errorMessage: error.error?.message || error.message || AgentRuntimeErrorType.ModelNotFound,
+      errorType: AsyncTaskErrorType.ModelNotFound,
     };
   }
 
@@ -170,6 +187,12 @@ export const imageRouter = router({
         // Check if operation has been cancelled
         checkAbortSignal(signal);
 
+        console.log(
+          '🚀 ASYNC ROUTE: About to call agentRuntime.createImage with provider:',
+          provider,
+          'model:',
+          model,
+        );
         log('Agent runtime initialized, calling createImage');
         const response = await agentRuntime.createImage({
           model,

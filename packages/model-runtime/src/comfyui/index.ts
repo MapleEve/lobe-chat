@@ -40,6 +40,10 @@ export class LobeComfyUI implements LobeRuntimeAI {
   baseURL: string;
 
   constructor(options: ComfyUIKeyVault = {}) {
+    console.log('🏗️ ComfyUI Constructor called with options:', {
+      authType: options.authType,
+      baseURL: options.baseURL,
+    });
     const { baseURL, authType = 'none', apiKey, username, password, customHeaders } = options;
 
     const resolvedBaseURL = baseURL || process.env.COMFYUI_DEFAULT_URL || COMFYUI_DEFAULTS.BASE_URL;
@@ -69,7 +73,11 @@ export class LobeComfyUI implements LobeRuntimeAI {
    * 确保 ComfyUI 连接有效，使用现有的错误处理器
    */
   private async ensureConnection(): Promise<void> {
-    if (this.connectionValidated) return;
+    console.log('🚀🚀🚀 ensureConnection() CALLED - Starting connection validation');
+    if (this.connectionValidated) {
+      console.log('✅ Connection already validated, skipping');
+      return;
+    }
 
     try {
       const models = await this.modelResolver.getAvailableModelFiles();
@@ -79,12 +87,22 @@ export class LobeComfyUI implements LobeRuntimeAI {
       }
 
       this.connectionValidated = true;
-    } catch (error) {
+    } catch (error: unknown) {
+      console.log('🔥🔥🔥 ComfyUI Connection Error Caught:', {
+        error: error,
+        errorConstructor: (error as any)?.constructor?.name,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        errorStatus: (error as any)?.status,
+        errorStatusCode: (error as any)?.statusCode,
+        errorType: typeof error,
+      });
       log('Connection error caught:', error);
 
       const { error: parsedError, errorType } = parseComfyUIErrorMessage(error);
-      throw AgentRuntimeError.createError(errorType, {
+      throw AgentRuntimeError.createImage({
         error: parsedError,
+        errorType,
+        provider: 'comfyui',
       });
     }
   }
@@ -127,14 +145,13 @@ export class LobeComfyUI implements LobeRuntimeAI {
     const { model, params } = payload;
 
     try {
-      await this.client.waitForReady();
-
-      // Simple model validation
+      // Validate and resolve model to actual filename
       const validation = await this.modelResolver.validateModel(model);
       if (!validation.exists) {
-        throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
-          error: `Model not found: ${model}`,
-          model,
+        throw AgentRuntimeError.createImage({
+          error: new Error('ModelNotFound'),
+          errorType: AgentRuntimeErrorType.ModelNotFound,
+          provider: 'comfyui',
         });
       }
 
@@ -217,7 +234,7 @@ export class LobeComfyUI implements LobeRuntimeAI {
 
     if (!detectionResult.isSupported) {
       throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
-        error: `Unsupported model "${model}". Only FLUX models are supported.`,
+        error: 'ModelNotFound',
         model,
       });
     }

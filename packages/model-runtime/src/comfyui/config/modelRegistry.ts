@@ -816,6 +816,42 @@ export const MODEL_REGISTRY: Record<string, ModelConfig> = {
 };
 
 // ===================================================================
+// Variant Name to Filename Mapping - Support for variant queries
+// ===================================================================
+
+/**
+ * Variant name to actual filename mapping
+ * Enables lookup by variant names like 'flux-dev' -> 'flux1-dev.safetensors'
+ */
+const VARIANT_FILENAME_MAP: Record<string, string[]> = {
+  // Official variant names matching WorkflowRouter
+  'flux-dev': [
+    'flux1-dev.safetensors',
+    'flux1-dev-fp8-e4m3fn.safetensors',
+    'flux1-dev-fp8-e5m2.safetensors',
+    'flux1-dev-bnb-nf4.safetensors',
+    'flux1-dev-bnb-nf4-v2.safetensors',
+  ],
+  'flux-schnell': [
+    'flux1-schnell.safetensors',
+    'flux1-schnell-fp8-e4m3fn.safetensors',
+    'flux1-schnell-fp8-e5m2.safetensors',
+    'flux1-schnell-bnb-nf4.safetensors',
+  ],
+  'flux-kontext-dev': [
+    'flux1-kontext-dev.safetensors',
+    'flux1-kontext-dev-fp8-e4m3fn.safetensors',
+    'flux1-kontext-dev-fp8-e5m2.safetensors',
+    'flux1-kontext-dev-bnb-nf4.safetensors',
+  ],
+  'flux-krea-dev': [
+    'flux1-krea-dev.safetensors',
+    'flux1-krea-dev-fp8-e4m3fn.safetensors',
+    'flux1-krea-dev-bnb-nf4.safetensors',
+  ],
+};
+
+// ===================================================================
 // Universal Query Interface - One Function Rules All
 // ===================================================================
 
@@ -834,7 +870,43 @@ export function getModelConfig(
 ): ModelConfig | undefined {
   let config = MODEL_REGISTRY[modelName];
 
-  // If not found and case-insensitive search requested, try case-insensitive lookup
+  // If not found, try variant name lookup
+  if (!config && VARIANT_FILENAME_MAP[modelName]) {
+    console.log('🔍 [ModelRegistry] Trying variant name lookup for:', modelName);
+
+    // Get potential filenames for this variant
+    const candidateFilenames = VARIANT_FILENAME_MAP[modelName];
+    console.log('🔍 [ModelRegistry] Candidate filenames:', candidateFilenames);
+
+    // Find the highest priority match (lower number = higher priority)
+    let bestMatch: ModelConfig | undefined;
+    let bestPriority = Infinity;
+
+    for (const filename of candidateFilenames) {
+      const candidateConfig = MODEL_REGISTRY[filename];
+      if (candidateConfig && candidateConfig.priority < bestPriority) {
+        bestMatch = candidateConfig;
+        bestPriority = candidateConfig.priority;
+        console.log('🔍 [ModelRegistry] New best match:', {
+          filename,
+          priority: candidateConfig.priority,
+          variant: candidateConfig.variant,
+        });
+      }
+    }
+
+    if (bestMatch) {
+      config = bestMatch;
+    }
+    console.log('🔍 [ModelRegistry] Final variant lookup result:', {
+      modelName,
+      found: !!config,
+      selectedFilename: bestMatch ? 'found' : 'none',
+      priority: bestMatch?.priority,
+    });
+  }
+
+  // If still not found and case-insensitive search requested, try case-insensitive lookup
   if (!config && options?.caseInsensitive) {
     const lowerModelName = modelName.toLowerCase();
     for (const [registryName, registryConfig] of Object.entries(MODEL_REGISTRY)) {
@@ -866,4 +938,22 @@ export function getModelConfig(
  */
 export function getAllModelNames(): string[] {
   return Object.keys(MODEL_REGISTRY);
+}
+
+/**
+ * Get all models for a specific variant
+ * @param variant - The variant to search for (e.g., 'dev', 'schnell', 'kontext', 'krea')
+ * @returns Array of model filenames matching the variant, sorted by priority (ascending)
+ */
+export function getModelsByVariant(variant: ModelConfig['variant']): string[] {
+  const matchingModels: Array<{ fileName: string; priority: number }> = [];
+
+  for (const [fileName, config] of Object.entries(MODEL_REGISTRY)) {
+    if (config.variant === variant) {
+      matchingModels.push({ fileName, priority: config.priority });
+    }
+  }
+
+  // Sort by priority (lower number = higher priority)
+  return matchingModels.sort((a, b) => a.priority - b.priority).map((item) => item.fileName);
 }
