@@ -7,7 +7,7 @@ export interface ModelConfig {
   modelFamily: 'FLUX' | 'SD1' | 'SDXL' | 'SD3';
   priority: number;
   recommendedDtype: 'default' | 'fp8_e4m3fn' | 'fp8_e4m3fn_fast' | 'fp8_e5m2';
-  variant: 'dev' | 'schnell' | 'kontext' | 'krea' | 'fill' | 'redux';
+  variant: 'dev' | 'schnell' | 'kontext' | 'krea' | 'fill' | 'redux' | 'sd35';
 }
 
 // ===================================================================
@@ -811,6 +811,26 @@ export const MODEL_REGISTRY: Record<string, ModelConfig> = {
     priority: 3,
     variant: 'dev',
     modelFamily: 'FLUX',
+    recommendedDtype: 'default',
+  },
+
+  // SD3.5 Models
+  'sd3.5_large.safetensors': {
+    priority: 1,
+    variant: 'sd35',
+    modelFamily: 'SD3',
+    recommendedDtype: 'default',
+  },
+  'sd3.5_large_turbo.safetensors': {
+    priority: 2,
+    variant: 'sd35',
+    modelFamily: 'SD3',
+    recommendedDtype: 'default',
+  },
+  'sd3.5_medium.safetensors': {
+    priority: 3,
+    variant: 'sd35',
+    modelFamily: 'SD3',
     recommendedDtype: 'default',
   },
 };

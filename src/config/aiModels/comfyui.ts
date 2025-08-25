@@ -89,8 +89,26 @@ export const fluxKontextDevParamsSchema: ModelParamsSchema = {
 };
 
 /**
+ * SD3.5 模型参数配置
+ * Stable Diffusion 3.5，支持 Large 和 Medium 两个版本，自动按优先级选择
+ */
+export const sd35ParamsSchema: ModelParamsSchema = {
+  aspectRatio: {
+    default: '1:1',
+    enum: FLUX_ASPECT_RATIOS, // SD3.5 也支持多种宽高比
+  },
+  cfg: { default: 7, max: 20, min: 1, step: 0.5 },
+  height: { default: 1024, max: 2048, min: 512, step: 8 },
+  negativePrompt: { default: '' }, // SD3.5 支持负面提示词
+  prompt: { default: '' },
+  seed: { default: null },
+  steps: { default: 20, max: 50, min: 10, step: 1 },
+  width: { default: 1024, max: 2048, min: 512, step: 8 },
+};
+
+/**
  * ComfyUI 支持的图像生成模型列表
- * 第一阶段支持完整的 FLUX 系列模型
+ * 支持 FLUX 系列和 Stable Diffusion 3.5 模型
  */
 const comfyuiImageModels: AIImageModelCard[] = [
   {
@@ -130,6 +148,16 @@ const comfyuiImageModels: AIImageModelCard[] = [
     id: 'flux-kontext-dev',
     parameters: fluxKontextDevParamsSchema,
     releasedAt: '2025-05-29', // 与 BFL 官方的 Kontext 系列发布时间对齐
+    type: 'image',
+  },
+  {
+    description:
+      'Stable Diffusion 3.5 是新一代文生图模型，支持 Large 和 Medium 两个版本，后端自动按优先级选择可用模型。',
+    displayName: 'Stable Diffusion 3.5',
+    enabled: true,
+    id: 'sd35',
+    parameters: sd35ParamsSchema,
+    releasedAt: '2024-10-22',
     type: 'image',
   },
 ];

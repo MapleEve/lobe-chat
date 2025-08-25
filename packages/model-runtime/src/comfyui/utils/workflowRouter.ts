@@ -6,6 +6,7 @@ import { buildFluxDevWorkflow } from '../workflows/flux-dev';
 import { buildFluxKontextWorkflow } from '../workflows/flux-kontext';
 import { buildFluxKreaWorkflow } from '../workflows/flux-krea';
 import { buildFluxSchnellWorkflow } from '../workflows/flux-schnell';
+import { buildSD35Workflow } from '../workflows/sd35';
 
 /**
  * Workflow type detection result interface / 工作流类型检测结果接口
@@ -18,7 +19,7 @@ export interface WorkflowDetectionResult {
   /** Whether this model is supported / 是否支持的模型 */
   isSupported: boolean;
   /** Variant type / 变体类型 */
-  variant?: 'dev' | 'schnell' | 'kontext' | 'krea';
+  variant?: 'dev' | 'schnell' | 'kontext' | 'krea' | 'sd35';
 }
 
 /**
@@ -44,6 +45,7 @@ export class WorkflowRouter {
     'flux-kontext-dev': buildFluxKontextWorkflow,
     'flux-krea-dev': buildFluxKreaWorkflow,
     'flux-schnell': buildFluxSchnellWorkflow,
+    'sd35': buildSD35Workflow,
   };
 
   /**
@@ -54,6 +56,7 @@ export class WorkflowRouter {
     kontext: buildFluxKontextWorkflow,
     krea: buildFluxKreaWorkflow,
     schnell: buildFluxSchnellWorkflow,
+    sd35: buildSD35Workflow,
   };
 
   /**

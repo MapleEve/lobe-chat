@@ -239,12 +239,13 @@ export class ModelResolver {
       'flux-krea-dev': 'krea',
       'flux-redux-dev': 'redux',
       'flux-schnell': 'schnell',
+      'sd35': 'sd35', // 前端只有一个 SD3.5 选择，后端按优先级选择 Large 或 Medium
     };
 
     // Determine if we have a variant (either direct variant name or model ID)
     const variantName =
       modelIdToVariant[cleanModelId] ||
-      (['dev', 'schnell', 'kontext', 'krea', 'fill', 'redux'].includes(cleanModelId)
+      (['dev', 'schnell', 'kontext', 'krea', 'fill', 'redux', 'sd35'].includes(cleanModelId)
         ? cleanModelId
         : null);
 

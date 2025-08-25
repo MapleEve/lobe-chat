@@ -8,38 +8,40 @@ import { resolveModel } from './modelResolver';
 import type { WorkflowDetectionResult } from './workflowRouter';
 
 export type FluxVariant = 'dev' | 'schnell' | 'kontext' | 'krea';
+export type SD3Variant = 'sd35';
 
 /**
  * Simple workflow type detector using model registry
  */
-export class WorkflowDetector {
+export const WorkflowDetector = {
   /**
    * Detect model type using model registry - O(1) lookup
    */
-  static detectModelType(modelId: string): WorkflowDetectionResult {
+  detectModelType(modelId: string): WorkflowDetectionResult {
     const cleanId = modelId.replace(/^comfyui\//, '');
 
     // Check if model exists in registry
     const config = resolveModel(cleanId);
 
-    if (config && config.modelFamily === 'FLUX') {
-      return {
-        architecture: 'FLUX',
-        isSupported: true,
-        variant: this.getVariant(cleanId, config.variant),
-      };
+    if (config) {
+      if (config.modelFamily === 'FLUX') {
+        return {
+          architecture: 'FLUX',
+          isSupported: true,
+          variant: config.variant as FluxVariant,
+        };
+      } else if (config.modelFamily === 'SD3') {
+        return {
+          architecture: 'SD3',
+          isSupported: true,
+          variant: config.variant as SD3Variant,
+        };
+      }
     }
 
     return {
       architecture: 'unknown',
       isSupported: false,
     };
-  }
-
-  /**
-   * Get FLUX variant from model config
-   */
-  private static getVariant(modelId: string, configVariant: string): FluxVariant {
-    return configVariant as FluxVariant;
-  }
-}
+  },
+};
