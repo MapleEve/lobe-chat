@@ -3,15 +3,15 @@ import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { generateUniqueSeeds } from '@/utils/number';
 
 import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS, getOptimalT5Model } from '../constants';
-import { splitPromptForDualCLIP } from '../utils/prompt-splitter';
-import { selectOptimalWeightDtype } from '../utils/weight-dtype';
+import { splitPromptForDualCLIP } from '../utils/promptSplitter';
+import { selectOptimalWeightDtype } from '../utils/weightDType';
 
 /**
  * FLUX Dev 工作流构建器 / FLUX Dev Workflow Builder
- * 
+ *
  * @description 构建20步高质量生成工作流，使用FluxGuidance和SamplerCustomAdvanced
  * Builds 20-step high-quality generation workflow with FluxGuidance and SamplerCustomAdvanced
- * 
+ *
  * @param {string} modelName - 模型文件名 / Model filename
  * @param {Record<string, any>} params - 生成参数 / Generation parameters
  * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow

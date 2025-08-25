@@ -12,6 +12,7 @@ export interface ComponentConfig {
   type: 'vae' | 'clip' | 't5';
 }
 
+/* eslint-disable sort-keys-fix/sort-keys-fix */
 export const SYSTEM_COMPONENTS: Record<string, ComponentConfig> = {
   // ===================================================================
   // === ESSENTIAL COMPONENTS (Priority 1) ===
@@ -27,6 +28,12 @@ export const SYSTEM_COMPONENTS: Record<string, ComponentConfig> = {
     modelFamily: 'FLUX',
     priority: 1,
     type: 'clip',
+  },
+
+  'google_t5-v1_1-xxl_encoderonly-fp16.safetensors': {
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 't5',
   },
 
   // ===================================================================
@@ -53,43 +60,48 @@ export const SYSTEM_COMPONENTS: Record<string, ComponentConfig> = {
 } as const;
 
 /**
- * Get component configuration
- * @param componentName Component file name
- * @returns Component configuration object or undefined
+ * Universal component query function
  */
-export function getComponentConfig(componentName: string): ComponentConfig | undefined {
-  return SYSTEM_COMPONENTS[componentName];
+/**
+ * Get single component config
+ */
+export function getComponentConfig(
+  componentName: string,
+  options?: {
+    modelFamily?: ComponentConfig['modelFamily'];
+    priority?: number;
+    type?: ComponentConfig['type'];
+  },
+): ComponentConfig | undefined {
+  const config = SYSTEM_COMPONENTS[componentName];
+  if (!config) return undefined;
+
+  // No filters - return the config
+  if (!options) return config;
+
+  // Check filters
+  const matches =
+    (!options.type || config.type === options.type) &&
+    (!options.priority || config.priority === options.priority) &&
+    (!options.modelFamily || config.modelFamily === options.modelFamily);
+
+  return matches ? config : undefined;
 }
 
 /**
- * Get components by type
- * @param type Component type
- * @returns Array of matching component names
+ * Get all component configs matching filters
  */
-export function getComponentsByType(type: ComponentConfig['type']): string[] {
-  return Object.entries(SYSTEM_COMPONENTS)
-    .filter(([, config]) => config.type === type)
-    .map(([componentName]) => componentName);
-}
+export function getAllComponentConfigs(options?: {
+  modelFamily?: ComponentConfig['modelFamily'];
+  priority?: number;
+  type?: ComponentConfig['type'];
+}): ComponentConfig[] {
+  if (!options) return Object.values(SYSTEM_COMPONENTS);
 
-/**
- * Get components by priority
- * @param priority Priority level
- * @returns Array of matching component names
- */
-export function getComponentsByPriority(priority: number): string[] {
-  return Object.entries(SYSTEM_COMPONENTS)
-    .filter(([, config]) => config.priority === priority)
-    .map(([componentName]) => componentName);
-}
-
-/**
- * Get components by model family
- * @param modelFamily Model family
- * @returns Array of matching component names
- */
-export function getComponentsByModelFamily(modelFamily: 'FLUX'): string[] {
-  return Object.entries(SYSTEM_COMPONENTS)
-    .filter(([, config]) => config.modelFamily === modelFamily)
-    .map(([componentName]) => componentName);
+  return Object.values(SYSTEM_COMPONENTS).filter(
+    (config) =>
+      (!options.type || config.type === options.type) &&
+      (!options.priority || config.priority === options.priority) &&
+      (!options.modelFamily || config.modelFamily === options.modelFamily),
+  );
 }

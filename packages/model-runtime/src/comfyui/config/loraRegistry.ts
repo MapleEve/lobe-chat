@@ -12,6 +12,7 @@ export interface LoRAConfig {
   priority: number;
 }
 
+/* eslint-disable sort-keys-fix/sort-keys-fix */
 export const LORA_REGISTRY: Record<string, LoRAConfig> = {
   // ===================================================================
   // === XLabs-AI Official FLUX LoRA Adapters (原有6个，保持不变) ===
@@ -168,56 +169,43 @@ export const LORA_REGISTRY: Record<string, LoRAConfig> = {
 } as const;
 
 /**
- * Get LoRA configuration
- * @param loraName LoRA file name
- * @returns LoRA configuration object or undefined
+ * Get LoRA config - name required, others optional
  */
-export function getLoRAConfig(loraName: string): LoRAConfig | undefined {
-  return LORA_REGISTRY[loraName];
+export function getLoRAConfig(
+  loraName: string,
+  options?: {
+    compatibleVariant?: string;
+    modelFamily?: LoRAConfig['modelFamily'];
+    priority?: number;
+  },
+): LoRAConfig | undefined {
+  const config = LORA_REGISTRY[loraName];
+  if (!config) return undefined;
+
+  if (!options) return config;
+
+  const matches =
+    (!options.priority || config.priority === options.priority) &&
+    (!options.modelFamily || config.modelFamily === options.modelFamily) &&
+    (!options.compatibleVariant || config.compatibleVariants.includes(options.compatibleVariant));
+
+  return matches ? config : undefined;
 }
 
 /**
- * Get compatible LoRAs for a model variant
- * @param variant Model variant
- * @returns Array of compatible LoRA names
+ * Get all LoRA configs matching filters
  */
-export function getCompatibleLoRAs(variant: string): string[] {
-  return Object.entries(LORA_REGISTRY)
-    .filter(([, config]) => config.compatibleVariants.includes(variant))
-    .map(([loraName]) => loraName);
-}
+export function getAllLoRAConfigs(options?: {
+  compatibleVariant?: string;
+  modelFamily?: LoRAConfig['modelFamily'];
+  priority?: number;
+}): LoRAConfig[] {
+  if (!options) return Object.values(LORA_REGISTRY);
 
-/**
- * Get LoRAs by priority
- * @param priority Priority level
- * @returns Array of matching LoRA names
- */
-export function getLoRAsByPriority(priority: number): string[] {
-  return Object.entries(LORA_REGISTRY)
-    .filter(([, config]) => config.priority === priority)
-    .map(([loraName]) => loraName);
-}
-
-/**
- * Get LoRAs by model family
- * @param modelFamily Model family
- * @returns Array of matching LoRA names
- */
-export function getLoRAsByModelFamily(modelFamily: 'FLUX'): string[] {
-  return Object.entries(LORA_REGISTRY)
-    .filter(([, config]) => config.modelFamily === modelFamily)
-    .map(([loraName]) => loraName);
-}
-
-/**
- * Get compatible FLUX LoRAs for a model variant
- * @param variant Model variant
- * @returns Array of compatible FLUX LoRA names
- */
-export function getCompatibleFluxLoRAs(variant: string): string[] {
-  return Object.entries(LORA_REGISTRY)
-    .filter(
-      ([, config]) => config.modelFamily === 'FLUX' && config.compatibleVariants.includes(variant),
-    )
-    .map(([loraName]) => loraName);
+  return Object.values(LORA_REGISTRY).filter(
+    (config) =>
+      (!options.priority || config.priority === options.priority) &&
+      (!options.modelFamily || config.modelFamily === options.modelFamily) &&
+      (!options.compatibleVariant || config.compatibleVariants.includes(options.compatibleVariant)),
+  );
 }

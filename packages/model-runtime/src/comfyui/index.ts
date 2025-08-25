@@ -16,9 +16,9 @@ import { parseComfyUIErrorMessage } from '../utils/comfyuiErrorParser';
 import { AgentRuntimeError } from '../utils/createError';
 import { MODEL_LIST_CONFIGS, processModelList } from '../utils/modelParse';
 import { COMFYUI_DEFAULTS, COMFYUI_ERROR_TYPES } from './constants';
-import { ModelResolver } from './utils/ModelResolver';
-import { WorkflowDetector } from './utils/WorkflowDetector';
-import { WorkflowRouter, WorkflowRoutingError } from './utils/WorkflowRouter';
+import { ModelResolver } from './utils/modelResolver';
+import { WorkflowDetector } from './utils/workflowDetector';
+import { WorkflowRouter } from './utils/workflowRouter';
 
 const log = debug('lobe-image:comfyui');
 // Removed unused debugVerbose variable
@@ -28,7 +28,7 @@ const log = debug('lobe-image:comfyui');
  * Supports text-to-image and image editing for FLUX series models / 支持 FLUX 系列模型的文生图和图像编辑
  */
 // Export ComfyUI utilities and types
-export { ModelResolver as ComfyUIModelResolver } from './utils/ModelResolver';
+export { ModelResolver as ComfyUIModelResolver } from './utils/modelResolver';
 export * from './workflows';
 
 export class LobeComfyUI implements LobeRuntimeAI {
@@ -40,21 +40,22 @@ export class LobeComfyUI implements LobeRuntimeAI {
   baseURL: string;
 
   constructor(options: ComfyUIKeyVault = {}) {
-    const {
-      baseURL = process.env.COMFYUI_DEFAULT_URL || COMFYUI_DEFAULTS.BASE_URL,
-      authType = 'none',
-    } = options;
+    const { baseURL, authType = 'none', apiKey, username, password, customHeaders } = options;
 
-    // 强制校验
-    if (authType === 'basic' && (!options.username || !options.password)) {
+    const resolvedBaseURL = baseURL || process.env.COMFYUI_DEFAULT_URL || COMFYUI_DEFAULTS.BASE_URL;
+
+    if (authType === 'basic' && (!username || !password)) {
       throw AgentRuntimeError.createError(AgentRuntimeErrorType.InvalidComfyUIArgs);
     }
-    if (authType === 'bearer' && !options.apiKey) {
+    if (authType === 'bearer' && !apiKey) {
       throw AgentRuntimeError.createError(AgentRuntimeErrorType.InvalidProviderAPIKey);
+    }
+    if (authType === 'custom' && (!customHeaders || Object.keys(customHeaders).length === 0)) {
+      throw AgentRuntimeError.createError(AgentRuntimeErrorType.InvalidComfyUIArgs);
     }
 
     this.options = options;
-    this.baseURL = baseURL;
+    this.baseURL = resolvedBaseURL;
     const credentials = this.createCredentials(this.options);
     this.connectionValidated = false;
 
@@ -222,21 +223,20 @@ export class LobeComfyUI implements LobeRuntimeAI {
     }
 
     try {
-      const workflow = WorkflowRouter.routeWorkflow(
-        model,
-        detectionResult,
-        modelFileName,
-        params
-      );
+      const workflow = WorkflowRouter.routeWorkflow(model, detectionResult, modelFileName, params);
 
       log('✅ Workflow built successfully for:', model);
       return workflow;
     } catch (error) {
-      if (error instanceof WorkflowRoutingError) {
-        throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
-          error: error.message,
-          model: error.modelId,
-        });
+      // Check if it's already an AgentRuntimeError from workflow routing
+      if (
+        error &&
+        typeof error === 'object' &&
+        'errorType' in error &&
+        error.errorType === AgentRuntimeErrorType.ComfyUIWorkflowError
+      ) {
+        // Re-throw ComfyUI workflow errors as-is
+        throw error;
       }
 
       throw error;
@@ -245,6 +245,13 @@ export class LobeComfyUI implements LobeRuntimeAI {
 
   /**
    * Create authentication credentials
+   * 创建身份验证凭据 - 根据认证类型返回相应的凭据对象
+   *
+   * @param options ComfyUI配置选项
+   * @returns 身份验证凭据对象或undefined（无认证时）
+   *
+   * 注意：当authType='custom'但customHeaders为空/null/undefined时，
+   * 构造函数已进行验证，此处不会到达该分支
    */
   private createCredentials(
     options: ComfyUIKeyVault,
@@ -261,10 +268,8 @@ export class LobeComfyUI implements LobeRuntimeAI {
       }
 
       case 'custom': {
-        if (customHeaders && Object.keys(customHeaders).length > 0) {
-          return { headers: customHeaders, type: 'custom' } as CustomCredentials;
-        }
-        return undefined;
+        // 由于构造函数已验证customHeaders存在且非空，此处可以安全访问
+        return { headers: customHeaders!, type: 'custom' } as CustomCredentials;
       }
 
       default: {

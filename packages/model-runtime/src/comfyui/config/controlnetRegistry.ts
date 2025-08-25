@@ -14,6 +14,7 @@ export interface ControlNetConfig {
   type: 'canny' | 'depth' | 'hed' | 'pose' | 'scribble' | 'normal' | 'semantic';
 }
 
+/* eslint-disable sort-keys-fix/sort-keys-fix */
 export const CONTROLNET_REGISTRY: Record<string, ControlNetConfig> = {
   // ===================================================================
   // === XLabs-AI Official FLUX ControlNet Models ===
@@ -43,67 +44,47 @@ export const CONTROLNET_REGISTRY: Record<string, ControlNetConfig> = {
 } as const;
 
 /**
- * Get ControlNet configuration
- * @param controlnetName ControlNet file name
- * @returns ControlNet configuration object or undefined
+ * Get ControlNet config - name required, others optional
  */
-export function getControlNetConfig(controlnetName: string): ControlNetConfig | undefined {
-  return CONTROLNET_REGISTRY[controlnetName];
+export function getControlNetConfig(
+  controlnetName: string,
+  options?: {
+    compatibleVariant?: string;
+    modelFamily?: ControlNetConfig['modelFamily'];
+    priority?: number;
+    type?: ControlNetConfig['type'];
+  },
+): ControlNetConfig | undefined {
+  const config = CONTROLNET_REGISTRY[controlnetName];
+  if (!config) return undefined;
+
+  if (!options) return config;
+
+  const matches =
+    (!options.type || config.type === options.type) &&
+    (!options.priority || config.priority === options.priority) &&
+    (!options.modelFamily || config.modelFamily === options.modelFamily) &&
+    (!options.compatibleVariant || config.compatibleVariants.includes(options.compatibleVariant));
+
+  return matches ? config : undefined;
 }
 
 /**
- * Get compatible ControlNets for a model variant
- * @param variant Model variant
- * @returns Array of compatible ControlNet names
+ * Get all ControlNet configs matching filters
  */
-export function getCompatibleControlNets(variant: string): string[] {
-  return Object.entries(CONTROLNET_REGISTRY)
-    .filter(([, config]) => config.compatibleVariants.includes(variant))
-    .map(([controlnetName]) => controlnetName);
-}
+export function getAllControlNetConfigs(options?: {
+  compatibleVariant?: string;
+  modelFamily?: ControlNetConfig['modelFamily'];
+  priority?: number;
+  type?: ControlNetConfig['type'];
+}): ControlNetConfig[] {
+  if (!options) return Object.values(CONTROLNET_REGISTRY);
 
-/**
- * Get ControlNets by type
- * @param type ControlNet type
- * @returns Array of matching ControlNet names
- */
-export function getControlNetsByType(type: ControlNetConfig['type']): string[] {
-  return Object.entries(CONTROLNET_REGISTRY)
-    .filter(([, config]) => config.type === type)
-    .map(([controlnetName]) => controlnetName);
-}
-
-/**
- * Get ControlNets by priority
- * @param priority Priority level
- * @returns Array of matching ControlNet names
- */
-export function getControlNetsByPriority(priority: number): string[] {
-  return Object.entries(CONTROLNET_REGISTRY)
-    .filter(([, config]) => config.priority === priority)
-    .map(([controlnetName]) => controlnetName);
-}
-
-/**
- * Get ControlNets by model family
- * @param modelFamily Model family
- * @returns Array of matching ControlNet names
- */
-export function getControlNetsByModelFamily(modelFamily: 'FLUX'): string[] {
-  return Object.entries(CONTROLNET_REGISTRY)
-    .filter(([, config]) => config.modelFamily === modelFamily)
-    .map(([controlnetName]) => controlnetName);
-}
-
-/**
- * Get compatible FLUX ControlNets for a model variant
- * @param variant Model variant
- * @returns Array of compatible FLUX ControlNet names
- */
-export function getCompatibleFluxControlNets(variant: string): string[] {
-  return Object.entries(CONTROLNET_REGISTRY)
-    .filter(
-      ([, config]) => config.modelFamily === 'FLUX' && config.compatibleVariants.includes(variant),
-    )
-    .map(([controlnetName]) => controlnetName);
+  return Object.values(CONTROLNET_REGISTRY).filter(
+    (config) =>
+      (!options.type || config.type === options.type) &&
+      (!options.priority || config.priority === options.priority) &&
+      (!options.modelFamily || config.modelFamily === options.modelFamily) &&
+      (!options.compatibleVariant || config.compatibleVariants.includes(options.compatibleVariant)),
+  );
 }

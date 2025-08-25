@@ -3,19 +3,20 @@
  * Unified management of hardcoded values with environment variable overrides / 统一管理硬编码值，支持环境变量覆盖
  * Architectural honesty: removed over-engineered dynamic selection and false component declarations / 架构诚实化：移除过度工程化的动态选择和虚假组件声明
  */
-
-/**
- * Simplified model type definition / 简化的模型类型定义
- * Removed false component system (no frontend implementation) / 移除虚假的组件系统（无前端实现）
- */
-export type ModelType = 'model';
-
+import { AgentRuntimeErrorType } from '../error';
+import { AgentRuntimeError } from '../utils/createError';
+import {
+  SYSTEM_COMPONENTS,
+  getAllComponentConfigs,
+  getComponentConfig,
+} from './config/systemComponents';
 
 /**
  * Default configuration / 默认配置
+ * 注意：BASE_URL不再处理环境变量，由构造函数统一处理优先级
  */
 export const COMFYUI_DEFAULTS = {
-  BASE_URL: process.env.COMFYUI_DEFAULT_URL || 'http://localhost:8188',
+  BASE_URL: 'http://localhost:8188',
   CONNECTION_TIMEOUT: 30_000,
   MAX_RETRIES: 3,
 } as const;
@@ -42,15 +43,43 @@ export const FLUX_MODEL_CONFIG = {
 } as const;
 
 /**
- * 获取T5模型文件名 / Get T5 Model Filename
- * 
- * @description 获取固定的T5模型文件名，无用户选择界面
- * Returns fixed T5 model filename with no user selection interface
- * 
+ * 获取最优T5模型文件名 / Get Optimal T5 Model Filename
+ *
+ * @description 基于系统组件配置和优先级选择最优的T5模型
+ * Selects optimal T5 model based on system component configuration and priority
+ *
+ * @param availableModels 服务器可用模型列表（可选）/ Optional list of available models on server
  * @returns {string} T5模型文件名 / T5 model filename
+ * @throws {AgentRuntimeError} 当没有找到可用的T5模型时 / When no available T5 model is found
  */
-export function getOptimalT5Model(): string {
-  return FLUX_MODEL_CONFIG.CLIP.T5XXL;
+export function getOptimalT5Model(availableModels?: string[]): string {
+  // 获取所有T5组件并按优先级排序（优先级1最高）
+  // Get all T5 components and sort by priority (priority 1 is highest)
+  const t5Configs = getAllComponentConfigs({ type: 't5' });
+  const t5Components = Object.keys(SYSTEM_COMPONENTS)
+    .filter((name) => t5Configs.includes(SYSTEM_COMPONENTS[name]))
+    .map((name) => ({ config: getComponentConfig(name)!, name }))
+    .sort((a, b) => a.config.priority - b.config.priority);
+
+  // 如果提供了可用模型列表，检查可用性
+  // If available models list is provided, check availability
+  if (availableModels !== undefined) {
+    for (const { name } of t5Components) {
+      if (availableModels.includes(name)) {
+        return name;
+      }
+    }
+
+    // 没找到可用的T5组件，抛出详细错误信息
+    // No available T5 components found, throw detailed error
+    throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
+      message: `No available T5 components found in server. Available: [${availableModels.join(', ')}], Required: [${t5Components.map((c) => c.name).join(', ')}]`,
+    });
+  }
+
+  // 没有提供availableModels，返回优先级最高的（向后兼容）
+  // No availableModels provided, return highest priority one (backward compatibility)
+  return t5Components[0]?.name || FLUX_MODEL_CONFIG.CLIP.T5XXL;
 }
 
 /**
@@ -192,20 +221,6 @@ export const STYLE_KEYWORDS = {
 export const getAllStyleKeywords = (): readonly string[] => {
   return Object.values(STYLE_KEYWORDS).flat();
 };
-
-/**
- * Weight data type configuration / 权重数据类型配置
- */
-export const WEIGHT_DTYPES = {
-  AUTO: 'default',
-  FP16: 'fp16',
-  FP32: 'fp32',
-  FP8_E4M3FN: 'fp8_e4m3fn',
-  FP8_E5M2: 'fp8_e5m2',
-  INT4: 'int4',
-  INT8: 'int8',
-  NF4: 'nf4',
-} as const;
 
 /**
  * Error type configuration / 错误类型配置

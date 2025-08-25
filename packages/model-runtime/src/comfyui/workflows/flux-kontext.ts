@@ -3,15 +3,15 @@ import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { generateUniqueSeeds } from '@/utils/number';
 
 import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS, getOptimalT5Model } from '../constants';
-import { splitPromptForDualCLIP } from '../utils/prompt-splitter';
-import { selectOptimalWeightDtype } from '../utils/weight-dtype';
+import { splitPromptForDualCLIP } from '../utils/promptSplitter';
+import { selectOptimalWeightDtype } from '../utils/weightDType';
 
 /**
  * FLUX Kontext 工作流构建器 / FLUX Kontext Workflow Builder
- * 
+ *
  * @description 构建28步图像编辑生成工作流，支持文生图和图生图
  * Builds 28-step image editing workflow supporting text-to-image and image-to-image
- * 
+ *
  * @param {string} modelName - 模型文件名 / Model filename
  * @param {Record<string, any>} params - 生成参数 / Generation parameters
  * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow

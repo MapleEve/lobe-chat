@@ -3,15 +3,15 @@ import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { generateUniqueSeeds } from '@/utils/number';
 
 import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS, getOptimalT5Model } from '../constants';
-import { splitPromptForDualCLIP } from '../utils/prompt-splitter';
-import { selectOptimalWeightDtype } from '../utils/weight-dtype';
+import { splitPromptForDualCLIP } from '../utils/promptSplitter';
+import { selectOptimalWeightDtype } from '../utils/weightDType';
 
 /**
  * FLUX Krea 工作流构建器 / FLUX Krea Workflow Builder
- * 
+ *
  * @description 构建15步摄影美学生成工作流，针对自然真实感优化
  * Builds 15-step photographic aesthetic generation workflow optimized for natural realism
- * 
+ *
  * @param {string} modelName - 模型文件名 / Model filename
  * @param {Record<string, any>} params - 生成参数 / Generation parameters
  * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow

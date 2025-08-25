@@ -1,41 +1,32 @@
 /**
- * Simple Workflow Detector - RFC-128 Replacement
+ * Simple Workflow Detector
  *
  * Replaces 257 lines of complex pattern matching with simple O(1) lookups.
  * KISS principle: Keep It Simple, Stupid.
  */
+import { resolveModel } from './modelResolver';
+import type { WorkflowDetectionResult } from './workflowRouter';
 
-export type ModelArchitecture = 'flux' | 'unknown';
 export type FluxVariant = 'dev' | 'schnell' | 'kontext' | 'krea';
 
-export interface ModelTypeDetectionResult {
-  architecture: ModelArchitecture;
-  isSupported: boolean;
-  variant?: FluxVariant;
-}
-
 /**
- * Simple workflow type detector
+ * Simple workflow type detector using model registry
  */
 export class WorkflowDetector {
-  private static readonly SUPPORTED_MODELS = new Set([
-    'flux-dev',
-    'flux-schnell',
-    'flux-kontext-dev',
-    'flux-krea-dev',
-  ]);
-
   /**
-   * Detect model type - O(1) lookup
+   * Detect model type using model registry - O(1) lookup
    */
-  static detectModelType(modelId: string): ModelTypeDetectionResult {
+  static detectModelType(modelId: string): WorkflowDetectionResult {
     const cleanId = modelId.replace(/^comfyui\//, '');
 
-    if (this.SUPPORTED_MODELS.has(cleanId)) {
+    // Check if model exists in registry
+    const config = resolveModel(cleanId);
+
+    if (config && config.modelFamily === 'FLUX') {
       return {
-        architecture: 'flux',
+        architecture: 'FLUX',
         isSupported: true,
-        variant: this.getVariant(cleanId),
+        variant: this.getVariant(cleanId, config.variant),
       };
     }
 
@@ -46,19 +37,9 @@ export class WorkflowDetector {
   }
 
   /**
-   * Get FLUX variant from model ID
+   * Get FLUX variant from model config
    */
-  private static getVariant(modelId: string): FluxVariant {
-    if (modelId.includes('schnell')) return 'schnell';
-    if (modelId.includes('kontext')) return 'kontext';
-    if (modelId.includes('krea')) return 'krea';
-    return 'dev';
-  }
-
-  /**
-   * Check if FLUX model
-   */
-  static isFluxModel(modelId: string): boolean {
-    return this.detectModelType(modelId).architecture === 'flux';
+  private static getVariant(modelId: string, configVariant: string): FluxVariant {
+    return configVariant as FluxVariant;
   }
 }

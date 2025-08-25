@@ -1,4 +1,4 @@
-import { resolveModel } from './simple-model-resolver';
+import { resolveModel } from './modelResolver';
 
 /**
  * FLUX 模型权重类型选择工具 / FLUX Model Weight Dtype Selection Tool
