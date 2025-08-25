@@ -17,12 +17,12 @@ const log = debug('lobe-image:generation-service');
 /**
  * Fetch image buffer and MIME type from URL or base64 data
  * @param url - Image URL or base64 data URI
- * @param headers - Optional headers for authentication
+ * @param fetchHeaders - Optional headers for authentication
  * @returns Object containing buffer and MIME type
  */
 export async function fetchImageFromUrl(
   url: string,
-  headers?: Record<string, string>,
+  fetchHeaders?: Record<string, string>,
 ): Promise<{
   buffer: Buffer;
   mimeType: string;
@@ -43,7 +43,7 @@ export async function fetchImageFromUrl(
       );
     }
   } else {
-    const response = await fetch(url, { headers });
+    const response = await fetch(url, { headers: fetchHeaders });
     if (!response.ok) {
       throw new Error(
         `Failed to fetch image from ${url}: ${response.status} ${response.statusText}`,
@@ -82,7 +82,7 @@ export class GenerationService {
    */
   async transformImageForGeneration(
     url: string,
-    headers?: Record<string, string>,
+    fetchHeaders?: Record<string, string>,
   ): Promise<{
     image: ImageForGeneration;
     thumbnailImage: ImageForGeneration;
@@ -92,7 +92,7 @@ export class GenerationService {
     // Fetch image buffer and MIME type using utility function
     const { buffer: originalImageBuffer, mimeType: originalMimeType } = await fetchImageFromUrl(
       url,
-      headers,
+      fetchHeaders,
     );
 
     // Calculate hash for original image

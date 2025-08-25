@@ -137,6 +137,37 @@ describe('GenerationService', () => {
         expect(result.buffer.equals(mockBuffer)).toBe(true);
       });
 
+      it('should fetch image with custom fetchHeaders', async () => {
+        const mockBuffer = Buffer.from('mock image data');
+        const mockArrayBuffer = mockBuffer.buffer.slice(
+          mockBuffer.byteOffset,
+          mockBuffer.byteOffset + mockBuffer.byteLength,
+        );
+
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          headers: {
+            get: vi.fn().mockReturnValue('image/jpeg'),
+          },
+          arrayBuffer: vi.fn().mockResolvedValue(mockArrayBuffer),
+        });
+
+        const customHeaders = {
+          'Authorization': 'Bearer token123',
+          'X-API-Key': 'api-key-456',
+        };
+
+        const result = await fetchImageFromUrl('https://example.com/image.jpg', customHeaders);
+
+        expect(mockFetch).toHaveBeenCalledWith('https://example.com/image.jpg', {
+          headers: customHeaders,
+        });
+        expect(result.mimeType).toBe('image/jpeg');
+        expect(result.buffer).toBeInstanceOf(Buffer);
+        expect(result.buffer.equals(mockBuffer)).toBe(true);
+      });
+
       it('should handle missing content-type header', async () => {
         const mockBuffer = Buffer.from('mock image data');
         const mockArrayBuffer = mockBuffer.buffer.slice(
