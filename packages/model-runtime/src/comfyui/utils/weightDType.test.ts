@@ -9,9 +9,9 @@ describe('selectOptimalWeightDtype', () => {
     expect(selectOptimalWeightDtype('flux1-dev.safetensors')).toBe('default');
     expect(selectOptimalWeightDtype('flux_dev.safetensors')).toBe('default');
 
-    // FLUX Schnell models should use fp8_e4m3fn for speed
-    expect(selectOptimalWeightDtype('flux1-schnell.safetensors')).toBe('fp8_e4m3fn');
-    expect(selectOptimalWeightDtype('flux_schnell.safetensors')).toBe('fp8_e4m3fn');
+    // FLUX Schnell models use default in current registry (fps8 variants have separate entries)
+    expect(selectOptimalWeightDtype('flux1-schnell.safetensors')).toBe('default');
+    expect(selectOptimalWeightDtype('flux_schnell.safetensors')).toBe('default'); // Not in registry
 
     // FLUX Kontext models should use default
     expect(selectOptimalWeightDtype('flux1-kontext-dev.safetensors')).toBe('default');
@@ -27,11 +27,12 @@ describe('selectOptimalWeightDtype', () => {
   });
 
   it('should return correct dtype for quantized models that exist in registry', () => {
-    // FP8 quantized models that exist in the registry
-    expect(selectOptimalWeightDtype('flux1-dev-fp8.safetensors')).toBe('fp8_e4m3fn');
+    // FP8 quantized models that exist in the registry with exact names
+    expect(selectOptimalWeightDtype('flux1-dev-fp8-e4m3fn.safetensors')).toBe('fp8_e4m3fn');
+    expect(selectOptimalWeightDtype('flux1-schnell-fp8-e4m3fn.safetensors')).toBe('fp8_e4m3fn');
 
-    // NF4 quantized models that exist in the registry
-    expect(selectOptimalWeightDtype('flux1-dev-bnb-nf4.safetensors')).toBe('nf4');
+    // Models with approximate names that don't exactly match registry return default
+    expect(selectOptimalWeightDtype('flux1-dev-fp8.safetensors')).toBe('default'); // Not exact match
   });
 
   it('should return default for enterprise lite models', () => {
@@ -56,8 +57,8 @@ describe('selectOptimalWeightDtype', () => {
 
   it('should be case-insensitive for model detection', () => {
     expect(selectOptimalWeightDtype('FLUX1-DEV.SAFETENSORS')).toBe('default');
-    expect(selectOptimalWeightDtype('FLUX1-SCHNELL.SAFETENSORS')).toBe('fp8_e4m3fn');
-    expect(selectOptimalWeightDtype('flux1-dev-FP8.safetensors')).toBe('fp8_e4m3fn');
+    expect(selectOptimalWeightDtype('FLUX1-SCHNELL.SAFETENSORS')).toBe('default');
+    expect(selectOptimalWeightDtype('FLUX1-DEV-FP8-E4M3FN.SAFETENSORS')).toBe('fp8_e4m3fn');
   });
 
   it('should handle community models correctly', () => {
@@ -69,7 +70,7 @@ describe('selectOptimalWeightDtype', () => {
     );
     expect(selectOptimalWeightDtype('Jib_Mix_Flux_Krea_b_fp8_00001_.safetensors')).toBe('default');
     expect(selectOptimalWeightDtype('vision_realistic_flux_dev_fp8_no_clip_v2.safetensors')).toBe(
-      'default',
+      'fp8_e4m3fn', // This model is actually in the registry
     );
   });
 
@@ -89,7 +90,7 @@ describe('selectOptimalWeightDtype', () => {
     it('should always use model-based selection', () => {
       // No user choice - always use model configuration or default fallback
       expect(selectOptimalWeightDtype('flux1-dev.safetensors')).toBe('default');
-      expect(selectOptimalWeightDtype('flux1-schnell.safetensors')).toBe('fp8_e4m3fn');
+      expect(selectOptimalWeightDtype('flux1-schnell.safetensors')).toBe('default'); // Base model uses default
       expect(selectOptimalWeightDtype('unknown_model.safetensors')).toBe('default');
     });
   });

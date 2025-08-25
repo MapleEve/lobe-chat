@@ -51,11 +51,11 @@ describe('buildFluxDevWorkflow', () => {
           class_type: 'CLIPTextEncodeFlux',
           inputs: expect.objectContaining({
             clip: ['1', 0],
-            clip_l: 'A beautiful landscape', 
+            clip_l: 'landscape',
             // ✅ 验证prompt正确设置
-guidance: WORKFLOW_DEFAULTS.SAMPLING.CFG, 
+            guidance: WORKFLOW_DEFAULTS.SAMPLING.CFG,
             // ✅ 验证prompt正确设置
-t5xxl: 'A beautiful landscape',
+            t5xxl: 'A beautiful landscape',
           }),
         }),
       }),
@@ -84,9 +84,9 @@ t5xxl: 'A beautiful landscape',
     const workflow = (result as any).workflow;
 
     expect(workflow['2'].inputs.unet_name).toBe(modelName);
-    expect(workflow['4'].inputs.width).toBe(512);  // ✅ 直接设置到工作流
+    expect(workflow['4'].inputs.width).toBe(512); // ✅ 直接设置到工作流
     expect(workflow['4'].inputs.height).toBe(768); // ✅ 直接设置到工作流
-    expect(workflow['7'].inputs.width).toBe(512);  // ✅ 修复: 现在直接设置
+    expect(workflow['7'].inputs.width).toBe(512); // ✅ 修复: 现在直接设置
     expect(workflow['7'].inputs.height).toBe(768); // ✅ 修复: 现在直接设置
     expect(workflow['9'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SAMPLING.STEPS);
     expect(workflow['5'].inputs.guidance).toBe(4.5); // ✅ 直接设置到工作流

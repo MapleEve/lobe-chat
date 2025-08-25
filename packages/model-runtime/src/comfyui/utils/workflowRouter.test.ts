@@ -369,7 +369,7 @@ describe('WorkflowRouter', () => {
           expect.fail('Should have thrown an error');
         } catch (error: any) {
           expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
-          expect(error.error.message).toContain('architecture: flux, variant: unknown-variant');
+          expect(error.error.message).toContain('architecture: FLUX, variant: unknown-variant');
         }
       });
 
