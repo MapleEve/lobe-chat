@@ -1,11 +1,15 @@
-import { describe, expect, it, vi, beforeEach, type Mock } from 'vitest';
 import type { PromptBuilder } from '@saintno/comfyui-sdk';
+import { type Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { buildFluxDevWorkflow } from '../workflows/flux-dev';
+import { buildFluxKontextWorkflow } from '../workflows/flux-kontext';
+import { buildFluxKreaWorkflow } from '../workflows/flux-krea';
+import { buildFluxSchnellWorkflow } from '../workflows/flux-schnell';
 import {
+  type WorkflowDetectionResult,
   WorkflowRouter,
   WorkflowRoutingError,
-  type WorkflowDetectionResult,
-} from './WorkflowRouter';
+} from './workflowRouter';
 
 // Mock workflow builders
 vi.mock('../workflows/flux-dev', () => ({
@@ -24,17 +28,12 @@ vi.mock('../workflows/flux-schnell', () => ({
   buildFluxSchnellWorkflow: vi.fn(),
 }));
 
-import { buildFluxDevWorkflow } from '../workflows/flux-dev';
-import { buildFluxKontextWorkflow } from '../workflows/flux-kontext';
-import { buildFluxKreaWorkflow } from '../workflows/flux-krea';
-import { buildFluxSchnellWorkflow } from '../workflows/flux-schnell';
-
 describe('WorkflowRouter', () => {
   let mockPromptBuilder: PromptBuilder<any, any, any>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    
+
     // Create mock PromptBuilder instance
     mockPromptBuilder = {
       prompt: { '1': { class_type: 'TestNode', inputs: {} } },
@@ -82,9 +81,9 @@ describe('WorkflowRouter', () => {
           isSupported: true,
         };
 
-        expect(() =>
-          WorkflowRouter.routeWorkflow('', detectionResult, 'test.safetensors'),
-        ).toThrow(WorkflowRoutingError);
+        expect(() => WorkflowRouter.routeWorkflow('', detectionResult, 'test.safetensors')).toThrow(
+          WorkflowRoutingError,
+        );
       });
 
       it('should throw error when detectionResult is null', () => {
@@ -170,7 +169,9 @@ describe('WorkflowRouter', () => {
           { guidance: 7.5 },
         );
 
-        expect(buildFluxKontextWorkflow).toHaveBeenCalledWith('flux-kontext-dev.safetensors', { guidance: 7.5 });
+        expect(buildFluxKontextWorkflow).toHaveBeenCalledWith('flux-kontext-dev.safetensors', {
+          guidance: 7.5,
+        });
         expect(result).toBe(mockPromptBuilder);
       });
 
@@ -182,7 +183,9 @@ describe('WorkflowRouter', () => {
           { cfg: 3.5 },
         );
 
-        expect(buildFluxKreaWorkflow).toHaveBeenCalledWith('flux-krea-dev.safetensors', { cfg: 3.5 });
+        expect(buildFluxKreaWorkflow).toHaveBeenCalledWith('flux-krea-dev.safetensors', {
+          cfg: 3.5,
+        });
         expect(result).toBe(mockPromptBuilder);
       });
 
@@ -194,16 +197,14 @@ describe('WorkflowRouter', () => {
           { steps: 4 },
         );
 
-        expect(buildFluxSchnellWorkflow).toHaveBeenCalledWith('flux-schnell.safetensors', { steps: 4 });
+        expect(buildFluxSchnellWorkflow).toHaveBeenCalledWith('flux-schnell.safetensors', {
+          steps: 4,
+        });
         expect(result).toBe(mockPromptBuilder);
       });
 
       it('should pass empty params when not provided', () => {
-        WorkflowRouter.routeWorkflow(
-          'flux-dev',
-          supportedResult,
-          'flux-dev.safetensors',
-        );
+        WorkflowRouter.routeWorkflow('flux-dev', supportedResult, 'flux-dev.safetensors');
 
         expect(buildFluxDevWorkflow).toHaveBeenCalledWith('flux-dev.safetensors', {});
       });
@@ -235,7 +236,9 @@ describe('WorkflowRouter', () => {
           { sampler: 'euler' },
         );
 
-        expect(buildFluxDevWorkflow).toHaveBeenCalledWith('custom-flux-dev.safetensors', { sampler: 'euler' });
+        expect(buildFluxDevWorkflow).toHaveBeenCalledWith('custom-flux-dev.safetensors', {
+          sampler: 'euler',
+        });
         expect(result).toBe(mockPromptBuilder);
       });
 
@@ -252,7 +255,10 @@ describe('WorkflowRouter', () => {
           'custom-flux-schnell.safetensors',
         );
 
-        expect(buildFluxSchnellWorkflow).toHaveBeenCalledWith('custom-flux-schnell.safetensors', {});
+        expect(buildFluxSchnellWorkflow).toHaveBeenCalledWith(
+          'custom-flux-schnell.safetensors',
+          {},
+        );
         expect(result).toBe(mockPromptBuilder);
       });
 
@@ -269,7 +275,10 @@ describe('WorkflowRouter', () => {
           'custom-flux-kontext.safetensors',
         );
 
-        expect(buildFluxKontextWorkflow).toHaveBeenCalledWith('custom-flux-kontext.safetensors', {});
+        expect(buildFluxKontextWorkflow).toHaveBeenCalledWith(
+          'custom-flux-kontext.safetensors',
+          {},
+        );
         expect(result).toBe(mockPromptBuilder);
       });
 
@@ -416,7 +425,7 @@ describe('WorkflowRouter', () => {
       it('should return array of strings', () => {
         const models = WorkflowRouter.getExactlySupportedModels();
         expect(Array.isArray(models)).toBe(true);
-        models.forEach(model => {
+        models.forEach((model) => {
           expect(typeof model).toBe('string');
         });
       });
@@ -437,7 +446,7 @@ describe('WorkflowRouter', () => {
       it('should return array of strings', () => {
         const variants = WorkflowRouter.getSupportedFluxVariants();
         expect(Array.isArray(variants)).toBe(true);
-        variants.forEach(variant => {
+        variants.forEach((variant) => {
           expect(typeof variant).toBe('string');
         });
       });
@@ -506,7 +515,7 @@ describe('WorkflowRouter', () => {
     describe('getRoutingStats', () => {
       it('should return correct statistics', () => {
         const stats = WorkflowRouter.getRoutingStats();
-        
+
         expect(stats).toEqual({
           exactModelsCount: 4,
           supportedVariantsCount: 4,
@@ -516,11 +525,11 @@ describe('WorkflowRouter', () => {
 
       it('should return object with correct properties', () => {
         const stats = WorkflowRouter.getRoutingStats();
-        
+
         expect(typeof stats.exactModelsCount).toBe('number');
         expect(typeof stats.supportedVariantsCount).toBe('number');
         expect(typeof stats.totalBuilders).toBe('number');
-        
+
         expect(stats.exactModelsCount).toBeGreaterThan(0);
         expect(stats.supportedVariantsCount).toBeGreaterThan(0);
         expect(stats.totalBuilders).toBeGreaterThan(0);
@@ -534,7 +543,7 @@ describe('WorkflowRouter', () => {
 
       it('should have totalBuilders equal to unique builders count', () => {
         const stats = WorkflowRouter.getRoutingStats();
-        
+
         // Since all 4 builders are unique, totalBuilders should be 4
         expect(stats.totalBuilders).toBe(4);
       });
@@ -707,15 +716,12 @@ describe('WorkflowRouter', () => {
         },
       );
 
-      expect(buildFluxDevWorkflow).toHaveBeenCalledWith(
-        'custom-flux-dev-v2.safetensors',
-        {
-          steps: 20,
-          guidance: 3.5,
-          width: 1024,
-          height: 1024,
-        },
-      );
+      expect(buildFluxDevWorkflow).toHaveBeenCalledWith('custom-flux-dev-v2.safetensors', {
+        steps: 20,
+        guidance: 3.5,
+        width: 1024,
+        height: 1024,
+      });
       expect(result).toBe(mockPromptBuilder);
     });
 

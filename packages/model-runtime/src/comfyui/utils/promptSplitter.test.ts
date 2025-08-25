@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 
-import { splitPromptForDualCLIP } from './prompt-splitter';
+import { splitPromptForDualCLIP } from './promptSplitter';
 
 describe('splitPromptForDualCLIP', () => {
   it('should handle empty or null prompt', () => {

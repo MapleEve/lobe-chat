@@ -7,7 +7,7 @@ import { buildFluxSchnellWorkflow } from '../workflows/flux-schnell';
 
 /**
  * 工作流路由错误类 / Workflow Routing Error Class
- * 
+ *
  * @description 工作流路由失败时抛出的错误
  * Error thrown when workflow routing fails
  */
@@ -45,7 +45,7 @@ export type WorkflowBuilderFunction = (
 
 /**
  * ComfyUI 工作流路由器 / ComfyUI Workflow Router
- * 
+ *
  * @description 负责将模型检测结果路由到相应的工作流构建器
  * Routes model detection results to appropriate workflow builders
  */
@@ -64,15 +64,15 @@ export class WorkflowRouter {
    * FLUX variant to builder mapping / FLUX 变体到构建器的映射
    */
   private static readonly VARIANT_BUILDERS: Record<string, WorkflowBuilderFunction> = {
-    'dev': buildFluxDevWorkflow,
-    'kontext': buildFluxKontextWorkflow,
-    'krea': buildFluxKreaWorkflow,
-    'schnell': buildFluxSchnellWorkflow,
+    dev: buildFluxDevWorkflow,
+    kontext: buildFluxKontextWorkflow,
+    krea: buildFluxKreaWorkflow,
+    schnell: buildFluxSchnellWorkflow,
   };
 
   /**
    * Route workflow construction / 路由工作流构建
-   * 
+   *
    * @param modelId Model ID / 模型ID
    * @param detectionResult Detection result / 检测结果
    * @param modelFileName Actual model file name / 实际模型文件名
@@ -117,14 +117,14 @@ export class WorkflowRouter {
     // 3. If all fail to match, throw error / 如果都无法匹配，抛出错误
     throw new WorkflowRoutingError(
       `No workflow builder found for model ${modelId} ` +
-      `(architecture: ${detectionResult.architecture}, variant: ${detectionResult.variant || 'unknown'})`,
+        `(architecture: ${detectionResult.architecture}, variant: ${detectionResult.variant || 'unknown'})`,
       modelId,
     );
   }
 
   /**
    * Get exactly supported model list / 获取精确支持的模型列表
-   * 
+   *
    * @returns List of supported model IDs / 支持的模型ID列表
    */
   static getExactlySupportedModels(): string[] {
@@ -133,7 +133,7 @@ export class WorkflowRouter {
 
   /**
    * Get supported FLUX variant list / 获取支持的FLUX变体列表
-   * 
+   *
    * @returns List of supported variants / 支持的变体列表
    */
   static getSupportedFluxVariants(): string[] {
@@ -142,7 +142,7 @@ export class WorkflowRouter {
 
   /**
    * Check if model has exact support / 检查模型是否有精确支持
-   * 
+   *
    * @param modelId Model ID / 模型ID
    * @returns Whether exactly supported / 是否精确支持
    */
@@ -152,7 +152,7 @@ export class WorkflowRouter {
 
   /**
    * Check if variant is supported / 检查变体是否支持
-   * 
+   *
    * @param variant FLUX variant / FLUX变体
    * @returns Whether this variant is supported / 是否支持该变体
    */
@@ -162,7 +162,7 @@ export class WorkflowRouter {
 
   /**
    * Get routing statistics / 获取路由统计信息
-   * 
+   *
    * @returns Router statistics / 路由器统计信息
    */
   static getRoutingStats(): {
