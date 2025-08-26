@@ -40,7 +40,7 @@ export class LobeComfyUI implements LobeRuntimeAI {
   baseURL: string;
 
   constructor(options: ComfyUIKeyVault = {}) {
-    console.log('🏗️ ComfyUI Constructor called with options:', {
+    log('🏗️ ComfyUI Constructor called with options:', {
       authType: options.authType,
       baseURL: options.baseURL,
     });
@@ -73,9 +73,9 @@ export class LobeComfyUI implements LobeRuntimeAI {
    * 确保 ComfyUI 连接有效，使用现有的错误处理器
    */
   private async ensureConnection(): Promise<void> {
-    console.log('🚀🚀🚀 ensureConnection() CALLED - Starting connection validation');
+    log('🚀🚀🚀 ensureConnection() CALLED - Starting connection validation');
     if (this.connectionValidated) {
-      console.log('✅ Connection already validated, skipping');
+      log('✅ Connection already validated, skipping');
       return;
     }
 
@@ -88,7 +88,7 @@ export class LobeComfyUI implements LobeRuntimeAI {
 
       this.connectionValidated = true;
     } catch (error: unknown) {
-      console.log('🔥🔥🔥 ComfyUI Connection Error Caught:', {
+      log('🔥🔥🔥 ComfyUI Connection Error Caught:', {
         error: error,
         errorConstructor: (error as any)?.constructor?.name,
         errorMessage: error instanceof Error ? error.message : 'Unknown error',
