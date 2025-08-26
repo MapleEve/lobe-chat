@@ -2150,7 +2150,7 @@ describe('LobeComfyUI', () => {
       );
     });
 
-    it('should re-throw ComfyUIWorkflowError from WorkflowRouter as-is', async () => {
+    it('should map WorkflowError to ComfyUIWorkflowError through error mapping system', async () => {
       // Mock successful model validation
       mockModelResolver.validateModel.mockResolvedValue({
         actualFileName: 'flux-schnell.safetensors',
@@ -2164,17 +2164,18 @@ describe('LobeComfyUI', () => {
         variant: 'schnell',
       });
 
-      // Create a specific ComfyUIWorkflowError to test the re-throw logic
-      const workflowError = {
-        error: { message: 'Workflow routing failed' },
-        errorType: AgentRuntimeErrorType.ComfyUIWorkflowError,
-        provider: 'comfyui',
-      };
+      // Create a WorkflowError (internal error) that WorkflowRouter now throws
+      const { WorkflowError } = await import('./errors');
+      const workflowError = new WorkflowError(
+        'Workflow routing failed',
+        WorkflowError.Reasons.UNSUPPORTED_MODEL,
+        { modelId: 'flux-schnell' },
+      );
 
       // Get the mocked WorkflowRouter
       const { WorkflowRouter: MockedWorkflowRouter } = await import('./utils/workflowRouter');
 
-      // Override the routeWorkflow to throw ComfyUIWorkflowError
+      // Override the routeWorkflow to throw WorkflowError (internal error)
       MockedWorkflowRouter.routeWorkflow = vi.fn(() => {
         throw workflowError;
       });
@@ -2186,14 +2187,17 @@ describe('LobeComfyUI', () => {
         },
       };
 
-      // Should re-throw the ComfyUIWorkflowError as-is (lines 250-261)
-      await expect(instance.createImage(payload)).rejects.toEqual(workflowError);
+      // Should map WorkflowError to AgentRuntimeError through the error mapping system
+      await expect(instance.createImage(payload)).rejects.toMatchObject({
+        errorType: AgentRuntimeErrorType.ModelNotFound, // UNSUPPORTED_MODEL maps to ModelNotFound
+        provider: 'comfyui',
+      });
 
       // Verify the workflow router was called
       expect(MockedWorkflowRouter.routeWorkflow).toHaveBeenCalled();
     });
 
-    it('should throw generic error when WorkflowRouter throws non-ComfyUIWorkflowError', async () => {
+    it('should map generic errors to ComfyUIBizError through error mapping system', async () => {
       // Mock successful model validation
       mockModelResolver.validateModel.mockResolvedValue({
         actualFileName: 'flux-schnell.safetensors',
@@ -2207,7 +2211,7 @@ describe('LobeComfyUI', () => {
         variant: 'schnell',
       });
 
-      // Create a generic error (not ComfyUIWorkflowError)
+      // Create a generic error (not a ComfyUI internal error)
       const genericError = new Error('Generic workflow error');
 
       // Get the mocked WorkflowRouter
@@ -2225,17 +2229,270 @@ describe('LobeComfyUI', () => {
         },
       };
 
-      // Should throw the generic error wrapped in ComfyUIBizError (line 260)
+      // Should map generic error to ComfyUIBizError through the error mapping system
       await expect(instance.createImage(payload)).rejects.toMatchObject({
         error: {
           message: 'Generic workflow error',
         },
-        errorType: 'ComfyUIBizError',
+        errorType: AgentRuntimeErrorType.ComfyUIBizError,
         provider: 'comfyui',
       });
 
       // Verify the workflow router was called
       expect(MockedWorkflowRouter.routeWorkflow).toHaveBeenCalled();
+    });
+  });
+
+  describe('Error Mapping System Tests', () => {
+    beforeEach(() => {
+      instance = new LobeComfyUI({ apiKey: 'test-key' });
+    });
+
+    describe('ConfigError mapping', () => {
+      it('should map ConfigError.INVALID_CONFIG to ComfyUIBizError', async () => {
+        // Mock successful model validation
+        mockModelResolver.validateModel.mockResolvedValue({
+          actualFileName: 'flux-dev.safetensors',
+          exists: true,
+        });
+
+        const { ConfigError } = await import('./errors');
+        const configError = new ConfigError(
+          'Invalid configuration',
+          ConfigError.Reasons.INVALID_CONFIG,
+          { config: 'test' },
+        );
+
+        // Mock WorkflowRouter to throw ConfigError
+        const { WorkflowRouter: MockedWorkflowRouter } = await import('./utils/workflowRouter');
+        MockedWorkflowRouter.routeWorkflow = vi.fn(() => {
+          throw configError;
+        });
+
+        const payload: CreateImagePayload = {
+          model: 'comfyui/flux-dev',
+          params: { prompt: 'Test config error mapping' },
+        };
+
+        await expect(instance.createImage(payload)).rejects.toMatchObject({
+          errorType: AgentRuntimeErrorType.ComfyUIBizError,
+          provider: 'comfyui',
+          error: expect.objectContaining({
+            message: 'Invalid configuration',
+            details: { config: 'test' },
+          }),
+        });
+      });
+
+      it('should map ConfigError.MISSING_CONFIG to ComfyUIBizError', async () => {
+        mockModelResolver.validateModel.mockResolvedValue({
+          actualFileName: 'flux-dev.safetensors',
+          exists: true,
+        });
+
+        const { ConfigError } = await import('./errors');
+        const configError = new ConfigError(
+          'Missing configuration',
+          ConfigError.Reasons.MISSING_CONFIG,
+        );
+
+        const { WorkflowRouter: MockedWorkflowRouter } = await import('./utils/workflowRouter');
+        MockedWorkflowRouter.routeWorkflow = vi.fn(() => {
+          throw configError;
+        });
+
+        const payload: CreateImagePayload = {
+          model: 'comfyui/flux-dev',
+          params: { prompt: 'Test missing config error' },
+        };
+
+        await expect(instance.createImage(payload)).rejects.toMatchObject({
+          errorType: AgentRuntimeErrorType.ComfyUIBizError,
+          provider: 'comfyui',
+        });
+      });
+    });
+
+    describe('WorkflowError mapping', () => {
+      it('should map WorkflowError.INVALID_CONFIG to ComfyUIWorkflowError', async () => {
+        mockModelResolver.validateModel.mockResolvedValue({
+          actualFileName: 'flux-dev.safetensors',
+          exists: true,
+        });
+
+        const { WorkflowError } = await import('./errors');
+        const workflowError = new WorkflowError(
+          'Invalid workflow configuration',
+          WorkflowError.Reasons.INVALID_CONFIG,
+          { workflow: 'flux-dev' },
+        );
+
+        const { WorkflowRouter: MockedWorkflowRouter } = await import('./utils/workflowRouter');
+        MockedWorkflowRouter.routeWorkflow = vi.fn(() => {
+          throw workflowError;
+        });
+
+        const payload: CreateImagePayload = {
+          model: 'comfyui/flux-dev',
+          params: { prompt: 'Test workflow config error' },
+        };
+
+        await expect(instance.createImage(payload)).rejects.toMatchObject({
+          errorType: AgentRuntimeErrorType.ComfyUIWorkflowError,
+          provider: 'comfyui',
+          error: expect.objectContaining({
+            message: 'Invalid workflow configuration',
+            details: { workflow: 'flux-dev' },
+          }),
+        });
+      });
+
+      it('should map WorkflowError.MISSING_COMPONENT to ComfyUIModelError', async () => {
+        mockModelResolver.validateModel.mockResolvedValue({
+          actualFileName: 'flux-dev.safetensors',
+          exists: true,
+        });
+
+        const { WorkflowError } = await import('./errors');
+        const workflowError = new WorkflowError(
+          'Missing required component',
+          WorkflowError.Reasons.MISSING_COMPONENT,
+          { component: 'encoder' },
+        );
+
+        const { WorkflowRouter: MockedWorkflowRouter } = await import('./utils/workflowRouter');
+        MockedWorkflowRouter.routeWorkflow = vi.fn(() => {
+          throw workflowError;
+        });
+
+        const payload: CreateImagePayload = {
+          model: 'comfyui/flux-dev',
+          params: { prompt: 'Test missing component error' },
+        };
+
+        await expect(instance.createImage(payload)).rejects.toMatchObject({
+          errorType: AgentRuntimeErrorType.ComfyUIModelError,
+          provider: 'comfyui',
+        });
+      });
+
+      it('should map WorkflowError.INVALID_PARAMS to ComfyUIWorkflowError', async () => {
+        mockModelResolver.validateModel.mockResolvedValue({
+          actualFileName: 'flux-dev.safetensors',
+          exists: true,
+        });
+
+        const { WorkflowError } = await import('./errors');
+        const workflowError = new WorkflowError(
+          'Invalid parameters provided',
+          WorkflowError.Reasons.INVALID_PARAMS,
+          { params: ['width', 'height'] },
+        );
+
+        const { WorkflowRouter: MockedWorkflowRouter } = await import('./utils/workflowRouter');
+        MockedWorkflowRouter.routeWorkflow = vi.fn(() => {
+          throw workflowError;
+        });
+
+        const payload: CreateImagePayload = {
+          model: 'comfyui/flux-dev',
+          params: { prompt: 'Test invalid params error' },
+        };
+
+        await expect(instance.createImage(payload)).rejects.toMatchObject({
+          errorType: AgentRuntimeErrorType.ComfyUIWorkflowError,
+          provider: 'comfyui',
+        });
+      });
+    });
+
+    describe('UtilsError mapping', () => {
+      it('should map UtilsError.CONNECTION_ERROR to ComfyUIServiceUnavailable', async () => {
+        mockModelResolver.validateModel.mockResolvedValue({
+          actualFileName: 'flux-dev.safetensors',
+          exists: true,
+        });
+
+        const { UtilsError } = await import('./errors');
+        const utilsError = new UtilsError(
+          'Connection failed',
+          UtilsError.Reasons.CONNECTION_ERROR,
+          { url: 'http://localhost:8188' },
+        );
+
+        const { WorkflowRouter: MockedWorkflowRouter } = await import('./utils/workflowRouter');
+        MockedWorkflowRouter.routeWorkflow = vi.fn(() => {
+          throw utilsError;
+        });
+
+        const payload: CreateImagePayload = {
+          model: 'comfyui/flux-dev',
+          params: { prompt: 'Test connection error' },
+        };
+
+        await expect(instance.createImage(payload)).rejects.toMatchObject({
+          errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
+          provider: 'comfyui',
+        });
+      });
+
+      it('should map UtilsError.INVALID_API_KEY to InvalidProviderAPIKey', async () => {
+        mockModelResolver.validateModel.mockResolvedValue({
+          actualFileName: 'flux-dev.safetensors',
+          exists: true,
+        });
+
+        const { UtilsError } = await import('./errors');
+        const utilsError = new UtilsError('Invalid API key', UtilsError.Reasons.INVALID_API_KEY);
+
+        const { WorkflowRouter: MockedWorkflowRouter } = await import('./utils/workflowRouter');
+        MockedWorkflowRouter.routeWorkflow = vi.fn(() => {
+          throw utilsError;
+        });
+
+        const payload: CreateImagePayload = {
+          model: 'comfyui/flux-dev',
+          params: { prompt: 'Test API key error' },
+        };
+
+        await expect(instance.createImage(payload)).rejects.toMatchObject({
+          errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
+          provider: 'comfyui',
+        });
+      });
+    });
+
+    describe('Unknown error mapping', () => {
+      it('should map unknown internal error reasons to default error types', async () => {
+        mockModelResolver.validateModel.mockResolvedValue({
+          actualFileName: 'flux-dev.safetensors',
+          exists: true,
+        });
+
+        const { WorkflowError } = await import('./errors');
+        // Create an error with an unknown reason (not in the mapping)
+        const workflowError = new WorkflowError(
+          'Unknown workflow issue',
+          'UNKNOWN_REASON' as any, // Using unknown reason
+          { unknown: true },
+        );
+
+        const { WorkflowRouter: MockedWorkflowRouter } = await import('./utils/workflowRouter');
+        MockedWorkflowRouter.routeWorkflow = vi.fn(() => {
+          throw workflowError;
+        });
+
+        const payload: CreateImagePayload = {
+          model: 'comfyui/flux-dev',
+          params: { prompt: 'Test unknown error mapping' },
+        };
+
+        // Should fall back to default ComfyUIWorkflowError for WorkflowError
+        await expect(instance.createImage(payload)).rejects.toMatchObject({
+          errorType: AgentRuntimeErrorType.ComfyUIWorkflowError,
+          provider: 'comfyui',
+        });
+      });
     });
   });
 

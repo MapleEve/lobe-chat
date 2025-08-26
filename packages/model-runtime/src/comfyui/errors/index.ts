@@ -72,30 +72,18 @@ export class UtilsError extends ComfyUIInternalError {
   }
 
   static readonly Reasons = {
-    
     CONNECTION_ERROR: 'CONNECTION_ERROR',
-    
-// Detector reasons
-DETECTION_FAILED: 'DETECTION_FAILED',
-    
-
-INVALID_API_KEY: 'INVALID_API_KEY',
-    
-
-INVALID_MODEL_FORMAT: 'INVALID_MODEL_FORMAT',
-    
-// Model resolver reasons
-MODEL_NOT_FOUND: 'MODEL_NOT_FOUND',
-
-    
+    // Detector reasons
+    DETECTION_FAILED: 'DETECTION_FAILED',
+    INVALID_API_KEY: 'INVALID_API_KEY',
+    INVALID_MODEL_FORMAT: 'INVALID_MODEL_FORMAT',
+    // Model resolver reasons
+    MODEL_NOT_FOUND: 'MODEL_NOT_FOUND',
     NO_BUILDER_FOUND: 'NO_BUILDER_FOUND',
     PERMISSION_DENIED: 'PERMISSION_DENIED',
-
-    
     // Router reasons
-ROUTING_FAILED: 'ROUTING_FAILED',
-    
-SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+    ROUTING_FAILED: 'ROUTING_FAILED',
+    SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
   } as const;
 }
 

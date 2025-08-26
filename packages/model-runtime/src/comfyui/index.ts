@@ -289,26 +289,10 @@ export class LobeComfyUI implements LobeRuntimeAI {
       });
     }
 
-    try {
-      const workflow = WorkflowRouter.routeWorkflow(model, detectionResult, modelFileName, params);
+    const workflow = WorkflowRouter.routeWorkflow(model, detectionResult, modelFileName, params);
 
-      log('✅ Workflow built successfully for:', model);
-      return workflow;
-    } catch (error) {
-      // Check if it's already an AgentRuntimeError from workflow routing
-      if (
-        error &&
-        typeof error === 'object' &&
-        'errorType' in error &&
-        (error.errorType === AgentRuntimeErrorType.ComfyUIWorkflowError ||
-          error.errorType === AgentRuntimeErrorType.ComfyUIModelError)
-      ) {
-        // Re-throw ComfyUI workflow/model errors as-is
-        throw error;
-      }
-
-      throw error;
-    }
+    log('✅ Workflow built successfully for:', model);
+    return workflow;
   }
 
   /**
