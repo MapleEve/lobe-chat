@@ -79,7 +79,7 @@ const categorizeError = (
     return {
       errorMessage:
         error.error?.message || error.message || AgentRuntimeErrorType.ComfyUIServiceUnavailable,
-      errorType: AsyncTaskErrorType.ServerError,
+      errorType: AsyncTaskErrorType.InvalidProviderAPIKey,
     };
   }
 
