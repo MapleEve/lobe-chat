@@ -8,10 +8,9 @@
  */
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { DEFAULT_NEGATIVE_PROMPT } from '@/libs/model-runtime/comfyui/constants';
-import { generateUniqueSeeds } from '@/utils/number';
-
+import { generateUniqueSeeds } from '../../../../utils/src/number';
 import { getAllComponentsWithNames } from '../config/systemComponents';
+import { DEFAULT_NEGATIVE_PROMPT } from '../constants';
 import { WorkflowError } from '../errors';
 
 /**

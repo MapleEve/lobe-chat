@@ -6,9 +6,8 @@ import type {
 } from '@saintno/comfyui-sdk';
 import debug from 'debug';
 
-import { ChatModelCard } from '@/types/llm';
-import { ComfyUIKeyVault } from '@/types/user/settings';
-
+import { ChatModelCard } from '../../../types/src/llm';
+import { ComfyUIKeyVault } from '../../../types/src/user/settings';
 import { LobeRuntimeAI } from '../BaseAI';
 import { AgentRuntimeErrorType } from '../error';
 import { CreateImagePayload, CreateImageResponse } from '../types/image';

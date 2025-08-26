@@ -2,8 +2,7 @@
 import { CallWrapper, ComfyApi, PromptBuilder } from '@saintno/comfyui-sdk';
 import { Mock, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AgentRuntimeErrorType, CreateImagePayload } from '@/libs/model-runtime';
-
+import { AgentRuntimeErrorType, CreateImagePayload } from '../index';
 import { LobeComfyUI } from '../index';
 import { AgentRuntimeError } from '../utils/createError';
 import { processModelList } from '../utils/modelParse';

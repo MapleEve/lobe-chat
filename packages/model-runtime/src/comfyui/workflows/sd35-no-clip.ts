@@ -6,8 +6,8 @@
  */
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { DEFAULT_NEGATIVE_PROMPT } from '@/libs/model-runtime/comfyui/constants';
-import { generateUniqueSeeds } from '@/utils/number';
+import { generateUniqueSeeds } from '../../../../utils/src/number';
+import { DEFAULT_NEGATIVE_PROMPT } from '../constants';
 
 /**
  * Default negative prompt for SD3.5

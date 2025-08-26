@@ -1,7 +1,6 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { generateUniqueSeeds } from '@/utils/number';
-
+import { generateUniqueSeeds } from '../../../../utils/src/number';
 import { getOptimalComponent } from '../config/systemComponents';
 import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
 import { splitPromptForDualCLIP } from '../utils/promptSplitter';
