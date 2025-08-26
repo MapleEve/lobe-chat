@@ -29,7 +29,7 @@ packages/model-runtime/src/comfyui/
 │   ├── flux-kontext.ts       # FLUX Kontext工作流
 │   ├── flux-krea.ts          # FLUX Krea工作流
 │   ├── sd35.ts               # SD3.5动态编码器工作流
-│   └── sd35-no-clip.ts       # SD3.5内置编码器工作流
+│   └── sd35-incl-clip.ts       # SD3.5内置编码器工作流
 ├── utils/                     # 高性能工具层
 │   ├── modelResolver.ts       # O(1)模型解析器 + 智能缓存
 │   ├── workflowRouter.ts      # 双层路由系统（精确+变体）
@@ -290,7 +290,7 @@ export function buildYourWorkflow(
 
 ### 3. SD3.5 工作流示例参考
 
-查看`workflows/sd35-no-clip.ts`作为实际工作流的参考实现：
+查看`workflows/sd35-incl-clip.ts`作为实际工作流的参考实现：
 
 ```typescript
 // 完整的SD3.5工作流展示了标准的7节点结构
@@ -551,7 +551,7 @@ SD3.5 模型支持多种编码器配置，系统自动检测并选择最佳配�
 function detectAvailableEncoder(): {
   type: 'triple' | 'dual_clip' | 't5';
   clipL?: string;
-  clipG?: string;  
+  clipG?: string;
   t5?: string;
 } | null {
   // 获取所有可用的CLIP和T5组件
@@ -561,7 +561,7 @@ function detectAvailableEncoder(): {
   // 查找CLIP L和CLIP G
   const clipL = clipComponents.find(c => c.name === 'clip_l.safetensors');
   const clipG = clipComponents.find(c => c.name === 'clip_g.safetensors');
-  
+
   // 查找T5XXL（优先fp16，回退到fp8）
   const t5 = t5Components.sort((a, b) => a.config.priority - b.config.priority)[0];
 
@@ -569,17 +569,17 @@ function detectAvailableEncoder(): {
   if (clipL && clipG && t5) {
     return { type: 'triple', clipL: clipL.name, clipG: clipG.name, t5: t5.name };
   }
-  
+
   // 双CLIP配置
   if (clipL && clipG) {
     return { type: 'dual_clip', clipL: clipL.name, clipG: clipG.name };
   }
-  
+
   // 仅T5配置
   if (t5) {
     return { type: 't5', t5: t5.name };
   }
-  
+
   return null; // 没有找到有效的编码器配置
 }
 ```
@@ -588,12 +588,12 @@ function detectAvailableEncoder(): {
 
 ```typescript
 export function buildSD35Workflow(
-  modelFileName: string, 
+  modelFileName: string,
   params: Record<string, any>
 ): PromptBuilder<any, any, any> {
   // 检测可用编码器
   const encoderConfig = detectAvailableEncoder();
-  
+
   // SD3.5 必需外部编码器
   if (!encoderConfig) {
     throw new WorkflowError(
@@ -605,7 +605,7 @@ export function buildSD35Workflow(
 
   // 基于检测结果构建不同的工作流节点
   const workflow = buildWorkflowNodes(encoderConfig, params);
-  
+
   return new PromptBuilder(workflow, inputs, outputs);
 }
 ```
@@ -636,20 +636,20 @@ export const MODEL_REGISTRY: Record<string, ModelConfig> = {
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
-  
+
   // === 优先级2：企业优化模型 ===
   'flux1-dev-fp8-e4m3fn.safetensors': {
     priority: 2,
-    variant: 'dev', 
+    variant: 'dev',
     modelFamily: 'FLUX',
     recommendedDtype: 'fp8_e4m3fn',
   },
-  
+
   // === 优先级3：社区微调模型 ===
   'real_dream_flux_v1.safetensors': {
     priority: 3,
     variant: 'dev',
-    modelFamily: 'FLUX', 
+    modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
 };
@@ -690,13 +690,13 @@ export const SYSTEM_COMPONENTS: Record<string, ComponentConfig> = {
     type: 'vae',
   },
   'clip_l.safetensors': {
-    modelFamily: 'FLUX', 
+    modelFamily: 'FLUX',
     priority: 1,
     type: 'clip',
   },
   'clip_g.safetensors': {
     modelFamily: 'SD3',
-    priority: 1, 
+    priority: 1,
     type: 'clip',
   },
   't5xxl_fp16.safetensors': {
@@ -704,12 +704,12 @@ export const SYSTEM_COMPONENTS: Record<string, ComponentConfig> = {
     priority: 1,
     type: 't5',
   },
-  
+
   // === 可选组件 ===
   't5xxl_fp8_e4m3fn.safetensors': {
     modelFamily: 'FLUX',
     priority: 2,
-    type: 't5', 
+    type: 't5',
   },
 };
 
@@ -741,22 +741,22 @@ export const LORA_REGISTRY: Record<string, LoRAConfig> = {
     priority: 1,
   },
   'anime_lora.safetensors': {
-    compatibleVariants: ['dev'], 
+    compatibleVariants: ['dev'],
     modelFamily: 'FLUX',
     priority: 1,
   },
-  
+
   // === LiblibAI专业LoRA ===
   'flux-kodak-grain-lora.safetensors': {
     compatibleVariants: ['dev'],
     modelFamily: 'FLUX',
     priority: 2,
   },
-  
+
   // === 社区实验LoRA ===
   'watercolor_painting_schnell_lora.safetensors': {
     compatibleVariants: ['schnell'],
-    modelFamily: 'FLUX', 
+    modelFamily: 'FLUX',
     priority: 3,
   },
 };
@@ -794,7 +794,7 @@ export const CONTROLNET_REGISTRY: Record<string, ControlNetConfig> = {
     type: 'canny',
   },
   'flux-controlnet-depth-v3.safetensors': {
-    compatibleVariants: ['dev'], 
+    compatibleVariants: ['dev'],
     modelFamily: 'FLUX',
     priority: 1,
     type: 'depth',
@@ -802,7 +802,7 @@ export const CONTROLNET_REGISTRY: Record<string, ControlNetConfig> = {
   'flux-controlnet-hed-v3.safetensors': {
     compatibleVariants: ['dev'],
     modelFamily: 'FLUX',
-    priority: 1, 
+    priority: 1,
     type: 'hed',
   },
 };
@@ -837,15 +837,15 @@ export function getControlNetConfig(
 export function resolveModel(modelName: string): ModelConfig | null {
   // 移除路径，只保留文件名
   const fileName = modelName.split('/').pop() || modelName;
-  
+
   // 直接 O(1) 查找
   let config = getModelConfig(fileName);
-  
+
   // 如果没找到，尝试大小写不敏感查找
   if (!config) {
     config = getModelConfig(fileName, { caseInsensitive: true });
   }
-  
+
   return config || null;
 }
 
@@ -856,42 +856,42 @@ export class ModelResolver {
   private modelCache: string[] | null = null;
   private cacheExpiry: number = 0;
   private readonly CACHE_TTL = 60_000; // 1分钟缓存
-  
+
   /**
    * 智能模型文件名解析 - 支持变体名和直接文件名
    */
   async resolveModelFileName(modelId: string): Promise<string> {
     // 获取服务器模型列表
     const serverModels = await this.getAvailableModelFiles();
-    
+
     // 模型ID到变体的映射
     const modelIdToVariant: Record<string, string> = {
       'flux-dev': 'dev',
-      'flux-schnell': 'schnell', 
+      'flux-schnell': 'schnell',
       'flux-kontext-dev': 'kontext',
       'flux-krea-dev': 'krea',
       'stable-diffusion-3.5': 'sd35',
     };
-    
-    const variantName = modelIdToVariant[modelId] || 
+
+    const variantName = modelIdToVariant[modelId] ||
       (['dev', 'schnell', 'kontext', 'krea', 'sd35'].includes(modelId) ? modelId : null);
-    
+
     // 优先级1: 变体名称匹配
     if (variantName) {
       const variantModels = getModelsByVariant(variantName as ModelConfig['variant']);
-      
+
       for (const candidateModel of variantModels) {
         if (serverModels.includes(candidateModel)) {
           return candidateModel; // 找到最高优先级匹配
         }
       }
     }
-    
+
     // 优先级2: 直接文件名匹配（向后兼容）
     if (serverModels.includes(modelId)) {
       return modelId;
     }
-    
+
     // 优先级3: 基于模型配置的变体查找
     const config = getModelConfig(modelId);
     if (config?.variant) {
@@ -905,12 +905,12 @@ export class ModelResolver {
           const configB = getModelConfig(b);
           return (configA?.priority || 999) - (configB?.priority || 999);
         });
-      
+
       if (matchingFiles.length > 0) {
         return matchingFiles[0]; // 返回最高优先级匹配
       }
     }
-    
+
     throw new ModelResolverError(
       `模型未找到: ${modelId}`,
       ModelResolverError.Reasons.MODEL_NOT_FOUND,
@@ -941,17 +941,17 @@ export class WorkflowRouter {
     'flux-kontext-dev': buildFluxKontextWorkflow,
     'flux-krea-dev': buildFluxKreaWorkflow,
     'sd35': buildSD35Workflow,
-    'sd35-no-clip': buildSD35NoClipWorkflow,
+    'sd35-incl-clip': buildSD35NoClipWorkflow,
   };
 
-  // FLUX变体映射 
+  // FLUX变体映射
   private static readonly VARIANT_BUILDERS: Record<string, WorkflowBuilderFunction> = {
     'dev': buildFluxDevWorkflow,
     'schnell': buildFluxSchnellWorkflow,
     'kontext': buildFluxKontextWorkflow,
     'krea': buildFluxKreaWorkflow,
     'sd35': buildSD35Workflow,
-    'sd35-no-clip': buildSD35NoClipWorkflow,
+    'sd35-incl-clip': buildSD35NoClipWorkflow,
   };
 
   /**
@@ -963,7 +963,7 @@ export class WorkflowRouter {
     modelFileName: string,
     params: Record<string, any> = {}
   ): PromptBuilder<any, any, any> {
-    
+
     // 1. 首先尝试精确模型名称匹配
     const exactBuilder = this.EXACT_MODEL_BUILDERS[modelId];
     if (exactBuilder) {
@@ -980,10 +980,10 @@ export class WorkflowRouter {
     throw new WorkflowError(
       `未找到模型${modelId}的工作流构建器`,
       WorkflowError.Reasons.UNSUPPORTED_MODEL,
-      { 
-        architecture: detectionResult.architecture, 
-        modelId, 
-        variant: detectionResult.variant 
+      {
+        architecture: detectionResult.architecture,
+        modelId,
+        variant: detectionResult.variant
       }
     );
   }
@@ -1022,7 +1022,7 @@ try {
     // 重新抛出工作流错误 - 将在主入口捕获并转换为框架错误
     throw error;
   }
-  
+
   // 转换为工作流错误
   throw new WorkflowError(
     `工作流构建失败: ${error.message}`,
@@ -1173,7 +1173,7 @@ const optimizedResult = await comfyUI.createImage({
 import { getLoRAConfig, getAllLoRAConfigs } from '../config/loraRegistry';
 
 // 查询兼容的LoRA
-const compatibleLoras = getAllLoRAConfigs({ 
+const compatibleLoras = getAllLoRAConfigs({
   compatibleVariant: 'dev',
   priority: 1 // 只获取官方LoRA
 });
@@ -1197,11 +1197,11 @@ const loraResult = await comfyUI.createImage({
 #### 3.5 错误处理示例
 
 ```typescript
-import { 
-  ConfigError, 
-  WorkflowError, 
-  UtilsError, 
-  ModelResolverError 
+import {
+  ConfigError,
+  WorkflowError,
+  UtilsError,
+  ModelResolverError
 } from '../errors';
 
 try {
@@ -1234,10 +1234,10 @@ try {
 #### 3.6 模型查询和验证示例
 
 ```typescript
-import { 
-  getModelConfig, 
-  getModelsByVariant, 
-  getAllModelNames 
+import {
+  getModelConfig,
+  getModelsByVariant,
+  getAllModelNames
 } from '../config/modelRegistry';
 import { ModelResolver } from '../utils/modelResolver';
 
