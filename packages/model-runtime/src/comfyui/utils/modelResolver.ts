@@ -409,9 +409,12 @@ export class ModelResolver {
       const fileName = await this.resolveModelFileName(modelId);
       return { actualFileName: fileName, exists: true };
     } catch (error) {
-      // Re-throw connection errors (don't convert them to "model not found")
+      // Re-throw ModelResolverError (connection errors, auth errors, etc.)
+      if (error instanceof ModelResolverError) {
+        throw error;
+      }
+      // Re-throw other properly typed errors
       if (error && typeof error === 'object' && 'errorType' in error) {
-        // This is already a properly typed error (connection issue, auth error, etc.)
         throw error;
       }
       // Only return exists: false for actual "model not found" errors
