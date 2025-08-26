@@ -2,6 +2,7 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { WorkflowError } from '../errors';
 import { buildSD35Workflow } from './sd35';
 
 // Mock the utility function
@@ -391,5 +392,39 @@ describe('buildSD35Workflow', () => {
     expect(result.setInputNode).toHaveBeenCalledWith('steps', '6.inputs.steps');
     expect(result.setInputNode).toHaveBeenCalledWith('seed', '6.inputs.seed');
     expect(result.setInputNode).toHaveBeenCalledWith('cfg', '6.inputs.cfg');
+  });
+
+  describe('Error Handling', () => {
+    it('should throw WorkflowError when no encoder files are available', async () => {
+      // Import the mocked module that was already mocked at the top of the file
+      const systemComponents = await import('../config/systemComponents');
+
+      // Temporarily override the mock to return empty arrays (no encoders available)
+      const originalMock = vi.mocked(systemComponents.getAllComponentsWithNames);
+      originalMock.mockImplementation(() => []);
+
+      const modelName = 'sd35_large.safetensors';
+      const params = {
+        prompt: 'A test prompt',
+      };
+
+      // Should throw WorkflowError with MISSING_ENCODER reason
+      expect(() => buildSD35Workflow(modelName, params)).toThrow(WorkflowError);
+      expect(() => buildSD35Workflow(modelName, params)).toThrow(
+        'SD3.5 models require external CLIP/T5 encoder files',
+      );
+
+      // Additional assertion to verify error details
+      try {
+        buildSD35Workflow(modelName, params);
+      } catch (error) {
+        expect(error).toBeInstanceOf(WorkflowError);
+        expect((error as WorkflowError).reason).toBe(WorkflowError.Reasons.MISSING_ENCODER);
+        expect((error as WorkflowError).details).toEqual({ model: modelName });
+      }
+
+      // Restore the original mock behavior
+      originalMock.mockRestore();
+    });
   });
 });
