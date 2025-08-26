@@ -7,8 +7,6 @@
 import { ComfyApi } from '@saintno/comfyui-sdk';
 import debug from 'debug';
 
-import { AgentRuntimeErrorType } from '../../error';
-import { AgentRuntimeError } from '../../utils/createError';
 import {
   type ModelConfig,
   getAllModelNames,
@@ -17,6 +15,37 @@ import {
 } from '../config/modelRegistry';
 
 const log = debug('lobe-image:comfyui');
+
+/**
+ * Internal error class for model resolver / 模型解析器内部错误类
+ *
+ * This error is thrown by model resolver when it cannot find models
+ * or encounters issues with the ComfyUI server.
+ * It will be caught and converted to framework errors at the main entry level.
+ */
+export class ModelResolverError extends Error {
+  public readonly reason: string;
+  public readonly details?: Record<string, any>;
+
+  constructor(message: string, reason: string, details?: Record<string, any>) {
+    super(message);
+    this.name = 'ModelResolverError';
+    this.reason = reason;
+    this.details = details;
+
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, ModelResolverError);
+    }
+  }
+
+  static readonly Reasons = {
+    CONNECTION_ERROR: 'CONNECTION_ERROR',
+    INVALID_API_KEY: 'INVALID_API_KEY',
+    MODEL_NOT_FOUND: 'MODEL_NOT_FOUND',
+    PERMISSION_DENIED: 'PERMISSION_DENIED',
+    SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
+  } as const;
+}
 
 /**
  * Simple model resolver - O(1) lookup via getModelConfig interface
@@ -55,11 +84,11 @@ export function resolveModel(modelName: string): ModelConfig | null {
 export function resolveModelStrict(modelName: string): ModelConfig {
   const config = resolveModel(modelName);
   if (!config) {
-    throw AgentRuntimeError.createImage({
-      error: new Error('ModelNotFound'),
-      errorType: AgentRuntimeErrorType.ModelNotFound,
-      provider: 'comfyui',
-    });
+    throw new ModelResolverError(
+      `Model not found: ${modelName}`,
+      ModelResolverError.Reasons.MODEL_NOT_FOUND,
+      { modelName },
+    );
   }
   return config;
 }
@@ -114,26 +143,26 @@ export class ModelResolver {
         // Properly classify HTTP errors based on status code
         if (response.status === 401) {
           log('✅ ModelResolver: 401 detected, throwing InvalidProviderAPIKey');
-          throw AgentRuntimeError.createImage({
-            error: { message: `HTTP ${response.status}: ${response.statusText}` },
-            errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
-            provider: 'comfyui',
-          });
+          throw new ModelResolverError(
+            `HTTP ${response.status}: ${response.statusText}`,
+            ModelResolverError.Reasons.INVALID_API_KEY,
+            { status: response.status, statusText: response.statusText },
+          );
         } else if (response.status === 403) {
           log('✅ ModelResolver: 403 detected, throwing PermissionDenied');
-          throw AgentRuntimeError.createImage({
-            error: { message: `HTTP ${response.status}: ${response.statusText}` },
-            errorType: AgentRuntimeErrorType.PermissionDenied,
-            provider: 'comfyui',
-          });
+          throw new ModelResolverError(
+            `HTTP ${response.status}: ${response.statusText}`,
+            ModelResolverError.Reasons.PERMISSION_DENIED,
+            { status: response.status, statusText: response.statusText },
+          );
         } else {
           log('✅ ModelResolver: Other HTTP error, throwing ComfyUIServiceUnavailable');
           // Other HTTP errors (404, 5xx) are service unavailability issues
-          throw AgentRuntimeError.createImage({
-            error: { message: `HTTP ${response.status}: ${response.statusText}` },
-            errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
-            provider: 'comfyui',
-          });
+          throw new ModelResolverError(
+            `HTTP ${response.status}: ${response.statusText}`,
+            ModelResolverError.Reasons.SERVICE_UNAVAILABLE,
+            { status: response.status, statusText: response.statusText },
+          );
         }
       }
 
@@ -141,11 +170,11 @@ export class ModelResolver {
       const checkpointLoader = objectInfo.CheckpointLoaderSimple;
 
       if (!checkpointLoader?.input?.required?.ckpt_name?.[0]) {
-        throw AgentRuntimeError.createImage({
-          error: { message: 'No models available on ComfyUI server' },
-          errorType: AgentRuntimeErrorType.ModelNotFound,
-          provider: 'comfyui',
-        });
+        throw new ModelResolverError(
+          'No models available on ComfyUI server',
+          ModelResolverError.Reasons.MODEL_NOT_FOUND,
+          { server: true },
+        );
       }
 
       this.modelCache = checkpointLoader.input.required.ckpt_name[0] as string[];
@@ -167,18 +196,18 @@ export class ModelResolver {
         log('📦 Error is a Response object, status:', error.status);
         if (error.status === 401) {
           log('✅ ModelResolver: 401 from Response object, throwing InvalidProviderAPIKey');
-          throw AgentRuntimeError.createImage({
-            error: { message: `HTTP 401: Unauthorized` },
-            errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
-            provider: 'comfyui',
-          });
+          throw new ModelResolverError(
+            `HTTP 401: Unauthorized`,
+            ModelResolverError.Reasons.INVALID_API_KEY,
+            { status: 401 },
+          );
         } else if (error.status === 403) {
           log('✅ ModelResolver: 403 from Response object, throwing PermissionDenied');
-          throw AgentRuntimeError.createImage({
-            error: { message: `HTTP 403: Forbidden` },
-            errorType: AgentRuntimeErrorType.PermissionDenied,
-            provider: 'comfyui',
-          });
+          throw new ModelResolverError(
+            `HTTP 403: Forbidden`,
+            ModelResolverError.Reasons.PERMISSION_DENIED,
+            { status: 403 },
+          );
         }
       }
 
@@ -188,18 +217,18 @@ export class ModelResolver {
         log('📦 Error cause is a Response object, status:', cause.status);
         if (cause.status === 401) {
           log('✅ ModelResolver: 401 from error.cause, throwing InvalidProviderAPIKey');
-          throw AgentRuntimeError.createImage({
-            error: { message: (error as Error).message || `HTTP 401: Unauthorized` },
-            errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
-            provider: 'comfyui',
-          });
+          throw new ModelResolverError(
+            (error as Error).message || `HTTP 401: Unauthorized`,
+            ModelResolverError.Reasons.INVALID_API_KEY,
+            { originalError: (error as Error).message, status: 401 },
+          );
         } else if (cause.status === 403) {
           log('✅ ModelResolver: 403 from error.cause, throwing PermissionDenied');
-          throw AgentRuntimeError.createImage({
-            error: { message: (error as Error).message || `HTTP 403: Forbidden` },
-            errorType: AgentRuntimeErrorType.PermissionDenied,
-            provider: 'comfyui',
-          });
+          throw new ModelResolverError(
+            (error as Error).message || `HTTP 403: Forbidden`,
+            ModelResolverError.Reasons.PERMISSION_DENIED,
+            { originalError: (error as Error).message, status: 403 },
+          );
         }
       }
 
@@ -208,15 +237,12 @@ export class ModelResolver {
         throw error;
       }
 
-      // Otherwise parse it with the error parser
-      const { parseComfyUIErrorMessage } = await import('../../utils/comfyuiErrorParser');
-      const { error: parsedError, errorType } = parseComfyUIErrorMessage(error);
-
-      throw AgentRuntimeError.createImage({
-        error: parsedError,
-        errorType,
-        provider: 'comfyui',
-      });
+      // For other unknown errors, throw a generic connection error
+      throw new ModelResolverError(
+        error instanceof Error ? error.message : 'Unknown error',
+        ModelResolverError.Reasons.CONNECTION_ERROR,
+        { originalError: error },
+      );
     }
   }
 
@@ -242,13 +268,16 @@ export class ModelResolver {
       'flux-krea-dev': 'krea',
       'flux-redux-dev': 'redux',
       'flux-schnell': 'schnell',
-      'stable-diffusion-3.5': 'sd35', // 前端使用 stable-diffusion-3.5，映射到 sd35 variant
+      'stable-diffusion-3.5': 'sd35',
+      'stable-diffusion-3.5-noclip': 'sd35-no-clip',
     };
 
     // Determine if we have a variant (either direct variant name or model ID)
     const variantName =
       modelIdToVariant[cleanModelId] ||
-      (['dev', 'schnell', 'kontext', 'krea', 'fill', 'redux', 'sd35'].includes(cleanModelId)
+      (['dev', 'schnell', 'kontext', 'krea', 'fill', 'redux', 'sd35', 'sd35-no-clip'].includes(
+        cleanModelId,
+      )
         ? cleanModelId
         : null);
 
@@ -277,11 +306,11 @@ export class ModelResolver {
       // No variant models found on server
       log('❌ [ModelResolver] No variant models found on server for variant:', variantName);
       // Don't include detailed message - let frontend handle i18n
-      throw AgentRuntimeError.createImage({
-        error: new Error(`ModelNotFound`),
-        errorType: AgentRuntimeErrorType.ModelNotFound,
-        provider: 'comfyui',
-      });
+      throw new ModelResolverError(
+        `Model not found for variant: ${variantName}`,
+        ModelResolverError.Reasons.MODEL_NOT_FOUND,
+        { variant: variantName },
+      );
     }
 
     // Second priority: Check if it's a direct filename on server (for backward compatibility)
@@ -340,11 +369,11 @@ export class ModelResolver {
     }
 
     // No match found - throw error
-    throw AgentRuntimeError.createImage({
-      error: new Error('ModelNotFound'),
-      errorType: AgentRuntimeErrorType.ModelNotFound,
-      provider: 'comfyui',
-    });
+    throw new ModelResolverError(
+      `Model not found: ${modelId}`,
+      ModelResolverError.Reasons.MODEL_NOT_FOUND,
+      { modelId },
+    );
   }
 
   /**

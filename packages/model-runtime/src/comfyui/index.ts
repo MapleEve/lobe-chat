@@ -15,8 +15,9 @@ import { CreateImagePayload, CreateImageResponse } from '../types/image';
 import { parseComfyUIErrorMessage } from '../utils/comfyuiErrorParser';
 import { AgentRuntimeError } from '../utils/createError';
 import { MODEL_LIST_CONFIGS, processModelList } from '../utils/modelParse';
-import { COMFYUI_DEFAULTS, COMFYUI_ERROR_TYPES } from './constants';
-import { ModelResolver } from './utils/modelResolver';
+import { COMFYUI_DEFAULTS } from './constants';
+import { ConfigError, UtilsError, WorkflowError, isComfyUIInternalError } from './errors';
+import { ModelResolver, ModelResolverError } from './utils/modelResolver';
 import { WorkflowDetector } from './utils/workflowDetector';
 import { WorkflowRouter } from './utils/workflowRouter';
 
@@ -193,7 +194,7 @@ export class LobeComfyUI implements LobeRuntimeAI {
       if (images.length === 0) {
         throw AgentRuntimeError.createImage({
           error: new Error('Empty result from ComfyUI workflow'),
-          errorType: COMFYUI_ERROR_TYPES.EMPTY_RESULT,
+          errorType: AgentRuntimeErrorType.ComfyUIEmptyResult,
           provider: 'comfyui',
         });
       }
@@ -205,10 +206,58 @@ export class LobeComfyUI implements LobeRuntimeAI {
         width: imageInfo.width ?? params.width,
       };
     } catch (error) {
+      // Handle all ComfyUI internal errors
+      if (isComfyUIInternalError(error)) {
+        let errorType: string;
+
+        // Map internal error reasons to framework error types based on error type
+        if (error instanceof ConfigError) {
+          const mapping: Record<string, string> = {
+            [ConfigError.Reasons.INVALID_CONFIG]: AgentRuntimeErrorType.ComfyUIBizError,
+            [ConfigError.Reasons.MISSING_CONFIG]: AgentRuntimeErrorType.ComfyUIBizError,
+            [ConfigError.Reasons.CONFIG_PARSE_ERROR]: AgentRuntimeErrorType.ComfyUIBizError,
+            [ConfigError.Reasons.REGISTRY_ERROR]: AgentRuntimeErrorType.ComfyUIBizError,
+          };
+          errorType = mapping[error.reason] || AgentRuntimeErrorType.ComfyUIBizError;
+        } else if (error instanceof WorkflowError) {
+          const mapping: Record<string, string> = {
+            [WorkflowError.Reasons.INVALID_CONFIG]: AgentRuntimeErrorType.ComfyUIWorkflowError,
+            [WorkflowError.Reasons.MISSING_COMPONENT]: AgentRuntimeErrorType.ComfyUIModelError,
+            [WorkflowError.Reasons.MISSING_ENCODER]: AgentRuntimeErrorType.ComfyUIModelError,
+            [WorkflowError.Reasons.UNSUPPORTED_MODEL]: AgentRuntimeErrorType.ModelNotFound,
+            [WorkflowError.Reasons.INVALID_PARAMS]: AgentRuntimeErrorType.ComfyUIWorkflowError,
+          };
+          errorType = mapping[error.reason] || AgentRuntimeErrorType.ComfyUIWorkflowError;
+        } else if (error instanceof UtilsError || error instanceof ModelResolverError) {
+          const mapping: Record<string, string> = {
+            CONNECTION_ERROR: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
+            DETECTION_FAILED: AgentRuntimeErrorType.ComfyUIBizError,
+            INVALID_API_KEY: AgentRuntimeErrorType.InvalidProviderAPIKey,
+            INVALID_MODEL_FORMAT: AgentRuntimeErrorType.ComfyUIBizError,
+            MODEL_NOT_FOUND: AgentRuntimeErrorType.ModelNotFound,
+            NO_BUILDER_FOUND: AgentRuntimeErrorType.ComfyUIWorkflowError,
+            PERMISSION_DENIED: AgentRuntimeErrorType.PermissionDenied,
+            ROUTING_FAILED: AgentRuntimeErrorType.ComfyUIWorkflowError,
+            SERVICE_UNAVAILABLE: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
+          };
+          errorType = mapping[error.reason] || AgentRuntimeErrorType.ComfyUIBizError;
+        } else {
+          errorType = AgentRuntimeErrorType.ComfyUIBizError;
+        }
+
+        throw AgentRuntimeError.createImage({
+          error: { details: error.details, message: error.message },
+          errorType: errorType as any, // Type assertion needed for internal error mapping
+          provider: 'comfyui',
+        });
+      }
+
+      // Handle pre-formatted framework errors
       if (error && typeof error === 'object' && 'errorType' in error) {
         throw error;
       }
 
+      // Parse other errors
       const { error: parsedError, errorType } = parseComfyUIErrorMessage(error);
 
       throw AgentRuntimeError.createImage({
@@ -251,9 +300,10 @@ export class LobeComfyUI implements LobeRuntimeAI {
         error &&
         typeof error === 'object' &&
         'errorType' in error &&
-        error.errorType === AgentRuntimeErrorType.ComfyUIWorkflowError
+        (error.errorType === AgentRuntimeErrorType.ComfyUIWorkflowError ||
+          error.errorType === AgentRuntimeErrorType.ComfyUIModelError)
       ) {
-        // Re-throw ComfyUI workflow errors as-is
+        // Re-throw ComfyUI workflow/model errors as-is
         throw error;
       }
 

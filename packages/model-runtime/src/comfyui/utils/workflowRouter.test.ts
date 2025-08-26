@@ -474,6 +474,7 @@ describe('WorkflowRouter', () => {
           'flux-krea-dev',
           'flux-schnell',
           'sd35',
+          'sd35-no-clip',
         ]);
       });
 
@@ -495,7 +496,7 @@ describe('WorkflowRouter', () => {
     describe('getSupportedFluxVariants', () => {
       it('should return all supported variants', () => {
         const variants = WorkflowRouter.getSupportedFluxVariants();
-        expect(variants).toEqual(['dev', 'kontext', 'krea', 'schnell', 'sd35']);
+        expect(variants).toEqual(['dev', 'kontext', 'krea', 'schnell', 'sd35', 'sd35-no-clip']);
       });
 
       it('should return array of strings', () => {
@@ -574,9 +575,9 @@ describe('WorkflowRouter', () => {
         const stats = WorkflowRouter.getRoutingStats();
 
         expect(stats).toEqual({
-          exactModelsCount: 5,
-          supportedVariantsCount: 5,
-          totalBuilders: 5, // All builders are unique
+          exactModelsCount: 6,
+          supportedVariantsCount: 6,
+          totalBuilders: 6, // All builders are unique
         });
       });
 
@@ -601,8 +602,8 @@ describe('WorkflowRouter', () => {
       it('should have totalBuilders equal to unique builders count', () => {
         const stats = WorkflowRouter.getRoutingStats();
 
-        // Since all 5 builders are unique, totalBuilders should be 5
-        expect(stats.totalBuilders).toBe(5);
+        // Since all 6 builders are unique, totalBuilders should be 6
+        expect(stats.totalBuilders).toBe(6);
       });
     });
   });

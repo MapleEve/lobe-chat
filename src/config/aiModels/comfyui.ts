@@ -151,10 +151,20 @@ const comfyuiImageModels: AIImageModelCard[] = [
   },
   {
     description:
-      'Stable Diffusion 3.5 是新一代文生图模型，支持 Large 和 Medium 两个版本，后端自动按优先级选择可用模型。',
+      'Stable Diffusion 3.5 是新一代文生图模型，支持 Large 和 Medium 两个版本，需要外部 CLIP 编码器文件。',
     displayName: 'Stable Diffusion 3.5',
     enabled: true,
     id: 'stable-diffusion-3.5',
+    parameters: sd35ParamsSchema,
+    releasedAt: '2024-10-22',
+    type: 'image',
+  },
+  {
+    description:
+      'Stable Diffusion 3.5 No-CLIP 版本，内置 CLIP/T5 编码器，无需外部编码器文件。适用于 sd3.5_medium_incl_clips 等模型。',
+    displayName: 'Stable Diffusion 3.5 (No-CLIP)',
+    enabled: true,
+    id: 'stable-diffusion-3.5-noclip',
     parameters: sd35ParamsSchema,
     releasedAt: '2024-10-22',
     type: 'image',

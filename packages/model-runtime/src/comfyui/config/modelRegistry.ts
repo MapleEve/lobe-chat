@@ -7,7 +7,7 @@ export interface ModelConfig {
   modelFamily: 'FLUX' | 'SD1' | 'SDXL' | 'SD3';
   priority: number;
   recommendedDtype: 'default' | 'fp8_e4m3fn' | 'fp8_e4m3fn_fast' | 'fp8_e5m2';
-  variant: 'dev' | 'schnell' | 'kontext' | 'krea' | 'fill' | 'redux' | 'sd35';
+  variant: 'dev' | 'schnell' | 'kontext' | 'krea' | 'fill' | 'redux' | 'sd35' | 'sd35-no-clip';
 }
 
 // ===================================================================
@@ -814,7 +814,11 @@ export const MODEL_REGISTRY: Record<string, ModelConfig> = {
     recommendedDtype: 'default',
   },
 
-  // SD3.5 Models
+  // ===================================================================
+  // Stable Diffusion Model Family Registry
+  // ===================================================================
+
+  // SD3.5 Models (With CLIP - requires clip_g.safetensors)
   'sd3.5_large.safetensors': {
     priority: 1,
     variant: 'sd35',
@@ -832,6 +836,22 @@ export const MODEL_REGISTRY: Record<string, ModelConfig> = {
     variant: 'sd35',
     modelFamily: 'SD3',
     recommendedDtype: 'default',
+  },
+
+  // SD3.5 Models (With CLIP - also requires clip_g.safetensors)
+  'sd3.5_large_fp8_scaled.safetensors': {
+    priority: 1,
+    variant: 'sd35',
+    modelFamily: 'SD3',
+    recommendedDtype: 'fp8_e4m3fn',
+  },
+
+  // SD3.5 Models (No CLIP - includes CLIP/T5 internally)
+  'sd3.5_medium_incl_clips_t5xxlfp8scaled.safetensors': {
+    priority: 1,
+    variant: 'sd35-no-clip',
+    modelFamily: 'SD3',
+    recommendedDtype: 'fp8_e4m3fn',
   },
 };
 

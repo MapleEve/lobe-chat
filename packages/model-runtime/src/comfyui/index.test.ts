@@ -7,10 +7,9 @@ import { AgentRuntimeErrorType, CreateImagePayload } from '@/libs/model-runtime'
 import { LobeComfyUI } from '../index';
 import { AgentRuntimeError } from '../utils/createError';
 import { processModelList } from '../utils/modelParse';
-import { COMFYUI_ERROR_TYPES } from './constants';
+// Error types are now from AgentRuntimeErrorType
 import { ModelResolver } from './utils/modelResolver';
 import { WorkflowDetector } from './utils/workflowDetector';
-import { WorkflowRouter } from './utils/workflowRouter';
 
 // Mock the ComfyUI SDK
 vi.mock('@saintno/comfyui-sdk', () => ({
@@ -62,24 +61,237 @@ vi.mock('./utils/workflowDetector', () => ({
   },
 }));
 
-// Mock WorkflowRouter
-vi.mock('./utils/workflowRouter', () => ({
-  WorkflowRouter: {
-    getExactlySupportedModels: vi
-      .fn()
-      .mockReturnValue(['comfyui/flux-dev', 'comfyui/flux-schnell']),
-    getSupportedFluxVariants: vi.fn().mockReturnValue(['dev', 'schnell', 'kontext', 'krea']),
-    routeWorkflow: vi.fn().mockReturnValue({
+// Mock the workflows index that exports all builders
+vi.mock('./workflows', () => ({
+  buildFluxSchnellWorkflow: vi.fn().mockImplementation(() => ({
+    input: vi.fn().mockReturnThis(),
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
+    prompt: {
+      '1': {
+        _meta: { title: 'Checkpoint Loader' },
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: 'test.safetensors' },
+      },
+    },
+  })),
+  buildFluxDevWorkflow: vi.fn().mockImplementation(() => ({
+    input: vi.fn().mockReturnThis(),
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
+    prompt: {
+      '1': {
+        _meta: { title: 'Checkpoint Loader' },
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: 'test.safetensors' },
+      },
+    },
+  })),
+  buildFluxKontextWorkflow: vi.fn().mockImplementation(() => ({
+    input: vi.fn().mockReturnThis(),
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
+    prompt: {
+      '1': {
+        _meta: { title: 'Checkpoint Loader' },
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: 'test.safetensors' },
+      },
+    },
+  })),
+  buildFluxKreaWorkflow: vi.fn().mockImplementation(() => ({
+    input: vi.fn().mockReturnThis(),
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
+    prompt: {
+      '1': {
+        _meta: { title: 'Checkpoint Loader' },
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: 'test.safetensors' },
+      },
+    },
+  })),
+  buildSD35Workflow: vi.fn().mockImplementation(() => ({
+    input: vi.fn().mockReturnThis(),
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
+    prompt: {
+      '1': {
+        _meta: { title: 'Checkpoint Loader' },
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: 'test.safetensors' },
+      },
+    },
+  })),
+  buildSD35NoClipWorkflow: vi.fn().mockImplementation(() => ({
+    input: vi.fn().mockReturnThis(),
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
+    prompt: {
+      '1': {
+        _meta: { title: 'Checkpoint Loader' },
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: 'test.safetensors' },
+      },
+    },
+  })),
+}));
+
+// Mock individual workflow builders - ensure they always return a valid builder, never null
+vi.mock('./workflows/flux-schnell', () => ({
+  buildFluxSchnellWorkflow: vi.fn().mockImplementation(() => ({
+    input: vi.fn().mockReturnThis(),
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
+    prompt: {
+      '1': {
+        _meta: { title: 'Checkpoint Loader' },
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: 'test.safetensors' },
+      },
+    },
+  })),
+}));
+
+vi.mock('./workflows/flux-dev', () => ({
+  buildFluxDevWorkflow: vi.fn().mockImplementation(() => ({
+    input: vi.fn().mockReturnThis(),
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
+    prompt: {
+      '1': {
+        _meta: { title: 'Checkpoint Loader' },
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: 'test.safetensors' },
+      },
+    },
+  })),
+}));
+
+vi.mock('./workflows/flux-kontext', () => ({
+  buildFluxKontextWorkflow: vi.fn().mockImplementation(() => ({
+    input: vi.fn().mockReturnThis(),
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
+    prompt: {
+      '1': {
+        _meta: { title: 'Checkpoint Loader' },
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: 'test.safetensors' },
+      },
+    },
+  })),
+}));
+
+vi.mock('./workflows/flux-krea', () => ({
+  buildFluxKreaWorkflow: vi.fn().mockImplementation(() => ({
+    input: vi.fn().mockReturnThis(),
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
+    prompt: {
+      '1': {
+        _meta: { title: 'Checkpoint Loader' },
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: 'test.safetensors' },
+      },
+    },
+  })),
+}));
+
+vi.mock('./workflows/sd35', () => ({
+  buildSD35Workflow: vi.fn().mockImplementation(() => ({
+    input: vi.fn().mockReturnThis(),
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
+    prompt: {
+      '1': {
+        _meta: { title: 'Checkpoint Loader' },
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: 'test.safetensors' },
+      },
+    },
+  })),
+}));
+
+vi.mock('./workflows/sd35-no-clip', () => ({
+  buildSD35NoClipWorkflow: vi.fn().mockImplementation(() => ({
+    input: vi.fn().mockReturnThis(),
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
+    prompt: {
+      '1': {
+        _meta: { title: 'Checkpoint Loader' },
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: 'test.safetensors' },
+      },
+    },
+  })),
+}));
+
+// Mock WorkflowRouter before any other imports can load it
+vi.mock('./utils/workflowRouter', () => {
+  // Create a mock builder factory that always returns a valid workflow
+  const createMockBuilder = () => {
+    const builder = {
+      input: function () {
+        return this;
+      },
+      setInputNode: function () {
+        return this;
+      },
+      setOutputNode: function () {
+        return this;
+      },
       prompt: {
         '1': {
           _meta: { title: 'Checkpoint Loader' },
           class_type: 'CheckpointLoaderSimple',
-          inputs: { ckpt_name: 'flux-schnell.safetensors' },
+          inputs: { ckpt_name: 'test.safetensors' },
         },
       },
-    }),
-  },
-  WorkflowRoutingError: class WorkflowRoutingError extends Error {},
+    };
+    return builder;
+  };
+
+  class WorkflowRoutingError extends Error {
+    constructor(message?: string) {
+      super(message);
+      this.name = 'WorkflowRoutingError';
+    }
+  }
+
+  return {
+    WorkflowRouter: {
+      getExactlySupportedModels: () => ['comfyui/flux-dev', 'comfyui/flux-schnell'],
+      getSupportedFluxVariants: () => ['dev', 'schnell', 'kontext', 'krea'],
+      // This must ALWAYS return a valid workflow, never null
+      routeWorkflow: () => createMockBuilder(),
+    },
+    WorkflowRoutingError,
+  };
+});
+
+// Mock systemComponents
+vi.mock('./config/systemComponents', () => ({
+  getOptimalComponent: vi.fn().mockImplementation((type: string) => {
+    // Return mock components for testing
+    if (type === 't5') return 't5xxl_fp16.safetensors';
+    if (type === 'vae') return 'ae.safetensors';
+    if (type === 'clip') return 'clip_l.safetensors';
+    return 'default.safetensors';
+  }),
+  getAllComponentsWithNames: vi.fn().mockImplementation((options: any) => {
+    if (options?.type === 'clip') {
+      return [
+        { name: 'clip_l.safetensors', config: { priority: 1 } },
+        { name: 'clip_g.safetensors', config: { priority: 2 } },
+      ];
+    }
+    if (options?.type === 't5') {
+      return [{ name: 't5xxl_fp16.safetensors', config: { priority: 1 } }];
+    }
+    return [];
+  }),
 }));
 
 // Mock processModels utility
@@ -102,7 +314,7 @@ vi.mock('../utils/modelParse', () => ({
 
 const provider = 'comfyui';
 const bizErrorType = 'ComfyUIBizError';
-const emptyResultErrorType = COMFYUI_ERROR_TYPES.EMPTY_RESULT;
+const emptyResultErrorType = AgentRuntimeErrorType.ComfyUIEmptyResult;
 const serviceUnavailableErrorType = 'ComfyUIServiceUnavailable';
 const invalidErrorType = 'InvalidProviderAPIKey';
 const modelNotFoundErrorType = 'ModelNotFound';
@@ -207,11 +419,54 @@ describe('LobeComfyUI', () => {
     };
     (ModelResolver as Mock).mockImplementation(() => mockModelResolver);
 
-    // Setup WorkflowDetector default mock behavior
-    vi.spyOn(WorkflowDetector, 'detectModelType').mockReturnValue({
-      architecture: 'FLUX',
-      isSupported: true,
-      variant: 'schnell',
+    // Setup WorkflowDetector default mock behavior - make it smart about model names
+    vi.spyOn(WorkflowDetector, 'detectModelType').mockImplementation((modelFileName: string) => {
+      // Determine architecture and variant based on the model filename
+      if (modelFileName.includes('flux')) {
+        if (modelFileName.includes('dev')) {
+          return {
+            architecture: 'FLUX',
+            isSupported: true,
+            variant: 'dev',
+          };
+        }
+        if (modelFileName.includes('schnell')) {
+          return {
+            architecture: 'FLUX',
+            isSupported: true,
+            variant: 'schnell',
+          };
+        }
+        // Default FLUX
+        return {
+          architecture: 'FLUX',
+          isSupported: true,
+          variant: 'schnell',
+        };
+      }
+
+      if (modelFileName.includes('sd35')) {
+        return {
+          architecture: 'SD3' as const,
+          isSupported: true,
+          variant: 'sd35',
+        };
+      }
+
+      if (modelFileName.includes('sd') || modelFileName.includes('xl')) {
+        return {
+          architecture: 'SDXL' as const,
+          isSupported: true,
+          variant: undefined,
+        };
+      }
+
+      // Default for other models
+      return {
+        architecture: 'FLUX',
+        isSupported: true,
+        variant: 'schnell',
+      };
     });
 
     // Setup processModelList default mock behavior
@@ -1366,9 +1621,11 @@ describe('LobeComfyUI', () => {
         [],
         [],
       );
-      const routeWorkflowSpy = vi
-        .spyOn(WorkflowRouter, 'routeWorkflow')
-        .mockReturnValue(mockPromptBuilder);
+      // Get the mocked WorkflowRouter and update it to return our mock builder
+      const { WorkflowRouter: MockedWorkflowRouter } = await import('./utils/workflowRouter');
+      const originalRouteWorkflow = MockedWorkflowRouter.routeWorkflow;
+      MockedWorkflowRouter.routeWorkflow = vi.fn().mockReturnValue(mockPromptBuilder);
+      const routeWorkflowSpy = MockedWorkflowRouter.routeWorkflow;
 
       const mockResult = {
         images: {
@@ -1914,8 +2171,11 @@ describe('LobeComfyUI', () => {
         provider: 'comfyui',
       };
 
-      // Mock WorkflowRouter to throw ComfyUIWorkflowError
-      vi.spyOn(WorkflowRouter, 'routeWorkflow').mockImplementation(() => {
+      // Get the mocked WorkflowRouter
+      const { WorkflowRouter: MockedWorkflowRouter } = await import('./utils/workflowRouter');
+
+      // Override the routeWorkflow to throw ComfyUIWorkflowError
+      MockedWorkflowRouter.routeWorkflow = vi.fn(() => {
         throw workflowError;
       });
 
@@ -1930,7 +2190,7 @@ describe('LobeComfyUI', () => {
       await expect(instance.createImage(payload)).rejects.toEqual(workflowError);
 
       // Verify the workflow router was called
-      expect(WorkflowRouter.routeWorkflow).toHaveBeenCalled();
+      expect(MockedWorkflowRouter.routeWorkflow).toHaveBeenCalled();
     });
 
     it('should throw generic error when WorkflowRouter throws non-ComfyUIWorkflowError', async () => {
@@ -1950,8 +2210,11 @@ describe('LobeComfyUI', () => {
       // Create a generic error (not ComfyUIWorkflowError)
       const genericError = new Error('Generic workflow error');
 
-      // Mock WorkflowRouter to throw generic error
-      vi.spyOn(WorkflowRouter, 'routeWorkflow').mockImplementation(() => {
+      // Get the mocked WorkflowRouter
+      const { WorkflowRouter: MockedWorkflowRouter } = await import('./utils/workflowRouter');
+
+      // Override the routeWorkflow to throw generic error
+      MockedWorkflowRouter.routeWorkflow = vi.fn(() => {
         throw genericError;
       });
 
@@ -1972,7 +2235,7 @@ describe('LobeComfyUI', () => {
       });
 
       // Verify the workflow router was called
-      expect(WorkflowRouter.routeWorkflow).toHaveBeenCalled();
+      expect(MockedWorkflowRouter.routeWorkflow).toHaveBeenCalled();
     });
   });
 

@@ -1,13 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MockedFunction } from 'vitest';
 
-import { AgentRuntimeErrorType } from '../../error';
-import { AgentRuntimeError } from '../../utils/createError';
 import type { ModelConfig } from '../config/modelRegistry';
 // Import the mocked functions
 import { getAllModelNames, getModelConfig, getModelsByVariant } from '../config/modelRegistry';
 import {
   ModelResolver,
+  ModelResolverError,
   getAllModels,
   isValidModel,
   resolveModel,
@@ -34,27 +33,9 @@ vi.mock('debug', () => ({
   default: vi.fn(() => vi.fn()),
 }));
 
-// Mock the error parser
-vi.mock('../../utils/comfyuiErrorParser', () => ({
-  parseComfyUIErrorMessage: vi.fn().mockReturnValue({
-    error: { message: 'Mocked error' },
-    errorType: AgentRuntimeErrorType.ComfyUIBizError,
-  }),
-}));
-
-// Mock AgentRuntimeError.createImage
-vi.mock('../../utils/createError', () => ({
-  AgentRuntimeError: {
-    createImage: vi.fn(),
-  },
-}));
-
 const mockGetModelConfig = getModelConfig as MockedFunction<typeof getModelConfig>;
 const mockGetAllModelNames = getAllModelNames as MockedFunction<typeof getAllModelNames>;
 const mockGetModelsByVariant = getModelsByVariant as MockedFunction<typeof getModelsByVariant>;
-const mockAgentRuntimeErrorCreateImage = AgentRuntimeError.createImage as MockedFunction<
-  typeof AgentRuntimeError.createImage
->;
 
 describe('modelResolver', () => {
   beforeEach(() => {
@@ -144,18 +125,20 @@ describe('modelResolver', () => {
 
     it('should throw error when model is not found', () => {
       mockGetModelConfig.mockReturnValue(undefined);
-      const mockError = new Error('Model not found');
-      mockAgentRuntimeErrorCreateImage.mockImplementation(() => {
-        throw mockError;
-      });
 
-      expect(() => resolveModelStrict('non-existent-model.safetensors')).toThrow();
+      expect(() => resolveModelStrict('non-existent-model.safetensors')).toThrow(
+        ModelResolverError,
+      );
 
-      expect(mockAgentRuntimeErrorCreateImage).toHaveBeenCalledWith({
-        error: new Error('ModelNotFound'),
-        errorType: AgentRuntimeErrorType.ModelNotFound,
-        provider: 'comfyui',
-      });
+      try {
+        resolveModelStrict('non-existent-model.safetensors');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ModelResolverError);
+        expect((error as ModelResolverError).reason).toBe(
+          ModelResolverError.Reasons.MODEL_NOT_FOUND,
+        );
+        expect((error as ModelResolverError).message).toContain('non-existent-model.safetensors');
+      }
     });
   });
 
@@ -229,7 +212,7 @@ describe('modelResolver', () => {
             }),
         });
 
-        // Mock getModelsByVariant to return SD3.5 models sorted by priority
+        // Mock getModelsByVariant to return SD3.5 models
         const mockSd35Models = ['sd3.5_large.safetensors', 'sd3.5_medium.safetensors'];
         mockGetModelsByVariant.mockReturnValue(mockSd35Models);
 
@@ -237,6 +220,38 @@ describe('modelResolver', () => {
 
         expect(result).toBe('sd3.5_large.safetensors');
         expect(mockGetModelsByVariant).toHaveBeenCalledWith('sd35');
+      });
+
+      it('should map stable-diffusion-3.5-noclip to sd35-no-clip variant', async () => {
+        // Mock server response with no-clip SD3.5 model
+        const mockServerModels = [
+          'sd3.5_medium_incl_clips_t5xxlfp8scaled.safetensors',
+          'flux1-dev.safetensors',
+        ];
+
+        mockComfyApi.fetchApi.mockResolvedValue({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              CheckpointLoaderSimple: {
+                input: {
+                  required: {
+                    ckpt_name: [mockServerModels],
+                  },
+                },
+              },
+            }),
+        });
+
+        // Mock getModelsByVariant for sd35-no-clip variant
+        mockGetModelsByVariant.mockReturnValue([
+          'sd3.5_medium_incl_clips_t5xxlfp8scaled.safetensors',
+        ]);
+
+        const result = await resolver.resolveModelFileName('stable-diffusion-3.5-noclip');
+
+        expect(result).toBe('sd3.5_medium_incl_clips_t5xxlfp8scaled.safetensors');
+        expect(mockGetModelsByVariant).toHaveBeenCalledWith('sd35-no-clip');
       });
 
       it('should handle direct sd35 variant name', async () => {
@@ -345,18 +360,18 @@ describe('modelResolver', () => {
         const mockSd35Models = ['sd3.5_large.safetensors', 'sd3.5_medium.safetensors'];
         mockGetModelsByVariant.mockReturnValue(mockSd35Models);
 
-        const mockError = new Error('Model not found');
-        mockAgentRuntimeErrorCreateImage.mockImplementation(() => {
-          throw mockError;
-        });
+        await expect(resolver.resolveModelFileName('stable-diffusion-3.5')).rejects.toThrow(
+          ModelResolverError,
+        );
 
-        await expect(resolver.resolveModelFileName('stable-diffusion-3.5')).rejects.toThrow();
-
-        expect(mockAgentRuntimeErrorCreateImage).toHaveBeenCalledWith({
-          error: new Error('ModelNotFound'),
-          errorType: AgentRuntimeErrorType.ModelNotFound,
-          provider: 'comfyui',
-        });
+        try {
+          await resolver.resolveModelFileName('stable-diffusion-3.5');
+        } catch (error) {
+          expect(error).toBeInstanceOf(ModelResolverError);
+          expect((error as ModelResolverError).reason).toBe(
+            ModelResolverError.Reasons.MODEL_NOT_FOUND,
+          );
+        }
       });
 
       it('should handle other FLUX model variants correctly', async () => {
@@ -392,7 +407,7 @@ describe('modelResolver', () => {
     let resolver: ModelResolver;
 
     beforeEach(() => {
-      vi.clearAllMocks(); // Clear all mocks including AgentRuntimeError.createImage
+      vi.clearAllMocks();
       mockComfyApi = {
         fetchApi: vi.fn(),
       };
@@ -460,18 +475,16 @@ describe('modelResolver', () => {
           statusText: 'Unauthorized',
         });
 
-        const mockError = new Error('401 error');
-        mockAgentRuntimeErrorCreateImage.mockImplementation(() => {
-          throw mockError;
-        });
+        await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);
 
-        await expect(resolver.getAvailableModelFiles()).rejects.toThrow();
-
-        expect(mockAgentRuntimeErrorCreateImage).toHaveBeenCalledWith({
-          error: { message: 'HTTP 401: Unauthorized' },
-          errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
-          provider: 'comfyui',
-        });
+        try {
+          await resolver.getAvailableModelFiles();
+        } catch (error) {
+          expect(error).toBeInstanceOf(ModelResolverError);
+          expect((error as ModelResolverError).reason).toBe(
+            ModelResolverError.Reasons.INVALID_API_KEY,
+          );
+        }
       });
 
       it('should handle 403 forbidden error', async () => {
@@ -481,18 +494,16 @@ describe('modelResolver', () => {
           statusText: 'Forbidden',
         });
 
-        const mockError = new Error('403 error');
-        mockAgentRuntimeErrorCreateImage.mockImplementation(() => {
-          throw mockError;
-        });
+        await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);
 
-        await expect(resolver.getAvailableModelFiles()).rejects.toThrow();
-
-        expect(mockAgentRuntimeErrorCreateImage).toHaveBeenCalledWith({
-          error: { message: 'HTTP 403: Forbidden' },
-          errorType: AgentRuntimeErrorType.PermissionDenied,
-          provider: 'comfyui',
-        });
+        try {
+          await resolver.getAvailableModelFiles();
+        } catch (error) {
+          expect(error).toBeInstanceOf(ModelResolverError);
+          expect((error as ModelResolverError).reason).toBe(
+            ModelResolverError.Reasons.PERMISSION_DENIED,
+          );
+        }
       });
 
       it('should handle other HTTP errors as service unavailable', async () => {
@@ -502,55 +513,48 @@ describe('modelResolver', () => {
           statusText: 'Not Found',
         });
 
-        const mockError = new Error('404 error');
-        mockAgentRuntimeErrorCreateImage.mockImplementation(() => {
-          throw mockError;
-        });
+        await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);
 
-        await expect(resolver.getAvailableModelFiles()).rejects.toThrow();
-
-        expect(mockAgentRuntimeErrorCreateImage).toHaveBeenCalledWith({
-          error: { message: 'HTTP 404: Not Found' },
-          errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
-          provider: 'comfyui',
-        });
+        try {
+          await resolver.getAvailableModelFiles();
+        } catch (error) {
+          expect(error).toBeInstanceOf(ModelResolverError);
+          expect((error as ModelResolverError).reason).toBe(
+            ModelResolverError.Reasons.SERVICE_UNAVAILABLE,
+          );
+        }
       });
 
       it('should handle Response object thrown as error with 401 status', async () => {
         const responseError = new Response('Unauthorized', { status: 401 });
         mockComfyApi.fetchApi.mockRejectedValue(responseError);
 
-        const mockError = new Error('401 error');
-        mockAgentRuntimeErrorCreateImage.mockImplementation(() => {
-          throw mockError;
-        });
+        await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);
 
-        await expect(resolver.getAvailableModelFiles()).rejects.toThrow();
-
-        expect(mockAgentRuntimeErrorCreateImage).toHaveBeenCalledWith({
-          error: { message: 'HTTP 401: Unauthorized' },
-          errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
-          provider: 'comfyui',
-        });
+        try {
+          await resolver.getAvailableModelFiles();
+        } catch (error) {
+          expect(error).toBeInstanceOf(ModelResolverError);
+          expect((error as ModelResolverError).reason).toBe(
+            ModelResolverError.Reasons.INVALID_API_KEY,
+          );
+        }
       });
 
       it('should handle Response object thrown as error with 403 status', async () => {
         const responseError = new Response('Forbidden', { status: 403 });
         mockComfyApi.fetchApi.mockRejectedValue(responseError);
 
-        const mockError = new Error('403 error');
-        mockAgentRuntimeErrorCreateImage.mockImplementation(() => {
-          throw mockError;
-        });
+        await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);
 
-        await expect(resolver.getAvailableModelFiles()).rejects.toThrow();
-
-        // This covers lines 176-182: Response object with 403 status thrown directly
-        expect(mockAgentRuntimeErrorCreateImage).toHaveBeenCalledWith({
-          error: { message: 'HTTP 403: Forbidden' },
-          errorType: AgentRuntimeErrorType.PermissionDenied,
-          provider: 'comfyui',
-        });
+        try {
+          await resolver.getAvailableModelFiles();
+        } catch (error) {
+          expect(error).toBeInstanceOf(ModelResolverError);
+          expect((error as ModelResolverError).reason).toBe(
+            ModelResolverError.Reasons.PERMISSION_DENIED,
+          );
+        }
       });
 
       it('should handle error with Response object as cause (403 status)', async () => {
@@ -559,18 +563,16 @@ describe('modelResolver', () => {
         (error as any).cause = cause;
         mockComfyApi.fetchApi.mockRejectedValue(error);
 
-        const mockError = new Error('403 error');
-        mockAgentRuntimeErrorCreateImage.mockImplementation(() => {
-          throw mockError;
-        });
+        await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);
 
-        await expect(resolver.getAvailableModelFiles()).rejects.toThrow();
-
-        expect(mockAgentRuntimeErrorCreateImage).toHaveBeenCalledWith({
-          error: { message: 'Network error' },
-          errorType: AgentRuntimeErrorType.PermissionDenied,
-          provider: 'comfyui',
-        });
+        try {
+          await resolver.getAvailableModelFiles();
+        } catch (error) {
+          expect(error).toBeInstanceOf(ModelResolverError);
+          expect((error as ModelResolverError).reason).toBe(
+            ModelResolverError.Reasons.PERMISSION_DENIED,
+          );
+        }
       });
 
       it('should handle error with Response object as cause (401 status)', async () => {
@@ -579,18 +581,16 @@ describe('modelResolver', () => {
         (error as any).cause = cause;
         mockComfyApi.fetchApi.mockRejectedValue(error);
 
-        const mockError = new Error('401 error');
-        mockAgentRuntimeErrorCreateImage.mockImplementation(() => {
-          throw mockError;
-        });
+        await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);
 
-        await expect(resolver.getAvailableModelFiles()).rejects.toThrow();
-
-        expect(mockAgentRuntimeErrorCreateImage).toHaveBeenCalledWith({
-          error: { message: 'Network error' },
-          errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
-          provider: 'comfyui',
-        });
+        try {
+          await resolver.getAvailableModelFiles();
+        } catch (error) {
+          expect(error).toBeInstanceOf(ModelResolverError);
+          expect((error as ModelResolverError).reason).toBe(
+            ModelResolverError.Reasons.INVALID_API_KEY,
+          );
+        }
       });
 
       it('should throw error when no models are available', async () => {
@@ -606,18 +606,16 @@ describe('modelResolver', () => {
             }),
         });
 
-        const mockError = new Error('No models');
-        mockAgentRuntimeErrorCreateImage.mockImplementation(() => {
-          throw mockError;
-        });
+        await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);
 
-        await expect(resolver.getAvailableModelFiles()).rejects.toThrow();
-
-        expect(mockAgentRuntimeErrorCreateImage).toHaveBeenCalledWith({
-          error: { message: 'No models available on ComfyUI server' },
-          errorType: AgentRuntimeErrorType.ModelNotFound,
-          provider: 'comfyui',
-        });
+        try {
+          await resolver.getAvailableModelFiles();
+        } catch (error) {
+          expect(error).toBeInstanceOf(ModelResolverError);
+          expect((error as ModelResolverError).reason).toBe(
+            ModelResolverError.Reasons.MODEL_NOT_FOUND,
+          );
+        }
       });
     });
 
@@ -737,7 +735,7 @@ describe('modelResolver', () => {
 
       it('should re-throw connection errors', async () => {
         const connectionError = {
-          errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
+          errorType: 'SOME_CONNECTION_ERROR',
         };
 
         // Mock the fetchApi to throw a connection error
@@ -871,25 +869,24 @@ describe('modelResolver', () => {
             }),
         });
 
-        const mockError = new Error('Not found');
-        mockAgentRuntimeErrorCreateImage.mockImplementation(() => {
-          throw mockError;
-        });
+        await expect(resolver.resolveModelFileName('unknown-model')).rejects.toThrow(
+          ModelResolverError,
+        );
 
-        await expect(resolver.resolveModelFileName('unknown-model')).rejects.toThrow();
-
-        expect(mockAgentRuntimeErrorCreateImage).toHaveBeenCalledWith({
-          error: new Error('ModelNotFound'),
-          errorType: AgentRuntimeErrorType.ModelNotFound,
-          provider: 'comfyui',
-        });
+        try {
+          await resolver.resolveModelFileName('unknown-model');
+        } catch (error) {
+          expect(error).toBeInstanceOf(ModelResolverError);
+          expect((error as ModelResolverError).reason).toBe(
+            ModelResolverError.Reasons.MODEL_NOT_FOUND,
+          );
+        }
       });
     });
 
     describe('Coverage Completion Tests', () => {
       beforeEach(() => {
         // Reset all mocks before each test
-        mockAgentRuntimeErrorCreateImage.mockReset();
         mockComfyApi.fetchApi.mockReset();
         mockGetModelConfig.mockReset();
         mockGetAllModelNames.mockReset();
@@ -909,23 +906,16 @@ describe('modelResolver', () => {
 
         mockComfyApi.fetchApi.mockRejectedValue(errorWithCause);
 
-        // Mock AgentRuntimeError.createImage to return an actual error
-        const mockAgentError = {
-          errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
-          provider: 'comfyui',
-        };
-        mockAgentRuntimeErrorCreateImage.mockImplementation(() => {
-          const error = new Error('Mocked agent runtime error') as any;
-          error.errorType = mockAgentError.errorType;
-          error.provider = mockAgentError.provider;
-          throw error;
-        });
+        await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);
 
-        // This should trigger lines 192-195: error.cause status handling
-        await expect(resolver.getAvailableModelFiles()).rejects.toMatchObject({
-          errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
-          provider: 'comfyui',
-        });
+        try {
+          await resolver.getAvailableModelFiles();
+        } catch (error) {
+          expect(error).toBeInstanceOf(ModelResolverError);
+          expect((error as ModelResolverError).reason).toBe(
+            ModelResolverError.Reasons.INVALID_API_KEY,
+          );
+        }
 
         expect(mockComfyApi.fetchApi).toHaveBeenCalledWith('/object_info');
       });
@@ -943,23 +933,16 @@ describe('modelResolver', () => {
 
         mockComfyApi.fetchApi.mockRejectedValue(errorWithCause);
 
-        // Mock AgentRuntimeError.createImage to return an actual error
-        const mockAgentError = {
-          errorType: AgentRuntimeErrorType.PermissionDenied,
-          provider: 'comfyui',
-        };
-        mockAgentRuntimeErrorCreateImage.mockImplementation(() => {
-          const error = new Error('Mocked agent runtime error') as any;
-          error.errorType = mockAgentError.errorType;
-          error.provider = mockAgentError.provider;
-          throw error;
-        });
+        await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);
 
-        // This should trigger lines 196-202: error.cause status 403 handling
-        await expect(resolver.getAvailableModelFiles()).rejects.toMatchObject({
-          errorType: AgentRuntimeErrorType.PermissionDenied,
-          provider: 'comfyui',
-        });
+        try {
+          await resolver.getAvailableModelFiles();
+        } catch (error) {
+          expect(error).toBeInstanceOf(ModelResolverError);
+          expect((error as ModelResolverError).reason).toBe(
+            ModelResolverError.Reasons.PERMISSION_DENIED,
+          );
+        }
 
         expect(mockComfyApi.fetchApi).toHaveBeenCalledWith('/object_info');
       });

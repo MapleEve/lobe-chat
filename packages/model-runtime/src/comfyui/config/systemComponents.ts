@@ -1,13 +1,11 @@
 /**
  * System Components Registry Configuration
- * FLUX模型系统编码器组件配置 (5个)
  */
-import { AgentRuntimeErrorType } from '../../error';
-import { AgentRuntimeError } from '../../utils/createError';
+import { ConfigError } from '../errors';
 
 export interface ComponentConfig {
   /** Model family this component is designed for */
-  modelFamily: 'FLUX';
+  modelFamily: 'FLUX' | 'SD3';
   /** Priority level: 1=Essential, 2=Standard, 3=Optional */
   priority: number;
   /** Component type: vae, clip, or t5 encoder */
@@ -28,6 +26,12 @@ export const SYSTEM_COMPONENTS: Record<string, ComponentConfig> = {
 
   'clip_l.safetensors': {
     modelFamily: 'FLUX',
+    priority: 1,
+    type: 'clip',
+  },
+
+  'clip_g.safetensors': {
+    modelFamily: 'SD3',
     priority: 1,
     type: 'clip',
   },
@@ -112,7 +116,7 @@ export function getAllComponentsWithNames(options?: {
   modelFamily?: ComponentConfig['modelFamily'];
   priority?: number;
   type?: ComponentConfig['type'];
-}): Array<{ config: ComponentConfig, name: string; }> {
+}): Array<{ config: ComponentConfig; name: string }> {
   return Object.entries(SYSTEM_COMPONENTS)
     .filter(
       ([, config]) =>
@@ -132,9 +136,11 @@ export function getOptimalComponent(type: ComponentConfig['type']): string {
   );
 
   if (components.length === 0) {
-    throw AgentRuntimeError.createError(AgentRuntimeErrorType.ModelNotFound, {
-      error: `No ${type} components configured in system`,
-    });
+    throw new ConfigError(
+      `No ${type} components configured in system`,
+      ConfigError.Reasons.MISSING_CONFIG,
+      { type },
+    );
   }
 
   return components[0].name;

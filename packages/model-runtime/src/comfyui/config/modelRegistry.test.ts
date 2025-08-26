@@ -34,9 +34,16 @@ describe('ModelRegistry', () => {
         expect(config.priority).toBeGreaterThan(0);
 
         // Variant should be one of the allowed values
-        expect(['dev', 'schnell', 'kontext', 'krea', 'fill', 'redux', 'sd35']).toContain(
-          config.variant,
-        );
+        expect([
+          'dev',
+          'schnell',
+          'kontext',
+          'krea',
+          'fill',
+          'redux',
+          'sd35',
+          'sd35-no-clip',
+        ]).toContain(config.variant);
 
         // Model family should be supported
         expect(['FLUX', 'SD1', 'SDXL', 'SD3']).toContain(config.modelFamily);
@@ -322,7 +329,7 @@ describe('ModelRegistry', () => {
       expect(priority3Models.length).toBeGreaterThan(0);
 
       // Priority 1 should be official models
-      expect(priority1Models.length).toBe(5); // Actual count based on current registry
+      expect(priority1Models.length).toBe(7); // Actual count based on current registry
     });
 
     it('should have valid file extensions', () => {

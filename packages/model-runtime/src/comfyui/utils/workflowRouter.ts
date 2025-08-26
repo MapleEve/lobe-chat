@@ -1,12 +1,15 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { AgentRuntimeErrorType } from '../../error';
-import { AgentRuntimeError } from '../../utils/createError';
+import { WorkflowError } from '../errors';
 import { buildFluxDevWorkflow } from '../workflows/flux-dev';
 import { buildFluxKontextWorkflow } from '../workflows/flux-kontext';
 import { buildFluxKreaWorkflow } from '../workflows/flux-krea';
 import { buildFluxSchnellWorkflow } from '../workflows/flux-schnell';
 import { buildSD35Workflow } from '../workflows/sd35';
+import { buildSD35NoClipWorkflow } from '../workflows/sd35-no-clip';
+
+// Re-export for backward compatibility
+export { WorkflowError as WorkflowBuilderError } from '../errors';
 
 /**
  * Workflow type detection result interface / 工作流类型检测结果接口
@@ -19,7 +22,7 @@ export interface WorkflowDetectionResult {
   /** Whether this model is supported / 是否支持的模型 */
   isSupported: boolean;
   /** Variant type / 变体类型 */
-  variant?: 'dev' | 'schnell' | 'kontext' | 'krea' | 'sd35';
+  variant?: 'dev' | 'schnell' | 'kontext' | 'krea' | 'sd35' | 'sd35-no-clip';
 }
 
 /**
@@ -46,17 +49,19 @@ export class WorkflowRouter {
     'flux-krea-dev': buildFluxKreaWorkflow,
     'flux-schnell': buildFluxSchnellWorkflow,
     'sd35': buildSD35Workflow,
+    'sd35-no-clip': buildSD35NoClipWorkflow,
   };
 
   /**
    * FLUX variant to builder mapping / FLUX 变体到构建器的映射
    */
   private static readonly VARIANT_BUILDERS: Record<string, WorkflowBuilderFunction> = {
-    dev: buildFluxDevWorkflow,
-    kontext: buildFluxKontextWorkflow,
-    krea: buildFluxKreaWorkflow,
-    schnell: buildFluxSchnellWorkflow,
-    sd35: buildSD35Workflow,
+    'dev': buildFluxDevWorkflow,
+    'kontext': buildFluxKontextWorkflow,
+    'krea': buildFluxKreaWorkflow,
+    'schnell': buildFluxSchnellWorkflow,
+    'sd35': buildSD35Workflow,
+    'sd35-no-clip': buildSD35NoClipWorkflow,
   };
 
   /**
@@ -77,39 +82,56 @@ export class WorkflowRouter {
   ): PromptBuilder<any, any, any> {
     // Validate input parameters / 验证输入参数
     if (!modelId || !detectionResult) {
-      throw AgentRuntimeError.createError(AgentRuntimeErrorType.ComfyUIWorkflowError, {
-        message: 'Invalid parameters: modelId and detectionResult are required',
-        modelId,
-      });
+      throw new WorkflowError(
+        'Invalid parameters: modelId and detectionResult are required',
+        WorkflowError.Reasons.INVALID_CONFIG,
+        { modelId },
+      );
     }
 
     // Check if supported / 检查是否支持
     if (!detectionResult.isSupported) {
-      throw AgentRuntimeError.createError(AgentRuntimeErrorType.ComfyUIWorkflowError, {
-        message: `Unsupported model architecture: ${detectionResult.architecture} for model ${modelId}`,
-        modelId,
-      });
+      throw new WorkflowError(
+        `Unsupported model architecture: ${detectionResult.architecture} for model ${modelId}`,
+        WorkflowError.Reasons.UNSUPPORTED_MODEL,
+        { architecture: detectionResult.architecture, modelId },
+      );
     }
 
     // 1. First try exact model name matching / 首先尝试精确模型名称匹配
     const exactBuilder = this.EXACT_MODEL_BUILDERS[modelId];
     if (exactBuilder) {
-      return exactBuilder(modelFileName, params);
+      try {
+        return exactBuilder(modelFileName, params);
+      } catch (error) {
+        if (error instanceof WorkflowError) {
+          // Re-throw workflow errors - they will be caught at the main entry / 重新抛出工作流错误 - 将在主入口捕获
+          throw error;
+        }
+        throw error; // Re-throw other errors / 其他错误继续抛出
+      }
     }
 
     // 2. Then try variant matching / 然后尝试变体匹配
     if (detectionResult.variant && this.VARIANT_BUILDERS[detectionResult.variant]) {
       const variantBuilder = this.VARIANT_BUILDERS[detectionResult.variant];
-      return variantBuilder(modelFileName, params);
+      try {
+        return variantBuilder(modelFileName, params);
+      } catch (error) {
+        if (error instanceof WorkflowError) {
+          // Re-throw workflow errors - they will be caught at the main entry / 重新抛出工作流错误 - 将在主入口捕获
+          throw error;
+        }
+        throw error; // Re-throw other errors / 其他错误继续抛出
+      }
     }
 
     // 3. If all fail to match, throw error / 如果都无法匹配，抛出错误
-    throw AgentRuntimeError.createError(AgentRuntimeErrorType.ComfyUIWorkflowError, {
-      message:
-        `No workflow builder found for model ${modelId} ` +
-        `(architecture: ${detectionResult.architecture}, variant: ${detectionResult.variant || 'unknown'})`,
-      modelId,
-    });
+    throw new WorkflowError(
+      `No workflow builder found for model ${modelId} (architecture: ${detectionResult.architecture}, variant: ${detectionResult.variant || 'unknown'})`,
+      WorkflowError.Reasons.UNSUPPORTED_MODEL,
+      { architecture: detectionResult.architecture, modelId, variant: detectionResult.variant },
+    );
   }
 
   /**

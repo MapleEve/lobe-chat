@@ -45,7 +45,7 @@ packages/model-runtime/src/comfyui/
 ```typescript
 export const MODEL_REGISTRY: Record<string, ModelConfig> = {
   // 现有模型...
-  
+
   // 添加新模型
   'your-new-model.safetensors': {
     priority: 2, // 1=官方, 2=企业, 3=社区
@@ -53,7 +53,7 @@ export const MODEL_REGISTRY: Record<string, ModelConfig> = {
     modelFamily: 'FLUX', // 'FLUX' | 'SD3'
     recommendedDtype: 'default', // 'default' | 'fp8_e4m3fn' | 'fp8_e5m2'
   },
-  
+
   // 量化版本
   'your-new-model-fp8.safetensors': {
     priority: 2,
@@ -88,7 +88,7 @@ describe('New Model Registration', () => {
     expect(config?.variant).toBe('dev');
     expect(config?.modelFamily).toBe('FLUX');
   });
-  
+
   test('should support priority-based queries', () => {
     const priority1Models = getAllModelNames().filter(name => {
       const config = getModelConfig(name);
@@ -103,29 +103,33 @@ describe('New Model Registration', () => {
 
 <Callout type={'warning'}>
   **重要！工作流节点来源说明**
-  
-  工作流中的节点结构不是凭空创建的，而是来自ComfyUI的原生API格式：
-  1. 在ComfyUI界面中设计工作流
-  2. 使用"Export (API Format)"导出JSON
-  3. 将JSON结构复制到TypeScript文件中
-  4. 用PromptBuilder包装此JSON结构
+
+  工作流中的节点结构不是凭空创建的，而是来自 ComfyUI 的原生 API 格式：
+
+  1. 在 ComfyUI 界面中设计工作流
+  2. 使用 "Export (API Format)" 导出 JSON
+  3. 将 JSON 结构复制到 TypeScript 文件中
+  4. 用 PromptBuilder 包装此 JSON 结构
 </Callout>
 
 ### 1. 获取工作流节点结构
 
-#### 步骤1：在ComfyUI UI中创建工作流
-1. 打开ComfyUI界面
+#### 步骤 1：在 ComfyUI UI 中创建工作流
+
+1. 打开 ComfyUI 界面
 2. 拖拽节点搭建所需的工作流
 3. 连接各个节点的输入输出
 4. 测试工作流确保正常运行
 
-#### 步骤2：导出API格式
-1. 在ComfyUI界面右键点击空白处
-2. 选择"Export (API Format)"
-3. 复制生成的JSON结构
+#### 步骤 2：导出 API 格式
 
-#### 步骤3：理解节点结构
-导出的JSON具有以下关键特征：
+1. 在 ComfyUI 界面右键点击空白处
+2. 选择 "Export (API Format)"
+3. 复制生成的 JSON 结构
+
+#### 步骤 3：理解节点结构
+
+导出的 JSON 具有以下关键特征：
 
 ```typescript
 // 来自ComfyUI "Export (API Format)"的原生格式
@@ -150,10 +154,11 @@ const workflow = {
 ```
 
 **关键要素说明：**
-- **节点ID**: 必须使用字符串格式（'1', '2', '3'...）
-- **连接格式**: `['1', 1]`表示节点1的输出端口1
-- **class_type**: 直接对应ComfyUI节点库中的具体节点类型
-- **输出端口**: 0=第一个输出，1=第二个输出，以此类推
+
+- **节点 ID**: 必须使用字符串格式（'1', '2', '3'...）
+- **连接格式**: `['1', 1]`表示节点 1 的输出端口 1
+- **class\_type**: 直接对应 ComfyUI 节点库中的具体节点类型
+- **输出端口**: 0 = 第一个输出，1 = 第二个输出，以此类推
 
 ### 2. 工作流模板结构
 
@@ -253,9 +258,9 @@ export function buildYourWorkflow(
 }
 ```
 
-### 3. SD3.5工作流示例参考
+### 3. SD3.5 工作流示例参考
 
-查看`workflows/sd35.ts`作为实际工作流的参考实现：
+查看`workflows/sd35-no-clip.ts`作为实际工作流的参考实现：
 
 ```typescript
 // 完整的SD3.5工作流展示了标准的7节点结构
@@ -264,9 +269,9 @@ const workflow = {
   '2': { class_type: 'CLIPTextEncode', inputs: { clip: ['1', 1], text: prompt } },
   '3': { class_type: 'CLIPTextEncode', inputs: { clip: ['1', 1], text: negativePrompt } },
   '4': { class_type: 'EmptyLatentImage', inputs: { width, height, batch_size: 1 } },
-  '5': { class_type: 'KSampler', inputs: { 
-    model: ['1', 0], positive: ['2', 0], negative: ['3', 0], 
-    latent_image: ['4', 0], seed, steps, cfg 
+  '5': { class_type: 'KSampler', inputs: {
+    model: ['1', 0], positive: ['2', 0], negative: ['3', 0],
+    latent_image: ['4', 0], seed, steps, cfg
   }},
   '6': { class_type: 'VAEDecode', inputs: { samples: ['5', 0], vae: ['1', 2] } },
   '7': { class_type: 'SaveImage', inputs: { images: ['6', 0] } },
@@ -287,14 +292,14 @@ export class WorkflowRouter {
     modelFileName: string,
     params: Record<string, any>
   ): PromptBuilder<any, any, any> {
-    
+
     // 现有路由逻辑...
-    
+
     // 添加新工作流路由
     if (detectionResult.variant === 'your_variant') {
       return buildYourWorkflow(model, modelFileName, params);
     }
-    
+
     // 默认处理...
   }
 }
@@ -332,7 +337,7 @@ describe('Your Custom Workflow', () => {
 ```typescript
 export const LORA_REGISTRY: Record<string, LoRAConfig> = {
   // 现有LoRA...
-  
+
   'your-custom-lora.safetensors': {
     compatibleVariants: ['dev', 'schnell'], // 兼容的模型变体
     modelFamily: 'FLUX',
@@ -369,7 +374,7 @@ const textEncoder = new ComfyNodeBuilder('CLIPTextEncode')
 ```typescript
 export const CONTROLNET_REGISTRY: Record<string, ControlNetConfig> = {
   // 现有模型...
-  
+
   'flux-controlnet-pose-v1.safetensors': {
     compatibleVariants: ['dev'],
     modelFamily: 'FLUX',
@@ -494,6 +499,7 @@ describe('ComfyUI Integration', () => {
 ### 2. 文档更新
 
 更新相关文档文件：
+
 - `docs/usage/providers/comfyui.zh-CN.mdx` - 用户文档
 - `docs/development/basic/comfyui-development.zh-CN.mdx` - 开发文档
 - README 和 CHANGELOG

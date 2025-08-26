@@ -15,7 +15,7 @@ export interface LoRAConfig {
 /* eslint-disable sort-keys-fix/sort-keys-fix */
 export const LORA_REGISTRY: Record<string, LoRAConfig> = {
   // ===================================================================
-  // === XLabs-AI Official FLUX LoRA Adapters (原有6个，保持不变) ===
+  // === XLabs-AI Official FLUX LoRA Adapters  ===
   // === All Priority 1 (Official), All Compatible with FLUX.1-dev ===
   // ===================================================================
 
@@ -55,12 +55,7 @@ export const LORA_REGISTRY: Record<string, LoRAConfig> = {
     priority: 1,
   },
 
-  // ===================================================================
-  // === RFC-128 权威数据源扩展：新增 14 个 LoRA 模型 ===
-  // === 基于 FLUX模型合并验证表格-基于项目真实底模-2025-08-23.md ===
-  // ===================================================================
-
-  // === XLabs-AI Professional LoRA (新发现) ===
+  // === XLabs-AI Professional LoRA ===
   'flux-realism-lora.safetensors': {
     compatibleVariants: ['dev'],
     modelFamily: 'FLUX', // XLabs-AI Official

@@ -34,8 +34,8 @@ describe('SystemComponents', () => {
         expect(config).toHaveProperty('priority');
         expect(config).toHaveProperty('type');
 
-        // ModelFamily should be FLUX
-        expect(config.modelFamily).toBe('FLUX');
+        // ModelFamily should be FLUX or SD3
+        expect(['FLUX', 'SD3']).toContain(config.modelFamily);
 
         // Priority should be a positive number
         expect(typeof config.priority).toBe('number');
@@ -76,8 +76,8 @@ describe('SystemComponents', () => {
       expect(types).toContain('t5');
     });
 
-    it('should have exactly 6 components', () => {
-      expect(Object.keys(SYSTEM_COMPONENTS).length).toBe(6);
+    it('should have exactly 7 components', () => {
+      expect(Object.keys(SYSTEM_COMPONENTS).length).toBe(7);
     });
   });
 
@@ -154,7 +154,7 @@ describe('SystemComponents', () => {
     it('should return all components when no options provided', () => {
       const allConfigs = getAllComponentConfigs();
       expect(allConfigs.length).toBe(Object.keys(SYSTEM_COMPONENTS).length);
-      expect(allConfigs.length).toBe(6);
+      expect(allConfigs.length).toBe(7);
     });
 
     it('should filter by type correctly', () => {
@@ -171,7 +171,7 @@ describe('SystemComponents', () => {
       });
 
       const clipConfigs = getAllComponentConfigs({ type: 'clip' });
-      expect(clipConfigs.length).toBe(1);
+      expect(clipConfigs.length).toBe(2);
       clipConfigs.forEach((config) => {
         expect(config.type).toBe('clip');
       });
@@ -179,7 +179,7 @@ describe('SystemComponents', () => {
 
     it('should filter by priority correctly', () => {
       const priority1Configs = getAllComponentConfigs({ priority: 1 });
-      expect(priority1Configs.length).toBe(3); // 3 priority 1 components
+      expect(priority1Configs.length).toBe(4); // 4 priority 1 components
       priority1Configs.forEach((config) => {
         expect(config.priority).toBe(1);
       });
@@ -199,7 +199,7 @@ describe('SystemComponents', () => {
 
     it('should filter by modelFamily correctly', () => {
       const fluxConfigs = getAllComponentConfigs({ modelFamily: 'FLUX' });
-      expect(fluxConfigs.length).toBe(6); // All components are FLUX
+      expect(fluxConfigs.length).toBe(6); // 6 components are FLUX
       fluxConfigs.forEach((config) => {
         expect(config.modelFamily).toBe('FLUX');
       });
@@ -226,7 +226,7 @@ describe('SystemComponents', () => {
   describe('getAllComponentsWithNames', () => {
     it('should return all components with names when no options provided', () => {
       const allWithNames = getAllComponentsWithNames();
-      expect(allWithNames.length).toBe(6);
+      expect(allWithNames.length).toBe(7);
 
       allWithNames.forEach((item) => {
         expect(item).toHaveProperty('name');
@@ -247,7 +247,7 @@ describe('SystemComponents', () => {
 
     it('should filter by priority correctly', () => {
       const priority1WithNames = getAllComponentsWithNames({ priority: 1 });
-      expect(priority1WithNames.length).toBe(3);
+      expect(priority1WithNames.length).toBe(4);
 
       const names = priority1WithNames.map((item) => item.name);
       expect(names).toContain('ae.safetensors');
@@ -338,7 +338,7 @@ describe('SystemComponents', () => {
       );
 
       // Should have components in each priority group
-      expect(priority1Components.length).toBe(3);
+      expect(priority1Components.length).toBe(4);
       expect(priority2Components.length).toBe(2);
       expect(priority3Components.length).toBe(1);
     });
@@ -354,13 +354,13 @@ describe('SystemComponents', () => {
       expect(hasT5).toBe(true);
     });
 
-    it('should have exactly one VAE and one CLIP component', () => {
+    it('should have exactly one VAE and two CLIP components', () => {
       const configs = Object.values(SYSTEM_COMPONENTS);
       const vaeCount = configs.filter((config) => config.type === 'vae').length;
       const clipCount = configs.filter((config) => config.type === 'clip').length;
 
       expect(vaeCount).toBe(1);
-      expect(clipCount).toBe(1);
+      expect(clipCount).toBe(2);
     });
 
     it('should have multiple T5 encoder options', () => {
@@ -392,8 +392,8 @@ describe('SystemComponents', () => {
       // Non-existent model family should return empty array
       expect(nonExistentComponents.length).toBe(0);
 
-      // All components should equal FLUX components (since all are FLUX)
-      expect(allComponents.length).toBe(fluxComponents.length);
+      // All components should be greater than FLUX components (since we also have SD3 components)
+      expect(allComponents.length).toBeGreaterThan(fluxComponents.length);
     });
 
     it('should return empty array for non-existent modelFamily', () => {

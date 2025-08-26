@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   COMFYUI_DEFAULTS,
-  COMFYUI_ERROR_TYPES,
+  DEFAULT_NEGATIVE_PROMPT,
   FLUX_MODEL_CONFIG,
   STYLE_KEYWORDS,
   WORKFLOW_DEFAULTS,
@@ -200,28 +200,6 @@ describe('ComfyUI Constants', () => {
     it('should return readonly array', () => {
       const allKeywords = getAllStyleKeywords();
       expect(Object.isFrozen(allKeywords)).toBe(false); // readonly in TypeScript, not frozen in runtime
-    });
-  });
-
-  describe('COMFYUI_ERROR_TYPES', () => {
-    it('should have all required error types', () => {
-      expect(COMFYUI_ERROR_TYPES.CONNECTION_FAILED).toBe('ComfyUIConnectionFailed');
-      expect(COMFYUI_ERROR_TYPES.EMPTY_RESULT).toBe('ComfyUIEmptyResult');
-      expect(COMFYUI_ERROR_TYPES.INVALID_CREDENTIALS).toBe('ComfyUIInvalidCredentials');
-      expect(COMFYUI_ERROR_TYPES.UPLOAD_FAILED).toBe('ComfyUIUploadFailed');
-      expect(COMFYUI_ERROR_TYPES.WORKFLOW_FAILED).toBe('ComfyUIWorkflowFailed');
-    });
-
-    it('should be a readonly object (TypeScript as const)', () => {
-      // `as const` provides readonly types in TypeScript, not runtime freezing
-      expect(typeof COMFYUI_ERROR_TYPES).toBe('object');
-      expect(COMFYUI_ERROR_TYPES).toBeDefined();
-    });
-
-    it('should have unique error type values', () => {
-      const values = Object.values(COMFYUI_ERROR_TYPES);
-      const uniqueValues = [...new Set(values)];
-      expect(values.length).toBe(uniqueValues.length);
     });
   });
 
