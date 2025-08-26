@@ -12,29 +12,59 @@ tags:
 
 本指南将帮助开发者扩展 LobeChat 的 ComfyUI 集成，包括添加新模型、创建工作流、开发 LoRA 和 ControlNet 支持。
 
-## 架构概览
+## 新架构概览
 
-LobeChat ComfyUI 集成采用配置驱动的模块化架构：
+LobeChat ComfyUI 集成采用分层配置驱动的模块化架构，具备分层错误处理、动态检测和 O (1) 性能优化：
 
 ```
 packages/model-runtime/src/comfyui/
-├── config/                    # 配置注册表
-│   ├── modelRegistry.ts       # 127个模型配置
-│   ├── systemComponents.ts    # 6个系统组件
-│   ├── loraRegistry.ts        # 23个LoRA适配器
-│   └── controlnetRegistry.ts  # 3个ControlNet模型
-├── workflows/                 # 工作流模板
+├── config/                    # 四大配置注册表系统
+│   ├── modelRegistry.ts       # 127个FLUX/SD3模型配置（158个变体）
+│   ├── systemComponents.ts    # 6个系统组件（VAE/CLIP/T5）
+│   ├── loraRegistry.ts        # 23个LoRA适配器（官方+专业+社区）
+│   └── controlnetRegistry.ts  # 3个XLabs-AI ControlNet模型
+├── workflows/                 # 智能工作流系统
 │   ├── flux-dev.ts           # FLUX Dev工作流
 │   ├── flux-schnell.ts       # FLUX Schnell工作流
 │   ├── flux-kontext.ts       # FLUX Kontext工作流
 │   ├── flux-krea.ts          # FLUX Krea工作流
-│   └── sd35.ts               # SD3.5工作流
-└── utils/                     # 工具类
-    ├── modelResolver.ts       # 模型解析器
-    ├── workflowRouter.ts      # 工作流路由
-    ├── workflowDetector.ts    # 工作流检测
-    └── promptSplitter.ts      # 提示词分割
+│   ├── sd35.ts               # SD3.5动态编码器工作流
+│   └── sd35-no-clip.ts       # SD3.5内置编码器工作流
+├── utils/                     # 高性能工具层
+│   ├── modelResolver.ts       # O(1)模型解析器 + 智能缓存
+│   ├── workflowRouter.ts      # 双层路由系统（精确+变体）
+│   ├── workflowDetector.ts    # 模型架构检测器
+│   ├── promptSplitter.ts      # 提示词智能分割
+│   └── weightDType.ts         # 权重数据类型优化
+└── errors/                    # 分层错误处理系统
+    └── index.ts               # 四类内部错误（Config/Workflow/Utils/ModelResolver）
 ```
+
+### 新架构核心特性
+
+#### 🚀 性能优化
+
+- **O (1) 模型查找**: 哈希表替代线性搜索，查找速度提升 10x+
+- **智能缓存系统**: 1 分钟 TTL 缓存，减少网络开销
+- **优先级自动排序**: 基于模型注册表的智能选择
+
+#### 🛡️ 错误处理升级
+
+- **分层错误架构**: 4 类专用错误类型，精确定位问题
+- **HTTP 状态映射**: 自动分类 401/403/5xx 错误
+- **详细错误上下文**: 包含完整调试信息
+
+#### 🧠 智能检测系统
+
+- **SD3.5 动态编码器**: 自动检测 3 种编码器配置（Triple/Dual/T5）
+- **模型架构识别**: 自动识别 FLUX/SD3 模型家族
+- **兼容性验证**: LoRA/ControlNet 兼容性自动检查
+
+#### 📊 配置驱动设计
+
+- **158 个模型变体**: 完整的 FLUX/SD3.5 生态支持
+- **三级优先级系统**: 官方 (1) > 企业 (2) > 社区 (3)
+- **动态回退机制**: 智能选择最佳可用模型
 
 ## 添加新模型
 
@@ -1066,33 +1096,201 @@ describe('ComfyUI Integration', () => {
 - `docs/development/basic/comfyui-development.zh-CN.mdx` - 开发文档
 - README 和 CHANGELOG
 
-### 3. 示例代码
+### 3. 新架构示例代码
 
-提供完整的使用示例：
+展示新架构的完整使用流程：
+
+#### 3.1 基础图像生成
 
 ```typescript
-// 使用新功能的完整示例
+import { LobeComfyUI } from '@/libs/model-runtime/comfyui';
+
+// 初始化ComfyUI客户端
 const comfyUI = new LobeComfyUI({
   baseURL: process.env.COMFYUI_BASE_URL,
   authType: 'bearer',
   apiKey: process.env.COMFYUI_API_KEY,
 });
 
-// 使用新模型生成图像
+// 使用FLUX Dev模型生成图像
 const result = await comfyUI.createImage({
-  model: 'your-new-model',
+  model: 'flux-dev', // 自动路由到最佳FLUX Dev模型
   params: {
     prompt: '美丽的风景画，高质量，详细',
     width: 1024,
     height: 1024,
     steps: 20,
     cfg: 3.5,
-    // 自定义参数
-    customParam: 'special_value',
+    seed: -1,
   },
 });
 
 console.log('生成的图像URL:', result.imageUrl);
+```
+
+#### 3.2 SD3.5 动态编码器示例
+
+```typescript
+// SD3.5模型会自动检测可用编码器配置
+const sd35Result = await comfyUI.createImage({
+  model: 'stable-diffusion-3.5', // 自动检测编码器配置
+  params: {
+    prompt: '未来主义城市景观，赛博朋克风格',
+    negativePrompt: '低质量，模糊，变形',
+    width: 1344,
+    height: 768,
+    steps: 28,
+    cfg: 4.5,
+  },
+});
+
+// 系统会自动选择：
+// 1. Triple编码器（CLIP L + CLIP G + T5）- 最佳质量
+// 2. Dual CLIP（CLIP L + CLIP G）- 如果缺少T5
+// 3. T5单编码器 - 如果只有T5可用
+```
+
+#### 3.3 企业优化模型示例
+
+```typescript
+// 使用FP8优化模型（更快推理）
+const optimizedResult = await comfyUI.createImage({
+  model: 'flux-dev', // 系统会自动选择最佳可用变体
+  params: {
+    prompt: '专业商务肖像，高分辨率',
+    width: 768,
+    height: 1024,
+    steps: 15, // FP8模型可以用更少的步数
+    cfg: 3.0,
+    // 系统会自动检测并使用 flux1-dev-fp8-e4m3fn.safetensors
+  },
+});
+```
+
+#### 3.4 LoRA 适配器使用示例
+
+```typescript
+import { getLoRAConfig, getAllLoRAConfigs } from '../config/loraRegistry';
+
+// 查询兼容的LoRA
+const compatibleLoras = getAllLoRAConfigs({ 
+  compatibleVariant: 'dev',
+  priority: 1 // 只获取官方LoRA
+});
+
+console.log('可用的官方LoRA:', compatibleLoras.map(l => l.name));
+
+// 在工作流中使用LoRA
+const loraResult = await comfyUI.createImage({
+  model: 'flux-dev',
+  params: {
+    prompt: 'anime style character, detailed face',
+    width: 768,
+    height: 768,
+    // LoRA配置
+    lora: 'anime_lora.safetensors',
+    loraStrength: 0.8,
+  },
+});
+```
+
+#### 3.5 错误处理示例
+
+```typescript
+import { 
+  ConfigError, 
+  WorkflowError, 
+  UtilsError, 
+  ModelResolverError 
+} from '../errors';
+
+try {
+  const result = await comfyUI.createImage({
+    model: 'nonexistent-model',
+    params: { prompt: '测试' },
+  });
+} catch (error) {
+  // 新架构提供精确的错误分类
+  if (error instanceof ModelResolverError) {
+    switch (error.reason) {
+      case ModelResolverError.Reasons.MODEL_NOT_FOUND:
+        console.log('模型未找到，建议的替代模型：', error.details?.suggestions);
+        break;
+      case ModelResolverError.Reasons.INVALID_API_KEY:
+        console.log('API密钥无效，请检查配置');
+        break;
+      case ModelResolverError.Reasons.SERVICE_UNAVAILABLE:
+        console.log('ComfyUI服务不可用，请检查连接');
+        break;
+    }
+  } else if (error instanceof WorkflowError) {
+    if (error.reason === WorkflowError.Reasons.MISSING_ENCODER) {
+      console.log('SD3.5模型需要外部编码器文件');
+    }
+  }
+}
+```
+
+#### 3.6 模型查询和验证示例
+
+```typescript
+import { 
+  getModelConfig, 
+  getModelsByVariant, 
+  getAllModelNames 
+} from '../config/modelRegistry';
+import { ModelResolver } from '../utils/modelResolver';
+
+// O(1)模型查询
+const fluxDevConfig = getModelConfig('flux1-dev.safetensors');
+console.log('FLUX Dev配置:', {
+  priority: fluxDevConfig?.priority,
+  variant: fluxDevConfig?.variant,
+  recommendedDtype: fluxDevConfig?.recommendedDtype,
+});
+
+// 获取所有Dev变体模型（按优先级排序）
+const devModels = getModelsByVariant('dev');
+console.log('可用的Dev模型（按优先级）:', devModels.slice(0, 5));
+
+// 服务器模型验证
+const resolver = new ModelResolver(comfyUI.client);
+const validation = await resolver.validateModel('flux-dev');
+
+if (validation.exists) {
+  console.log('实际使用的模型文件:', validation.actualFileName);
+} else {
+  console.log('模型在服务器上不存在');
+}
+```
+
+#### 3.7 高级配置示例
+
+```typescript
+import { WorkflowRouter } from '../utils/workflowRouter';
+import { getOptimalComponent } from '../config/systemComponents';
+
+// 检查路由支持
+const isSupported = WorkflowRouter.hasExactSupport('flux-dev');
+const supportedVariants = WorkflowRouter.getSupportedFluxVariants();
+
+console.log('精确支持FLUX-Dev:', isSupported);
+console.log('支持的变体:', supportedVariants);
+
+// 获取最优系统组件
+const bestVAE = getOptimalComponent('vae');
+const bestT5 = getOptimalComponent('t5');
+
+console.log('最佳VAE组件:', bestVAE); // 'ae.safetensors'
+console.log('最佳T5编码器:', bestT5); // 't5xxl_fp16.safetensors'
+
+// 路由统计信息
+const stats = WorkflowRouter.getRoutingStats();
+console.log('路由器统计:', {
+  精确支持的模型数量: stats.exactModelsCount,
+  支持的变体数量: stats.supportedVariantsCount,
+  总构建器数量: stats.totalBuilders,
+});
 ```
 
 ## 贡献指南
