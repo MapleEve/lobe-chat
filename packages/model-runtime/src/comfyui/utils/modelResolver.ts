@@ -211,10 +211,11 @@ export class ModelResolver {
         }
       }
 
-      // Check if error has a cause that's a Response object
-      if ((error as any)?.cause instanceof Response) {
-        const cause = (error as any).cause as Response;
-        log('📦 Error cause is a Response object, status:', cause.status);
+      // Check if error has a cause that's a Response object or Response-like object
+      const errorCause = (error as any)?.cause;
+      if (errorCause && typeof errorCause === 'object' && 'status' in errorCause) {
+        const cause = errorCause;
+        log('📦 Error cause is a Response-like object, status:', cause.status);
         if (cause.status === 401) {
           log('✅ ModelResolver: 401 from error.cause, throwing InvalidProviderAPIKey');
           throw new ModelResolverError(
@@ -230,6 +231,11 @@ export class ModelResolver {
             { originalError: (error as Error).message, status: 403 },
           );
         }
+      }
+
+      // If it's already a ModelResolverError, re-throw it
+      if (error instanceof ModelResolverError) {
+        throw error;
       }
 
       // If it's already a properly typed error, re-throw it

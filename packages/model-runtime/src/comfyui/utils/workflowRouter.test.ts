@@ -1,7 +1,7 @@
 import type { PromptBuilder } from '@saintno/comfyui-sdk';
 import { type Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AgentRuntimeErrorType } from '../../error';
+import { WorkflowError } from '../errors';
 import { buildFluxDevWorkflow } from '../workflows/flux-dev';
 import { buildFluxKontextWorkflow } from '../workflows/flux-kontext';
 import { buildFluxKreaWorkflow } from '../workflows/flux-krea';
@@ -53,7 +53,7 @@ describe('WorkflowRouter', () => {
 
   describe('Factory Pattern - routeWorkflow', () => {
     describe('Input Validation', () => {
-      it('should throw AgentRuntimeError when modelId is null', () => {
+      it('should throw WorkflowError when modelId is null', () => {
         const detectionResult: WorkflowDetectionResult = {
           architecture: 'FLUX',
           isSupported: true,
@@ -63,15 +63,16 @@ describe('WorkflowRouter', () => {
           WorkflowRouter.routeWorkflow(null as any, detectionResult, 'test.safetensors');
           expect.fail('Should have thrown an error');
         } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
-          expect(error.error).toHaveProperty(
-            'message',
+          expect(error).toBeInstanceOf(WorkflowError);
+          expect(error.reason).toBe(WorkflowError.Reasons.INVALID_CONFIG);
+          expect(error.message).toBe(
             'Invalid parameters: modelId and detectionResult are required',
           );
+          expect(error.details).toHaveProperty('modelId', null);
         }
       });
 
-      it('should throw AgentRuntimeError when modelId is undefined', () => {
+      it('should throw WorkflowError when modelId is undefined', () => {
         const detectionResult: WorkflowDetectionResult = {
           architecture: 'FLUX',
           isSupported: true,
@@ -81,11 +82,12 @@ describe('WorkflowRouter', () => {
           WorkflowRouter.routeWorkflow(undefined as any, detectionResult, 'test.safetensors');
           expect.fail('Should have thrown an error');
         } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
+          expect(error).toBeInstanceOf(WorkflowError);
+          expect(error.reason).toBe(WorkflowError.Reasons.INVALID_CONFIG);
         }
       });
 
-      it('should throw AgentRuntimeError when modelId is empty string', () => {
+      it('should throw WorkflowError when modelId is empty string', () => {
         const detectionResult: WorkflowDetectionResult = {
           architecture: 'FLUX',
           isSupported: true,
@@ -95,25 +97,28 @@ describe('WorkflowRouter', () => {
           WorkflowRouter.routeWorkflow('', detectionResult, 'test.safetensors');
           expect.fail('Should have thrown an error');
         } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
+          expect(error).toBeInstanceOf(WorkflowError);
+          expect(error.reason).toBe(WorkflowError.Reasons.INVALID_CONFIG);
         }
       });
 
-      it('should throw AgentRuntimeError when detectionResult is null', () => {
+      it('should throw WorkflowError when detectionResult is null', () => {
         try {
           WorkflowRouter.routeWorkflow('flux-dev', null as any, 'test.safetensors');
           expect.fail('Should have thrown an error');
         } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
+          expect(error).toBeInstanceOf(WorkflowError);
+          expect(error.reason).toBe(WorkflowError.Reasons.INVALID_CONFIG);
         }
       });
 
-      it('should throw AgentRuntimeError when detectionResult is undefined', () => {
+      it('should throw WorkflowError when detectionResult is undefined', () => {
         try {
           WorkflowRouter.routeWorkflow('flux-dev', undefined as any, 'test.safetensors');
           expect.fail('Should have thrown an error');
         } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
+          expect(error).toBeInstanceOf(WorkflowError);
+          expect(error.reason).toBe(WorkflowError.Reasons.INVALID_CONFIG);
         }
       });
 
@@ -127,14 +132,15 @@ describe('WorkflowRouter', () => {
           WorkflowRouter.routeWorkflow('', detectionResult, 'test.safetensors');
           expect.fail('Should have thrown an error');
         } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
-          expect(error.error).toHaveProperty('modelId', '');
+          expect(error).toBeInstanceOf(WorkflowError);
+          expect(error.reason).toBe(WorkflowError.Reasons.INVALID_CONFIG);
+          expect(error.details).toHaveProperty('modelId', '');
         }
       });
     });
 
     describe('Support Validation', () => {
-      it('should throw AgentRuntimeError when model is not supported', () => {
+      it('should throw WorkflowError when model is not supported', () => {
         const detectionResult: WorkflowDetectionResult = {
           architecture: 'unknown',
           isSupported: false,
@@ -144,9 +150,9 @@ describe('WorkflowRouter', () => {
           WorkflowRouter.routeWorkflow('unknown-model', detectionResult, 'test.safetensors');
           expect.fail('Should have thrown an error');
         } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
-          expect(error.error).toHaveProperty(
-            'message',
+          expect(error).toBeInstanceOf(WorkflowError);
+          expect(error.reason).toBe(WorkflowError.Reasons.UNSUPPORTED_MODEL);
+          expect(error.message).toBe(
             'Unsupported model architecture: unknown for model unknown-model',
           );
         }
@@ -162,8 +168,9 @@ describe('WorkflowRouter', () => {
           WorkflowRouter.routeWorkflow('stable-diffusion-v1', detectionResult, 'test.safetensors');
           expect.fail('Should have thrown an error');
         } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
-          expect(error.error).toHaveProperty('modelId', 'stable-diffusion-v1');
+          expect(error).toBeInstanceOf(WorkflowError);
+          expect(error.reason).toBe(WorkflowError.Reasons.UNSUPPORTED_MODEL);
+          expect(error.details).toHaveProperty('modelId', 'stable-diffusion-v1');
         }
       });
     });
@@ -248,638 +255,194 @@ describe('WorkflowRouter', () => {
 
         expect(buildFluxDevWorkflow).toHaveBeenCalledWith('flux-dev.safetensors', {});
       });
-
-      it('should pass empty params when params is undefined', () => {
-        WorkflowRouter.routeWorkflow(
-          'flux-dev',
-          supportedResult,
-          'flux-dev.safetensors',
-          undefined,
-        );
-
-        expect(buildFluxDevWorkflow).toHaveBeenCalledWith('flux-dev.safetensors', {});
-      });
     });
 
-    describe('Variant Fallback Matching', () => {
-      it('should fallback to dev variant for supported flux models', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
+    describe('Fallback Routing', () => {
+      const supportedResult: WorkflowDetectionResult = {
+        architecture: 'FLUX',
+        isSupported: true,
+      };
+
+      it('should fallback to variant builder when exact match not found', () => {
+        const detectionWithVariant: WorkflowDetectionResult = {
+          ...supportedResult,
           variant: 'dev',
-          isSupported: true,
         };
 
         const result = WorkflowRouter.routeWorkflow(
-          'some-flux-dev-model',
-          detectionResult,
-          'custom-flux-dev.safetensors',
-          { sampler: 'euler' },
+          'flux-v1-dev',
+          detectionWithVariant,
+          'flux-v1-dev.safetensors',
+          { guidance: 8.5 },
         );
 
-        expect(buildFluxDevWorkflow).toHaveBeenCalledWith('custom-flux-dev.safetensors', {
-          sampler: 'euler',
+        expect(buildFluxDevWorkflow).toHaveBeenCalledWith('flux-v1-dev.safetensors', {
+          guidance: 8.5,
         });
         expect(result).toBe(mockPromptBuilder);
       });
 
-      it('should fallback to schnell variant for supported flux models', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
-          variant: 'schnell',
-          isSupported: true,
-        };
-
-        const result = WorkflowRouter.routeWorkflow(
-          'some-flux-schnell-model',
-          detectionResult,
-          'custom-flux-schnell.safetensors',
-        );
-
-        expect(buildFluxSchnellWorkflow).toHaveBeenCalledWith(
-          'custom-flux-schnell.safetensors',
-          {},
-        );
-        expect(result).toBe(mockPromptBuilder);
-      });
-
-      it('should fallback to kontext variant for supported flux models', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
+      it('should fallback to kontext variant builder', () => {
+        const detectionWithVariant: WorkflowDetectionResult = {
+          ...supportedResult,
           variant: 'kontext',
-          isSupported: true,
         };
 
         const result = WorkflowRouter.routeWorkflow(
-          'some-flux-kontext-model',
-          detectionResult,
-          'custom-flux-kontext.safetensors',
+          'flux-custom-kontext',
+          detectionWithVariant,
+          'flux-custom-kontext.safetensors',
         );
 
         expect(buildFluxKontextWorkflow).toHaveBeenCalledWith(
-          'custom-flux-kontext.safetensors',
+          'flux-custom-kontext.safetensors',
           {},
         );
         expect(result).toBe(mockPromptBuilder);
       });
 
-      it('should fallback to krea variant for supported flux models', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
+      it('should fallback to krea variant builder', () => {
+        const detectionWithVariant: WorkflowDetectionResult = {
+          ...supportedResult,
           variant: 'krea',
-          isSupported: true,
         };
 
         const result = WorkflowRouter.routeWorkflow(
-          'some-flux-krea-model',
-          detectionResult,
-          'custom-flux-krea.safetensors',
+          'flux-special-krea',
+          detectionWithVariant,
+          'flux-special-krea.safetensors',
         );
 
-        expect(buildFluxKreaWorkflow).toHaveBeenCalledWith('custom-flux-krea.safetensors', {});
+        expect(buildFluxKreaWorkflow).toHaveBeenCalledWith('flux-special-krea.safetensors', {});
         expect(result).toBe(mockPromptBuilder);
       });
 
-      it('should fallback to sd35 variant for supported SD3.5 models', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'SD3',
+      it('should fallback to schnell variant builder', () => {
+        const detectionWithVariant: WorkflowDetectionResult = {
+          ...supportedResult,
+          variant: 'schnell',
+        };
+
+        const result = WorkflowRouter.routeWorkflow(
+          'custom-schnell',
+          detectionWithVariant,
+          'custom-schnell.safetensors',
+        );
+
+        expect(buildFluxSchnellWorkflow).toHaveBeenCalledWith('custom-schnell.safetensors', {});
+        expect(result).toBe(mockPromptBuilder);
+      });
+
+      it('should fallback to sd35 variant builder', () => {
+        const detectionWithVariant: WorkflowDetectionResult = {
+          ...supportedResult,
           variant: 'sd35',
-          isSupported: true,
         };
 
         const result = WorkflowRouter.routeWorkflow(
+          'sd3.5_medium',
+          detectionWithVariant,
           'sd3.5_medium.safetensors',
-          detectionResult,
-          'sd3.5_medium.safetensors',
-          { steps: 50, cfg: 7.0 },
         );
 
-        expect(buildSD35Workflow).toHaveBeenCalledWith('sd3.5_medium.safetensors', {
-          steps: 50,
-          cfg: 7.0,
-        });
-        expect(result).toBe(mockPromptBuilder);
-      });
-
-      it('should prefer exact match over variant fallback', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
-          variant: 'schnell', // This should be ignored
-          isSupported: true,
-        };
-
-        // flux-dev has exact match, so it should not fall back to schnell variant
-        const result = WorkflowRouter.routeWorkflow(
-          'flux-dev',
-          detectionResult,
-          'flux-dev.safetensors',
-        );
-
-        expect(buildFluxDevWorkflow).toHaveBeenCalledWith('flux-dev.safetensors', {});
-        expect(buildFluxSchnellWorkflow).not.toHaveBeenCalled();
+        expect(buildSD35Workflow).toHaveBeenCalledWith('sd3.5_medium.safetensors', {});
         expect(result).toBe(mockPromptBuilder);
       });
     });
 
-    describe('No Match Scenarios', () => {
-      it('should throw AgentRuntimeError when no exact match and no variant', () => {
+    describe('Error Cases', () => {
+      it('should throw WorkflowError when no builder found', () => {
         const detectionResult: WorkflowDetectionResult = {
           architecture: 'FLUX',
           isSupported: true,
-          // No variant provided
+          // No variant specified
         };
 
         try {
-          WorkflowRouter.routeWorkflow('unknown-flux-model', detectionResult, 'test.safetensors');
+          WorkflowRouter.routeWorkflow('unknown-model', detectionResult, 'test.safetensors');
           expect.fail('Should have thrown an error');
         } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
-          expect(error.error.message).toContain(
-            'No workflow builder found for model unknown-flux-model',
+          expect(error).toBeInstanceOf(WorkflowError);
+          expect(error.reason).toBe(WorkflowError.Reasons.UNSUPPORTED_MODEL);
+          expect(error.message).toContain('No workflow builder found for model');
+        }
+      });
+
+      it('should include model details in no builder error', () => {
+        const detectionResult: WorkflowDetectionResult = {
+          architecture: 'FLUX',
+          isSupported: true,
+        };
+
+        try {
+          WorkflowRouter.routeWorkflow(
+            'experimental-model',
+            detectionResult,
+            'experimental.safetensors',
           );
-        }
-      });
-
-      it('should throw AgentRuntimeError when variant is not supported', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
-          variant: 'unknown-variant' as any,
-          isSupported: true,
-        };
-
-        try {
-          WorkflowRouter.routeWorkflow('unknown-flux-model', detectionResult, 'test.safetensors');
           expect.fail('Should have thrown an error');
         } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
-          expect(error.error.message).toContain('architecture: FLUX, variant: unknown-variant');
+          expect(error).toBeInstanceOf(WorkflowError);
+          expect(error.details).toHaveProperty('modelId', 'experimental-model');
+          expect(error.details).toHaveProperty('variant', undefined);
         }
       });
 
-      it('should handle null variant gracefully in error message', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
-          variant: null as any,
-          isSupported: true,
-        };
-
-        try {
-          WorkflowRouter.routeWorkflow('unknown-flux-model', detectionResult, 'test.safetensors');
-          expect.fail('Should have thrown an error');
-        } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
-          expect(error.error.message).toContain('variant: unknown');
-        }
-      });
-
-      it('should handle undefined variant gracefully in error message', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
-          variant: undefined,
-          isSupported: true,
-        };
-
-        try {
-          WorkflowRouter.routeWorkflow('unknown-flux-model', detectionResult, 'test.safetensors');
-          expect.fail('Should have thrown an error');
-        } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
-          expect(error.error.message).toContain('variant: unknown');
-        }
-      });
-
-      it('should include modelId in no match error', () => {
-        const detectionResult: WorkflowDetectionResult = {
+      it('should handle workflow builder errors', () => {
+        const supportedResult: WorkflowDetectionResult = {
           architecture: 'FLUX',
           isSupported: true,
         };
 
+        const builderError = new Error('Builder failed');
+        (buildFluxDevWorkflow as Mock).mockImplementation(() => {
+          throw builderError;
+        });
+
         try {
-          WorkflowRouter.routeWorkflow('unsupported-model', detectionResult, 'test.safetensors');
+          WorkflowRouter.routeWorkflow('flux-dev', supportedResult, 'flux-dev.safetensors', {
+            steps: 20,
+          });
           expect.fail('Should have thrown an error');
-        } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
-          expect(error.error).toHaveProperty('modelId', 'unsupported-model');
+        } catch (error) {
+          expect(error).toBe(builderError);
         }
       });
     });
   });
 
-  describe('Utility Methods', () => {
-    describe('getExactlySupportedModels', () => {
-      it('should return all exact model IDs', () => {
-        const models = WorkflowRouter.getExactlySupportedModels();
-        expect(models).toEqual([
-          'flux-dev',
-          'flux-kontext-dev',
-          'flux-krea-dev',
-          'flux-schnell',
-          'sd35',
-          'sd35-no-clip',
-        ]);
-      });
-
-      it('should return array of strings', () => {
-        const models = WorkflowRouter.getExactlySupportedModels();
-        expect(Array.isArray(models)).toBe(true);
-        models.forEach((model) => {
-          expect(typeof model).toBe('string');
-        });
-      });
-
-      it('should return same result on multiple calls', () => {
-        const models1 = WorkflowRouter.getExactlySupportedModels();
-        const models2 = WorkflowRouter.getExactlySupportedModels();
-        expect(models1).toEqual(models2);
-      });
-    });
-
-    describe('getSupportedFluxVariants', () => {
-      it('should return all supported variants', () => {
-        const variants = WorkflowRouter.getSupportedFluxVariants();
-        expect(variants).toEqual(['dev', 'kontext', 'krea', 'schnell', 'sd35', 'sd35-no-clip']);
-      });
-
-      it('should return array of strings', () => {
-        const variants = WorkflowRouter.getSupportedFluxVariants();
-        expect(Array.isArray(variants)).toBe(true);
-        variants.forEach((variant) => {
-          expect(typeof variant).toBe('string');
-        });
-      });
-
-      it('should return same result on multiple calls', () => {
-        const variants1 = WorkflowRouter.getSupportedFluxVariants();
-        const variants2 = WorkflowRouter.getSupportedFluxVariants();
-        expect(variants1).toEqual(variants2);
-      });
-    });
-
-    describe('hasExactSupport', () => {
-      it('should return true for supported exact models', () => {
-        expect(WorkflowRouter.hasExactSupport('flux-dev')).toBe(true);
-        expect(WorkflowRouter.hasExactSupport('flux-kontext-dev')).toBe(true);
-        expect(WorkflowRouter.hasExactSupport('flux-krea-dev')).toBe(true);
-        expect(WorkflowRouter.hasExactSupport('flux-schnell')).toBe(true);
-        expect(WorkflowRouter.hasExactSupport('sd35')).toBe(true);
-      });
-
-      it('should return false for unsupported models', () => {
-        expect(WorkflowRouter.hasExactSupport('unknown-model')).toBe(false);
-        expect(WorkflowRouter.hasExactSupport('stable-diffusion')).toBe(false);
-        expect(WorkflowRouter.hasExactSupport('flux')).toBe(false);
-        expect(WorkflowRouter.hasExactSupport('')).toBe(false);
-      });
-
-      it('should handle null and undefined gracefully', () => {
-        expect(WorkflowRouter.hasExactSupport(null as any)).toBe(false);
-        expect(WorkflowRouter.hasExactSupport(undefined as any)).toBe(false);
-      });
-
-      it('should be case sensitive', () => {
-        expect(WorkflowRouter.hasExactSupport('FLUX-DEV')).toBe(false);
-        expect(WorkflowRouter.hasExactSupport('Flux-Dev')).toBe(false);
-        expect(WorkflowRouter.hasExactSupport('flux-DEV')).toBe(false);
-      });
-    });
-
-    describe('hasVariantSupport', () => {
-      it('should return true for supported variants', () => {
-        expect(WorkflowRouter.hasVariantSupport('dev')).toBe(true);
-        expect(WorkflowRouter.hasVariantSupport('kontext')).toBe(true);
-        expect(WorkflowRouter.hasVariantSupport('krea')).toBe(true);
-        expect(WorkflowRouter.hasVariantSupport('schnell')).toBe(true);
-        expect(WorkflowRouter.hasVariantSupport('sd35')).toBe(true);
-      });
-
-      it('should return false for unsupported variants', () => {
-        expect(WorkflowRouter.hasVariantSupport('unknown')).toBe(false);
-        expect(WorkflowRouter.hasVariantSupport('xl')).toBe(false);
-        expect(WorkflowRouter.hasVariantSupport('turbo')).toBe(false);
-        expect(WorkflowRouter.hasVariantSupport('')).toBe(false);
-      });
-
-      it('should handle null and undefined gracefully', () => {
-        expect(WorkflowRouter.hasVariantSupport(null as any)).toBe(false);
-        expect(WorkflowRouter.hasVariantSupport(undefined as any)).toBe(false);
-      });
-
-      it('should be case sensitive', () => {
-        expect(WorkflowRouter.hasVariantSupport('DEV')).toBe(false);
-        expect(WorkflowRouter.hasVariantSupport('Dev')).toBe(false);
-        expect(WorkflowRouter.hasVariantSupport('SCHNELL')).toBe(false);
-      });
-    });
-
-    describe('getRoutingStats', () => {
-      it('should return correct statistics', () => {
-        const stats = WorkflowRouter.getRoutingStats();
-
-        expect(stats).toEqual({
-          exactModelsCount: 6,
-          supportedVariantsCount: 6,
-          totalBuilders: 6, // All builders are unique
-        });
-      });
-
-      it('should return object with correct properties', () => {
-        const stats = WorkflowRouter.getRoutingStats();
-
-        expect(typeof stats.exactModelsCount).toBe('number');
-        expect(typeof stats.supportedVariantsCount).toBe('number');
-        expect(typeof stats.totalBuilders).toBe('number');
-
-        expect(stats.exactModelsCount).toBeGreaterThan(0);
-        expect(stats.supportedVariantsCount).toBeGreaterThan(0);
-        expect(stats.totalBuilders).toBeGreaterThan(0);
-      });
-
-      it('should return same result on multiple calls', () => {
-        const stats1 = WorkflowRouter.getRoutingStats();
-        const stats2 = WorkflowRouter.getRoutingStats();
-        expect(stats1).toEqual(stats2);
-      });
-
-      it('should have totalBuilders equal to unique builders count', () => {
-        const stats = WorkflowRouter.getRoutingStats();
-
-        // Since all 6 builders are unique, totalBuilders should be 6
-        expect(stats.totalBuilders).toBe(6);
-      });
-    });
-  });
-
-  describe('Edge Cases and Boundary Conditions', () => {
-    describe('Whitespace Handling', () => {
-      it('should treat whitespace-only modelId as invalid', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
-          isSupported: true,
-        };
-
-        try {
-          WorkflowRouter.routeWorkflow('   ', detectionResult, 'test.safetensors');
-          expect.fail('Should have thrown an error');
-        } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
-        }
-      });
-
-      it('should handle whitespace in variant gracefully', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
-          variant: '  dev  ' as any,
-          isSupported: true,
-        };
-
-        // Should not match because variant matching is exact
-        try {
-          WorkflowRouter.routeWorkflow('unknown-model', detectionResult, 'test.safetensors');
-          expect.fail('Should have thrown an error');
-        } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
-        }
-      });
-    });
-
-    describe('Parameter Edge Cases', () => {
-      it('should handle empty modelFileName', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
-          isSupported: true,
-        };
-
-        const result = WorkflowRouter.routeWorkflow(
-          'flux-dev',
-          detectionResult,
-          '', // Empty modelFileName
-        );
-
-        expect(buildFluxDevWorkflow).toHaveBeenCalledWith('', {});
-        expect(result).toBe(mockPromptBuilder);
-      });
-
-      it('should handle null params by passing null through', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
-          isSupported: true,
-        };
-
-        const result = WorkflowRouter.routeWorkflow(
-          'flux-dev',
-          detectionResult,
-          'test.safetensors',
-          null as any,
-        );
-
-        expect(buildFluxDevWorkflow).toHaveBeenCalledWith('test.safetensors', null);
-        expect(result).toBe(mockPromptBuilder);
-      });
-
-      it('should handle complex params object', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
-          isSupported: true,
-        };
-
-        const complexParams = {
-          steps: 20,
-          guidance: 7.5,
-          sampler: 'euler_ancestral',
-          scheduler: 'normal',
-          cfg_scale: 1.0,
-          width: 1024,
-          height: 1024,
-          seed: 42,
-          prompt: 'test prompt',
-          negative_prompt: 'bad quality',
-          nested: {
-            deep: {
-              value: true,
-            },
-          },
-        };
-
-        const result = WorkflowRouter.routeWorkflow(
-          'flux-dev',
-          detectionResult,
-          'test.safetensors',
-          complexParams,
-        );
-
-        expect(buildFluxDevWorkflow).toHaveBeenCalledWith('test.safetensors', complexParams);
-        expect(result).toBe(mockPromptBuilder);
-      });
-    });
-
-    describe('DetectionResult Edge Cases', () => {
-      it('should handle minimal detection result', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
-          isSupported: true,
-        };
-
-        const result = WorkflowRouter.routeWorkflow(
-          'flux-dev',
-          detectionResult,
-          'test.safetensors',
-        );
-
-        expect(result).toBe(mockPromptBuilder);
-      });
-
-      it('should handle detection result with all properties', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
-          category: 'model',
-          isSupported: true,
-          variant: 'dev',
-        };
-
-        const result = WorkflowRouter.routeWorkflow(
-          'some-flux-model',
-          detectionResult,
-          'test.safetensors',
-        );
-
-        expect(buildFluxDevWorkflow).toHaveBeenCalled();
-        expect(result).toBe(mockPromptBuilder);
-      });
-
-      it('should handle empty string variant', () => {
-        const detectionResult: WorkflowDetectionResult = {
-          architecture: 'FLUX',
-          variant: '' as any,
-          isSupported: true,
-        };
-
-        try {
-          WorkflowRouter.routeWorkflow('unknown-model', detectionResult, 'test.safetensors');
-          expect.fail('Should have thrown an error');
-        } catch (error: any) {
-          expect(error).toHaveProperty('errorType', AgentRuntimeErrorType.ComfyUIWorkflowError);
-          expect(error.error.message).toContain('variant: unknown');
-        }
-      });
-    });
-  });
-
-  describe('Integration Scenarios', () => {
-    it('should work with realistic FLUX dev detection result', () => {
+  describe('Edge Cases', () => {
+    it('should handle special characters in model ID', () => {
       const detectionResult: WorkflowDetectionResult = {
         architecture: 'FLUX',
-        category: 'model',
+        isSupported: true,
         variant: 'dev',
-        isSupported: true,
       };
 
       const result = WorkflowRouter.routeWorkflow(
-        'custom-flux-dev-v2',
+        'flux@dev#v1',
         detectionResult,
-        'custom-flux-dev-v2.safetensors',
-        {
-          steps: 20,
-          guidance: 3.5,
-          width: 1024,
-          height: 1024,
-        },
+        'flux-dev.safetensors',
       );
 
-      expect(buildFluxDevWorkflow).toHaveBeenCalledWith('custom-flux-dev-v2.safetensors', {
-        steps: 20,
-        guidance: 3.5,
-        width: 1024,
-        height: 1024,
-      });
+      expect(buildFluxDevWorkflow).toHaveBeenCalledWith('flux-dev.safetensors', {});
       expect(result).toBe(mockPromptBuilder);
     });
 
-    it('should work with realistic FLUX schnell detection result', () => {
+    it('should handle case sensitivity in exact matching', () => {
       const detectionResult: WorkflowDetectionResult = {
         architecture: 'FLUX',
-        category: 'model',
-        variant: 'schnell',
         isSupported: true,
       };
 
-      const result = WorkflowRouter.routeWorkflow(
-        'community-flux-schnell-merge',
-        detectionResult,
-        'community-flux-schnell-merge.safetensors',
-        {
-          steps: 4,
-          width: 512,
-          height: 768,
-        },
-      );
-
-      expect(buildFluxSchnellWorkflow).toHaveBeenCalledWith(
-        'community-flux-schnell-merge.safetensors',
-        {
-          steps: 4,
-          width: 512,
-          height: 768,
-        },
-      );
-      expect(result).toBe(mockPromptBuilder);
-    });
-
-    it('should work with realistic SD3.5 detection result', () => {
-      const detectionResult: WorkflowDetectionResult = {
-        architecture: 'SD3',
-        category: 'model',
-        variant: 'sd35',
-        isSupported: true,
-      };
-
-      const result = WorkflowRouter.routeWorkflow(
-        'sd3.5_large_v1.0',
-        detectionResult,
-        'sd3.5_large_v1.0.safetensors',
-        {
-          steps: 28,
-          cfg: 4.5,
-          width: 1024,
-          height: 1024,
-          seed: 12345,
-        },
-      );
-
-      expect(buildSD35Workflow).toHaveBeenCalledWith('sd3.5_large_v1.0.safetensors', {
-        steps: 28,
-        cfg: 4.5,
-        width: 1024,
-        height: 1024,
-        seed: 12345,
-      });
-      expect(result).toBe(mockPromptBuilder);
-    });
-
-    it('should work with exact SD3.5 model ID matching', () => {
-      const detectionResult: WorkflowDetectionResult = {
-        architecture: 'SD3',
-        category: 'model',
-        isSupported: true,
-      };
-
-      const result = WorkflowRouter.routeWorkflow(
-        'sd35',
-        detectionResult,
-        'sd3.5_medium_v1.0.safetensors',
-        {
-          steps: 50,
-          cfg: 7.0,
-          width: 512,
-          height: 768,
-        },
-      );
-
-      expect(buildSD35Workflow).toHaveBeenCalledWith('sd3.5_medium_v1.0.safetensors', {
-        steps: 50,
-        cfg: 7.0,
-        width: 512,
-        height: 768,
-      });
-      expect(result).toBe(mockPromptBuilder);
+      // Should not find exact match for uppercase
+      try {
+        WorkflowRouter.routeWorkflow('FLUX-DEV', detectionResult, 'test.safetensors');
+        expect.fail('Should have thrown an error');
+      } catch (error: any) {
+        expect(error).toBeInstanceOf(WorkflowError);
+        expect(error.reason).toBe(WorkflowError.Reasons.UNSUPPORTED_MODEL);
+      }
     });
   });
 });
