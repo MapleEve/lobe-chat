@@ -1,0 +1,539 @@
+---
+title: ComfyUI 扩展开发指南
+description: 学习如何为 LobeChat ComfyUI 集成添加新模型、工作流和功能扩展
+tags:
+  - ComfyUI
+  - 开发指南
+  - 模型扩展
+  - 工作流开发
+---
+
+# ComfyUI 扩展开发指南
+
+本指南将帮助开发者扩展 LobeChat 的 ComfyUI 集成，包括添加新模型、创建工作流、开发 LoRA 和 ControlNet 支持。
+
+## 架构概览
+
+LobeChat ComfyUI 集成采用配置驱动的模块化架构：
+
+```
+packages/model-runtime/src/comfyui/
+├── config/                    # 配置注册表
+│   ├── modelRegistry.ts       # 127个模型配置
+│   ├── systemComponents.ts    # 6个系统组件
+│   ├── loraRegistry.ts        # 23个LoRA适配器
+│   └── controlnetRegistry.ts  # 3个ControlNet模型
+├── workflows/                 # 工作流模板
+│   ├── flux-dev.ts           # FLUX Dev工作流
+│   ├── flux-schnell.ts       # FLUX Schnell工作流
+│   ├── flux-kontext.ts       # FLUX Kontext工作流
+│   ├── flux-krea.ts          # FLUX Krea工作流
+│   └── sd35.ts               # SD3.5工作流
+└── utils/                     # 工具类
+    ├── modelResolver.ts       # 模型解析器
+    ├── workflowRouter.ts      # 工作流路由
+    ├── workflowDetector.ts    # 工作流检测
+    └── promptSplitter.ts      # 提示词分割
+```
+
+## 添加新模型
+
+### 1. 更新模型注册表
+
+在 `config/modelRegistry.ts` 中添加新模型：
+
+```typescript
+export const MODEL_REGISTRY: Record<string, ModelConfig> = {
+  // 现有模型...
+  
+  // 添加新模型
+  'your-new-model.safetensors': {
+    priority: 2, // 1=官方, 2=企业, 3=社区
+    variant: 'dev', // 'dev' | 'schnell' | 'kontext' | 'krea' | 'sd35'
+    modelFamily: 'FLUX', // 'FLUX' | 'SD3'
+    recommendedDtype: 'default', // 'default' | 'fp8_e4m3fn' | 'fp8_e5m2'
+  },
+  
+  // 量化版本
+  'your-new-model-fp8.safetensors': {
+    priority: 2,
+    variant: 'dev',
+    modelFamily: 'FLUX',
+    recommendedDtype: 'fp8_e4m3fn',
+  },
+};
+```
+
+### 2. 模型配置接口
+
+```typescript
+export interface ModelConfig {
+  modelFamily: 'FLUX' | 'SD1' | 'SDXL' | 'SD3';
+  priority: number; // 优先级：1-3
+  recommendedDtype: 'default' | 'fp8_e4m3fn' | 'fp8_e5m2' | 'fp8_e4m3fn_fast';
+  variant: 'dev' | 'schnell' | 'kontext' | 'krea' | 'fill' | 'redux' | 'sd35';
+}
+```
+
+### 3. 测试新模型
+
+```typescript
+// config/modelRegistry.test.ts
+import { getModelConfig, getAllModelNames } from '../modelRegistry';
+
+describe('New Model Registration', () => {
+  test('should find new model in registry', () => {
+    const config = getModelConfig('your-new-model.safetensors');
+    expect(config).toBeDefined();
+    expect(config?.variant).toBe('dev');
+    expect(config?.modelFamily).toBe('FLUX');
+  });
+  
+  test('should support priority-based queries', () => {
+    const priority1Models = getAllModelNames().filter(name => {
+      const config = getModelConfig(name);
+      return config?.priority === 1;
+    });
+    expect(priority1Models.length).toBeGreaterThan(0);
+  });
+});
+```
+
+## 创建新工作流
+
+<Callout type={'warning'}>
+  **重要！工作流节点来源说明**
+  
+  工作流中的节点结构不是凭空创建的，而是来自ComfyUI的原生API格式：
+  1. 在ComfyUI界面中设计工作流
+  2. 使用"Export (API Format)"导出JSON
+  3. 将JSON结构复制到TypeScript文件中
+  4. 用PromptBuilder包装此JSON结构
+</Callout>
+
+### 1. 获取工作流节点结构
+
+#### 步骤1：在ComfyUI UI中创建工作流
+1. 打开ComfyUI界面
+2. 拖拽节点搭建所需的工作流
+3. 连接各个节点的输入输出
+4. 测试工作流确保正常运行
+
+#### 步骤2：导出API格式
+1. 在ComfyUI界面右键点击空白处
+2. 选择"Export (API Format)"
+3. 复制生成的JSON结构
+
+#### 步骤3：理解节点结构
+导出的JSON具有以下关键特征：
+
+```typescript
+// 来自ComfyUI "Export (API Format)"的原生格式
+const workflow = {
+  '1': {
+    _meta: { title: 'Load Checkpoint' },
+    class_type: 'CheckpointLoaderSimple', // 对应ComfyUI节点类型
+    inputs: {
+      ckpt_name: modelFileName,
+    },
+  },
+  '2': {
+    _meta: { title: 'CLIP Text Encode' },
+    class_type: 'CLIPTextEncode',
+    inputs: {
+      clip: ['1', 1], // [源节点ID, 输出端口索引]
+      text: prompt,
+    },
+  },
+  // ...更多节点
+};
+```
+
+**关键要素说明：**
+- **节点ID**: 必须使用字符串格式（'1', '2', '3'...）
+- **连接格式**: `['1', 1]`表示节点1的输出端口1
+- **class_type**: 直接对应ComfyUI节点库中的具体节点类型
+- **输出端口**: 0=第一个输出，1=第二个输出，以此类推
+
+### 2. 工作流模板结构
+
+创建新的工作流文件 `workflows/your-workflow.ts`：
+
+```typescript
+import { PromptBuilder } from '@saintno/comfyui-sdk';
+
+/**
+ * 构建自定义工作流（基于ComfyUI导出的JSON结构）
+ */
+export function buildYourWorkflow(
+  modelFileName: string,
+  params: Record<string, any>,
+): PromptBuilder<any, any, any> {
+  const { prompt, width = 1024, height = 1024, steps = 20, cfg = 3.5, seed = -1 } = params;
+
+  // 此JSON结构来自ComfyUI的"Export (API Format)"
+  const workflow = {
+    '1': {
+      _meta: { title: 'Load Checkpoint' },
+      class_type: 'CheckpointLoaderSimple',
+      inputs: {
+        ckpt_name: modelFileName,
+      },
+    },
+    '2': {
+      _meta: { title: 'CLIP Text Encode' },
+      class_type: 'CLIPTextEncode',
+      inputs: {
+        clip: ['1', 1], // 连接到节点1的CLIP输出
+        text: prompt,
+      },
+    },
+    '3': {
+      _meta: { title: 'Empty Latent' },
+      class_type: 'EmptyLatentImage',
+      inputs: {
+        width,
+        height,
+        batch_size: 1,
+      },
+    },
+    '4': {
+      _meta: { title: 'KSampler' },
+      class_type: 'KSampler',
+      inputs: {
+        model: ['1', 0], // 连接到节点1的模型输出
+        positive: ['2', 0], // 连接到节点2的conditioning输出
+        negative: ['2', 0], // 可配置负面提示词
+        latent_image: ['3', 0],
+        seed,
+        steps,
+        cfg,
+        sampler_name: 'euler',
+        scheduler: 'normal',
+        denoise: 1.0,
+      },
+    },
+    '5': {
+      _meta: { title: 'VAE Decode' },
+      class_type: 'VAEDecode',
+      inputs: {
+        samples: ['4', 0],
+        vae: ['1', 2], // 连接到节点1的VAE输出
+      },
+    },
+    '6': {
+      _meta: { title: 'Save Image' },
+      class_type: 'SaveImage',
+      inputs: {
+        filename_prefix: 'LobeChat_Custom',
+        images: ['5', 0],
+      },
+    },
+  };
+
+  // 创建PromptBuilder包装原生ComfyUI JSON
+  const builder = new PromptBuilder(
+    workflow,
+    ['prompt', 'width', 'height', 'steps', 'seed', 'cfg'],
+    ['images'],
+  );
+
+  // 设置输出节点
+  builder.setOutputNode('images', '6');
+
+  // 设置输入节点映射
+  builder.setInputNode('prompt', '2.inputs.text');
+  builder.setInputNode('width', '3.inputs.width');
+  builder.setInputNode('height', '3.inputs.height');
+  builder.setInputNode('steps', '4.inputs.steps');
+  builder.setInputNode('seed', '4.inputs.seed');
+  builder.setInputNode('cfg', '4.inputs.cfg');
+
+  return builder;
+}
+```
+
+### 3. SD3.5工作流示例参考
+
+查看`workflows/sd35.ts`作为实际工作流的参考实现：
+
+```typescript
+// 完整的SD3.5工作流展示了标准的7节点结构
+const workflow = {
+  '1': { class_type: 'CheckpointLoaderSimple', inputs: { ckpt_name: modelFileName } },
+  '2': { class_type: 'CLIPTextEncode', inputs: { clip: ['1', 1], text: prompt } },
+  '3': { class_type: 'CLIPTextEncode', inputs: { clip: ['1', 1], text: negativePrompt } },
+  '4': { class_type: 'EmptyLatentImage', inputs: { width, height, batch_size: 1 } },
+  '5': { class_type: 'KSampler', inputs: { 
+    model: ['1', 0], positive: ['2', 0], negative: ['3', 0], 
+    latent_image: ['4', 0], seed, steps, cfg 
+  }},
+  '6': { class_type: 'VAEDecode', inputs: { samples: ['5', 0], vae: ['1', 2] } },
+  '7': { class_type: 'SaveImage', inputs: { images: ['6', 0] } },
+};
+```
+
+### 4. 更新工作流路由
+
+在 `utils/workflowRouter.ts` 中添加路由逻辑：
+
+```typescript
+import { buildYourWorkflow } from '../workflows/your-workflow';
+
+export class WorkflowRouter {
+  static routeWorkflow(
+    model: string,
+    detectionResult: ModelDetectionResult,
+    modelFileName: string,
+    params: Record<string, any>
+  ): PromptBuilder<any, any, any> {
+    
+    // 现有路由逻辑...
+    
+    // 添加新工作流路由
+    if (detectionResult.variant === 'your_variant') {
+      return buildYourWorkflow(model, modelFileName, params);
+    }
+    
+    // 默认处理...
+  }
+}
+```
+
+### 3. 测试工作流
+
+```typescript
+// workflows/your-workflow.test.ts
+import { buildYourWorkflow } from './your-workflow';
+
+describe('Your Custom Workflow', () => {
+  test('should build workflow with correct parameters', () => {
+    const workflow = buildYourWorkflow('test-model', 'test.safetensors', {
+      prompt: '测试提示词',
+      width: 512,
+      height: 512,
+      steps: 10,
+    });
+
+    expect(workflow).toBeDefined();
+    // 验证工作流结构
+    const nodes = workflow.getNodes();
+    expect(nodes.length).toBeGreaterThan(0);
+  });
+});
+```
+
+## 添加 LoRA 支持
+
+### 1. 更新 LoRA 注册表
+
+在 `config/loraRegistry.ts` 中添加新的 LoRA：
+
+```typescript
+export const LORA_REGISTRY: Record<string, LoRAConfig> = {
+  // 现有LoRA...
+  
+  'your-custom-lora.safetensors': {
+    compatibleVariants: ['dev', 'schnell'], // 兼容的模型变体
+    modelFamily: 'FLUX',
+    priority: 2, // 1=官方, 2=专业, 3=社区
+  },
+};
+```
+
+### 2. 在工作流中使用 LoRA
+
+```typescript
+// 在工作流构建器中添加LoRA节点
+const loraLoader = new ComfyNodeBuilder('LoraLoader')
+  .setInput('model', modelLoader.getOutput('model'))
+  .setInput('clip', modelLoader.getOutput('clip'))
+  .setInput('lora_name', 'your-custom-lora.safetensors')
+  .setInput('strength_model', 1.0)
+  .setInput('strength_clip', 1.0)
+  .setTitle('LoRA加载器');
+
+// 更新后续节点使用LoRA增强的模型
+const textEncoder = new ComfyNodeBuilder('CLIPTextEncode')
+  .setInput('text', prompt)
+  .setInput('clip', loraLoader.getOutput('clip')) // 使用LoRA增强的CLIP
+  .setTitle('文本编码器');
+```
+
+## 添加 ControlNet 支持
+
+### 1. 更新 ControlNet 注册表
+
+在 `config/controlnetRegistry.ts` 中添加新的 ControlNet 模型：
+
+```typescript
+export const CONTROLNET_REGISTRY: Record<string, ControlNetConfig> = {
+  // 现有模型...
+  
+  'flux-controlnet-pose-v1.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 'pose', // 新的控制类型
+  },
+};
+```
+
+### 2. 扩展 ControlNet 接口
+
+```typescript
+export interface ControlNetConfig {
+  compatibleVariants: string[];
+  modelFamily: 'FLUX';
+  priority: number;
+  type: 'canny' | 'depth' | 'hed' | 'pose' | 'scribble' | 'normal' | 'semantic';
+}
+```
+
+### 3. 在工作流中使用 ControlNet
+
+```typescript
+// 添加ControlNet预处理器
+const preprocessor = new ComfyNodeBuilder('CannyEdgePreprocessor')
+  .setInput('image', inputImage)
+  .setInput('low_threshold', 100)
+  .setInput('high_threshold', 200)
+  .setTitle('Canny边缘预处理');
+
+// 添加ControlNet应用节点
+const controlNetApply = new ComfyNodeBuilder('ControlNetApply')
+  .setInput('conditioning', textEncoder.getOutput('conditioning'))
+  .setInput('control_net', controlNetLoader.getOutput('control_net'))
+  .setInput('image', preprocessor.getOutput('image'))
+  .setInput('strength', 1.0)
+  .setTitle('ControlNet应用');
+```
+
+## 开发最佳实践
+
+### 1. 配置驱动原则
+
+- 所有模型信息存储在注册表中，避免硬编码
+- 使用优先级系统自动选择最佳模型
+- 支持动态回退机制
+
+### 2. 错误处理
+
+```typescript
+import { AgentRuntimeError, AgentRuntimeErrorType } from '../../error';
+
+// 在工作流构建器中添加错误处理
+try {
+  const workflow = buildYourWorkflow(model, modelFileName, params);
+  return workflow;
+} catch (error) {
+  throw AgentRuntimeError.createImage({
+    error: new Error(`工作流构建失败: ${error.message}`),
+    errorType: AgentRuntimeErrorType.ComfyUIWorkflowError,
+    provider: 'comfyui',
+  });
+}
+```
+
+### 3. 性能优化
+
+```typescript
+// 使用缓存机制减少重复计算
+private static workflowCache: Map<string, PromptBuilder<any, any, any>> = new Map();
+
+static getCachedWorkflow(key: string): PromptBuilder<any, any, any> | undefined {
+  return this.workflowCache.get(key);
+}
+
+static setCachedWorkflow(key: string, workflow: PromptBuilder<any, any, any>): void {
+  this.workflowCache.set(key, workflow);
+}
+```
+
+### 4. 测试覆盖
+
+确保为每个新功能添加对应测试：
+
+```typescript
+// 集成测试示例
+describe('ComfyUI Integration', () => {
+  test('should handle new model workflow end-to-end', async () => {
+    const comfyUI = new LobeComfyUI({
+      baseURL: 'http://localhost:8188',
+      authType: 'none',
+    });
+
+    const result = await comfyUI.createImage({
+      model: 'your-new-model',
+      params: {
+        prompt: '测试图像生成',
+        width: 512,
+        height: 512,
+      },
+    });
+
+    expect(result.imageUrl).toBeDefined();
+    expect(result.width).toBe(512);
+    expect(result.height).toBe(512);
+  });
+});
+```
+
+## 部署和发布
+
+### 1. 验证清单
+
+在发布新功能前，确保：
+
+- [ ] 所有新模型已添加到对应注册表
+- [ ] 工作流测试通过
+- [ ] 错误处理完善
+- [ ] 文档已更新
+- [ ] 性能测试通过
+
+### 2. 文档更新
+
+更新相关文档文件：
+- `docs/usage/providers/comfyui.zh-CN.mdx` - 用户文档
+- `docs/development/basic/comfyui-development.zh-CN.mdx` - 开发文档
+- README 和 CHANGELOG
+
+### 3. 示例代码
+
+提供完整的使用示例：
+
+```typescript
+// 使用新功能的完整示例
+const comfyUI = new LobeComfyUI({
+  baseURL: process.env.COMFYUI_BASE_URL,
+  authType: 'bearer',
+  apiKey: process.env.COMFYUI_API_KEY,
+});
+
+// 使用新模型生成图像
+const result = await comfyUI.createImage({
+  model: 'your-new-model',
+  params: {
+    prompt: '美丽的风景画，高质量，详细',
+    width: 1024,
+    height: 1024,
+    steps: 20,
+    cfg: 3.5,
+    // 自定义参数
+    customParam: 'special_value',
+  },
+});
+
+console.log('生成的图像URL:', result.imageUrl);
+```
+
+## 贡献指南
+
+1. **Fork 项目**：在 GitHub 上 fork LobeChat 仓库
+2. **创建分支**：`git checkout -b feature/your-feature-name`
+3. **开发功能**：按照本指南实现新功能
+4. **添加测试**：确保测试覆盖率
+5. **更新文档**：同步更新相关文档
+6. **提交 PR**：创建详细的 Pull Request
+
+通过遵循这个指南，您可以轻松扩展 LobeChat 的 ComfyUI 集成功能，为用户提供更多的模型选择和工作流选项。

@@ -1,0 +1,461 @@
+---
+title: ComfyUI Extension Development Guide
+description: Learn how to add new models, workflows, and features to LobeChat's ComfyUI integration
+tags:
+  - ComfyUI
+  - Development Guide
+  - Model Extension
+  - Workflow Development
+---
+
+# ComfyUI Extension Development Guide
+
+This guide helps developers extend LobeChat's ComfyUI integration, including adding new models, creating workflows, and developing LoRA and ControlNet support.
+
+## Architecture Overview
+
+LobeChat's ComfyUI integration uses a configuration-driven modular architecture:
+
+```
+packages/model-runtime/src/comfyui/
+├── config/                    # Configuration registries
+│   ├── modelRegistry.ts       # 127 model configurations
+│   ├── systemComponents.ts    # 6 system components
+│   ├── loraRegistry.ts        # 23 LoRA adapters
+│   └── controlnetRegistry.ts  # 3 ControlNet models
+├── workflows/                 # Workflow templates
+│   ├── flux-dev.ts           # FLUX Dev workflow
+│   ├── flux-schnell.ts       # FLUX Schnell workflow
+│   ├── flux-kontext.ts       # FLUX Kontext workflow
+│   ├── flux-krea.ts          # FLUX Krea workflow
+│   └── sd35.ts               # SD3.5 workflow
+└── utils/                     # Utilities
+    ├── modelResolver.ts       # Model resolver
+    ├── workflowRouter.ts      # Workflow router
+    ├── workflowDetector.ts    # Workflow detector
+    └── promptSplitter.ts      # Prompt splitter
+```
+
+## Adding New Models
+
+### 1. Update Model Registry
+
+Add new models to `config/modelRegistry.ts`:
+
+```typescript
+export const MODEL_REGISTRY: Record<string, ModelConfig> = {
+  // Existing models...
+  
+  // Add new model
+  'your-new-model.safetensors': {
+    priority: 2, // 1=Official, 2=Enterprise, 3=Community
+    variant: 'dev', // 'dev' | 'schnell' | 'kontext' | 'krea' | 'sd35'
+    modelFamily: 'FLUX', // 'FLUX' | 'SD3'
+    recommendedDtype: 'default', // 'default' | 'fp8_e4m3fn' | 'fp8_e5m2'
+  },
+  
+  // Quantized versions
+  'your-new-model-fp8.safetensors': {
+    priority: 2,
+    variant: 'dev',
+    modelFamily: 'FLUX',
+    recommendedDtype: 'fp8_e4m3fn',
+  },
+};
+```
+
+### 2. Model Configuration Interface
+
+```typescript
+export interface ModelConfig {
+  modelFamily: 'FLUX' | 'SD1' | 'SDXL' | 'SD3';
+  priority: number; // Priority: 1-3
+  recommendedDtype: 'default' | 'fp8_e4m3fn' | 'fp8_e5m2' | 'fp8_e4m3fn_fast';
+  variant: 'dev' | 'schnell' | 'kontext' | 'krea' | 'fill' | 'redux' | 'sd35';
+}
+```
+
+### 3. Testing New Models
+
+```typescript
+// config/modelRegistry.test.ts
+import { getModelConfig, getAllModelNames } from '../modelRegistry';
+
+describe('New Model Registration', () => {
+  test('should find new model in registry', () => {
+    const config = getModelConfig('your-new-model.safetensors');
+    expect(config).toBeDefined();
+    expect(config?.variant).toBe('dev');
+    expect(config?.modelFamily).toBe('FLUX');
+  });
+  
+  test('should support priority-based queries', () => {
+    const priority1Models = getAllModelNames().filter(name => {
+      const config = getModelConfig(name);
+      return config?.priority === 1;
+    });
+    expect(priority1Models.length).toBeGreaterThan(0);
+  });
+});
+```
+
+## Creating New Workflows
+
+### 1. Workflow Template Structure
+
+Create a new workflow file `workflows/your-workflow.ts`:
+
+```typescript
+import { ComfyNodeBuilder, PromptBuilder } from '@saintno/comfyui-sdk';
+
+/**
+ * Build custom workflow
+ */
+export function buildYourWorkflow(
+  modelId: string,
+  modelFileName: string,
+  params: {
+    prompt: string;
+    width?: number;
+    height?: number;
+    steps?: number;
+    cfg?: number;
+    seed?: number;
+    // Custom parameters
+    customParam?: string;
+  }
+): PromptBuilder<any, any, any> {
+  const {
+    prompt,
+    width = 1024,
+    height = 1024,
+    steps = 20,
+    cfg = 3.5,
+    seed = -1,
+    customParam = 'default_value'
+  } = params;
+
+  // Build ComfyUI workflow nodes
+  const workflow = new PromptBuilder();
+
+  // 1. Model loader node
+  const modelLoader = new ComfyNodeBuilder('CheckpointLoaderSimple')
+    .setInput('ckpt_name', modelFileName)
+    .setTitle('Model Loader');
+
+  // 2. CLIP text encoder node
+  const textEncoder = new ComfyNodeBuilder('CLIPTextEncode')
+    .setInput('text', prompt)
+    .setInput('clip', modelLoader.getOutput('clip'))
+    .setTitle('Text Encoder');
+
+  // 3. Empty latent image node
+  const noiseGenerator = new ComfyNodeBuilder('EmptyLatentImage')
+    .setInput('width', width)
+    .setInput('height', height)
+    .setInput('batch_size', 1)
+    .setTitle('Empty Latent Image');
+
+  // 4. Sampler node
+  const sampler = new ComfyNodeBuilder('KSampler')
+    .setInput('model', modelLoader.getOutput('model'))
+    .setInput('positive', textEncoder.getOutput('conditioning'))
+    .setInput('negative', '') // Can add negative prompts
+    .setInput('latent_image', noiseGenerator.getOutput('latent'))
+    .setInput('seed', seed)
+    .setInput('steps', steps)
+    .setInput('cfg', cfg)
+    .setInput('sampler_name', 'euler')
+    .setInput('scheduler', 'normal')
+    .setInput('denoise', 1.0)
+    .setTitle('KSampler');
+
+  // 5. VAE decoder node
+  const decoder = new ComfyNodeBuilder('VAEDecode')
+    .setInput('samples', sampler.getOutput('latent'))
+    .setInput('vae', modelLoader.getOutput('vae'))
+    .setTitle('VAE Decode');
+
+  // 6. Save image node
+  const saveImage = new ComfyNodeBuilder('SaveImage')
+    .setInput('images', decoder.getOutput('image'))
+    .setInput('filename_prefix', 'LobeChat_YourWorkflow')
+    .setTitle('Save Image');
+
+  // Add all nodes to workflow
+  workflow
+    .addNode(modelLoader)
+    .addNode(textEncoder)
+    .addNode(noiseGenerator)
+    .addNode(sampler)
+    .addNode(decoder)
+    .addNode(saveImage);
+
+  return workflow;
+}
+```
+
+### 2. Update Workflow Router
+
+Add routing logic to `utils/workflowRouter.ts`:
+
+```typescript
+import { buildYourWorkflow } from '../workflows/your-workflow';
+
+export class WorkflowRouter {
+  static routeWorkflow(
+    model: string,
+    detectionResult: ModelDetectionResult,
+    modelFileName: string,
+    params: Record<string, any>
+  ): PromptBuilder<any, any, any> {
+    
+    // Existing routing logic...
+    
+    // Add new workflow routing
+    if (detectionResult.variant === 'your_variant') {
+      return buildYourWorkflow(model, modelFileName, params);
+    }
+    
+    // Default handling...
+  }
+}
+```
+
+### 3. Test Workflow
+
+```typescript
+// workflows/your-workflow.test.ts
+import { buildYourWorkflow } from './your-workflow';
+
+describe('Your Custom Workflow', () => {
+  test('should build workflow with correct parameters', () => {
+    const workflow = buildYourWorkflow('test-model', 'test.safetensors', {
+      prompt: 'test prompt',
+      width: 512,
+      height: 512,
+      steps: 10,
+    });
+
+    expect(workflow).toBeDefined();
+    // Verify workflow structure
+    const nodes = workflow.getNodes();
+    expect(nodes.length).toBeGreaterThan(0);
+  });
+});
+```
+
+## Adding LoRA Support
+
+### 1. Update LoRA Registry
+
+Add new LoRA to `config/loraRegistry.ts`:
+
+```typescript
+export const LORA_REGISTRY: Record<string, LoRAConfig> = {
+  // Existing LoRAs...
+  
+  'your-custom-lora.safetensors': {
+    compatibleVariants: ['dev', 'schnell'], // Compatible model variants
+    modelFamily: 'FLUX',
+    priority: 2, // 1=Official, 2=Professional, 3=Community
+  },
+};
+```
+
+### 2. Using LoRA in Workflows
+
+```typescript
+// Add LoRA node in workflow builder
+const loraLoader = new ComfyNodeBuilder('LoraLoader')
+  .setInput('model', modelLoader.getOutput('model'))
+  .setInput('clip', modelLoader.getOutput('clip'))
+  .setInput('lora_name', 'your-custom-lora.safetensors')
+  .setInput('strength_model', 1.0)
+  .setInput('strength_clip', 1.0)
+  .setTitle('LoRA Loader');
+
+// Update subsequent nodes to use LoRA-enhanced model
+const textEncoder = new ComfyNodeBuilder('CLIPTextEncode')
+  .setInput('text', prompt)
+  .setInput('clip', loraLoader.getOutput('clip')) // Use LoRA-enhanced CLIP
+  .setTitle('Text Encoder');
+```
+
+## Adding ControlNet Support
+
+### 1. Update ControlNet Registry
+
+Add new ControlNet model to `config/controlnetRegistry.ts`:
+
+```typescript
+export const CONTROLNET_REGISTRY: Record<string, ControlNetConfig> = {
+  // Existing models...
+  
+  'flux-controlnet-pose-v1.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 'pose', // New control type
+  },
+};
+```
+
+### 2. Extend ControlNet Interface
+
+```typescript
+export interface ControlNetConfig {
+  compatibleVariants: string[];
+  modelFamily: 'FLUX';
+  priority: number;
+  type: 'canny' | 'depth' | 'hed' | 'pose' | 'scribble' | 'normal' | 'semantic';
+}
+```
+
+### 3. Using ControlNet in Workflows
+
+```typescript
+// Add ControlNet preprocessor
+const preprocessor = new ComfyNodeBuilder('CannyEdgePreprocessor')
+  .setInput('image', inputImage)
+  .setInput('low_threshold', 100)
+  .setInput('high_threshold', 200)
+  .setTitle('Canny Edge Preprocessor');
+
+// Add ControlNet apply node
+const controlNetApply = new ComfyNodeBuilder('ControlNetApply')
+  .setInput('conditioning', textEncoder.getOutput('conditioning'))
+  .setInput('control_net', controlNetLoader.getOutput('control_net'))
+  .setInput('image', preprocessor.getOutput('image'))
+  .setInput('strength', 1.0)
+  .setTitle('ControlNet Apply');
+```
+
+## Development Best Practices
+
+### 1. Configuration-Driven Principle
+
+- Store all model information in registries, avoid hardcoding
+- Use priority system for automatic best model selection
+- Support dynamic fallback mechanisms
+
+### 2. Error Handling
+
+```typescript
+import { AgentRuntimeError, AgentRuntimeErrorType } from '../../error';
+
+// Add error handling in workflow builders
+try {
+  const workflow = buildYourWorkflow(model, modelFileName, params);
+  return workflow;
+} catch (error) {
+  throw AgentRuntimeError.createImage({
+    error: new Error(`Workflow build failed: ${error.message}`),
+    errorType: AgentRuntimeErrorType.ComfyUIWorkflowError,
+    provider: 'comfyui',
+  });
+}
+```
+
+### 3. Performance Optimization
+
+```typescript
+// Use caching to reduce repeated computations
+private static workflowCache: Map<string, PromptBuilder<any, any, any>> = new Map();
+
+static getCachedWorkflow(key: string): PromptBuilder<any, any, any> | undefined {
+  return this.workflowCache.get(key);
+}
+
+static setCachedWorkflow(key: string, workflow: PromptBuilder<any, any, any>): void {
+  this.workflowCache.set(key, workflow);
+}
+```
+
+### 4. Test Coverage
+
+Ensure tests are added for each new feature:
+
+```typescript
+// Integration test example
+describe('ComfyUI Integration', () => {
+  test('should handle new model workflow end-to-end', async () => {
+    const comfyUI = new LobeComfyUI({
+      baseURL: 'http://localhost:8188',
+      authType: 'none',
+    });
+
+    const result = await comfyUI.createImage({
+      model: 'your-new-model',
+      params: {
+        prompt: 'test image generation',
+        width: 512,
+        height: 512,
+      },
+    });
+
+    expect(result.imageUrl).toBeDefined();
+    expect(result.width).toBe(512);
+    expect(result.height).toBe(512);
+  });
+});
+```
+
+## Deployment and Publishing
+
+### 1. Validation Checklist
+
+Before releasing new features, ensure:
+
+- [ ] All new models added to corresponding registries
+- [ ] Workflow tests pass
+- [ ] Error handling is complete
+- [ ] Documentation is updated
+- [ ] Performance tests pass
+
+### 2. Documentation Updates
+
+Update relevant documentation files:
+- `docs/usage/providers/comfyui.mdx` - User documentation
+- `docs/development/basic/comfyui-development.mdx` - Developer documentation
+- README and CHANGELOG
+
+### 3. Example Code
+
+Provide complete usage examples:
+
+```typescript
+// Complete example using new features
+const comfyUI = new LobeComfyUI({
+  baseURL: process.env.COMFYUI_BASE_URL,
+  authType: 'bearer',
+  apiKey: process.env.COMFYUI_API_KEY,
+});
+
+// Generate image using new model
+const result = await comfyUI.createImage({
+  model: 'your-new-model',
+  params: {
+    prompt: 'beautiful landscape painting, high quality, detailed',
+    width: 1024,
+    height: 1024,
+    steps: 20,
+    cfg: 3.5,
+    // Custom parameters
+    customParam: 'special_value',
+  },
+});
+
+console.log('Generated image URL:', result.imageUrl);
+```
+
+## Contributing Guidelines
+
+1. **Fork Project**: Fork the LobeChat repository on GitHub
+2. **Create Branch**: `git checkout -b feature/your-feature-name`
+3. **Develop Feature**: Implement new features following this guide
+4. **Add Tests**: Ensure test coverage
+5. **Update Documentation**: Synchronize related documentation
+6. **Submit PR**: Create detailed Pull Request
+
+By following this guide, you can easily extend LobeChat's ComfyUI integration functionality and provide users with more model choices and workflow options.

@@ -21,53 +21,92 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
 
 ### 主要特性
 
-- **FLUX 系列完整支持**：支持 FLUX.1 Schnell、Dev、Krea-dev、Kontext-dev 四个模型
-- **智能双 CLIP 架构**：自动优化 T5 和 CLIP 编码器的组合使用
-- **动态精度选择**：根据硬件自动选择最佳的 weight\_dtype
+- **广泛模型支持**：支持 127 个模型，包含 FLUX 系列（124个）和 SD3.5 系列（3个）
+- **配置驱动架构**：4 个注册表系统提供智能模型选择和 O(1) 查找性能
+- **多格式支持**：支持 .safetensors 和 .gguf 格式，包含多种量化级别
+- **动态精度选择**：支持 default、fp8_e4m3fn、fp8_e5m2、fp8_e4m3fn_fast 精度
 - **多种认证方式**：支持无认证、基本认证、Bearer Token 和自定义认证
-- **高性能优化**：模块化架构，100% 测试覆盖率
+- **智能组件选择**：自动选择最优的 T5、CLIP、VAE 编码器组合
+- **企业级优化**：包含 NF4、SVDQuant、TorchAO、MFLUX 等优化变体
 
 ## 支持的模型
 
-### FLUX.1 Schnell
+LobeChat ComfyUI 集成采用配置驱动的架构，通过 4 个注册表系统支持 **127 个模型**，提供从官方模型到社区优化版本的全覆盖。
 
-- **描述**：超快速文生图模型，1-4 步即可生成高质量图像
-- **许可证**：Apache 2.0 开源许可
-- **适用场景**：实时应用、快速原型制作
-- **参数范围**：
-  - 步数：1-4 步（推荐 4 步）
-  - 分辨率：512×512 至 1536×1536
+### 模型分类体系
 
-### FLUX.1 Dev
+#### 优先级 1：官方核心模型（5个）
 
-- **描述**：高质量文生图模型，支持 guidance scale 调节
-- **许可证**：非商业许可
-- **适用场景**：高质量创作、艺术作品生成
-- **参数范围**：
-  - 步数：10-50 步（推荐 20 步）
-  - CFG Scale：1-10（推荐 3.5）
-  - 分辨率：512×512 至 2048×2048
+**FLUX.1 Official 系列**：
 
-### FLUX.1 Krea-dev
+- `flux1-dev.safetensors` - 高质量创作模型
+- `flux1-schnell.safetensors` - 快速生成模型  
+- `flux1-kontext-dev.safetensors` - 图像编辑模型
+- `flux1-krea-dev.safetensors` - 安全增强模型
 
-- **描述**：增强安全的文生图模型，与 Krea 合作开发
-- **许可证**：非商业许可
-- **特色功能**：内置安全过滤，避免生成不当内容
-- **参数范围**：
-  - 步数：10-50 步（推荐 20 步）
-  - CFG Scale：1-10（推荐 4.5）
-  - 分辨率：512×512 至 2048×2048
+**SD3.5 Official 系列**：
 
-### FLUX.1 Kontext-dev
+- `sd3.5_large.safetensors` - SD3.5 大型基础模型
 
-- **描述**：图像编辑模型，支持基于文本指令修改现有图像
-- **许可证**：非商业许可
-- **特色功能**：图像编辑、局部修改、风格迁移
-- **参数范围**：
-  - 步数：10-50 步（推荐 20 步）
-  - CFG Scale：1-10（推荐 3.5）
-  - 编辑强度：0-1（推荐 0.8）
-  - 分辨率：512×512 至 2048×2048
+#### 优先级 2：企业优化模型（71个）
+
+**量化优化系列**：
+- **GGUF 量化**：每个变体支持 11 种量化级别（F16, Q8_0, Q6_K, Q5_K_M, Q5_K_S, Q4_K_M, Q4_K_S, Q4_0, Q3_K_M, Q3_K_S, Q2_K）
+- **FP8 精度**：fp8_e4m3fn、fp8_e5m2 优化版本
+- **企业轻量级**：FLUX.1-lite-8B 系列
+- **技术实验**：NF4、SVDQuant、TorchAO、optimum-quanto、MFLUX 优化版本
+
+#### 优先级 3：社区精调模型（51个）
+
+**社区优化系列**：
+- **Jib Mix Flux** 系列：高质量混合模型
+- **Real Dream FLUX** 系列：现实主义风格
+- **Vision Realistic** 系列：视觉现实化
+- **PixelWave FLUX** 系列：像素艺术优化
+- **Fluxmania** 系列：多样化风格支持
+
+### SD3.5 模型支持（3个）
+
+**按优先级分布**：
+- **Priority 1**：`sd3.5_large.safetensors` - 大型基础模型
+- **Priority 2**：`sd3.5_large_turbo.safetensors` - 快速生成版本
+- **Priority 3**：`sd3.5_medium.safetensors` - 中等规模模型
+
+### 工作流支持
+
+系统支持 **5 种工作流**：
+- **flux-dev**：高质量创作工作流
+- **flux-schnell**：快速生成工作流  
+- **flux-kontext**：图像编辑工作流
+- **flux-krea**：安全增强工作流
+- **sd35**：SD3.5 专用工作流
+
+### 模型选择策略
+
+**智能模型解析**：
+- **优先级排序**：P1 官方 → P2 企业 → P3 社区
+- **格式兼容**：自动识别 .safetensors 和 .gguf 格式
+- **精度匹配**：根据硬件能力选择最适合的量化级别
+- **回退机制**：当首选模型不可用时自动选择替代方案
+
+### 关键特性
+
+#### FLUX 系列通用参数
+
+| 模型类型 | 推荐步数 | CFG Scale | 分辨率范围 |
+|---------|---------|-----------|-----------|
+| **Schnell** | 4 步 | - | 512×512 至 1536×1536 |
+| **Dev** | 20 步 | 3.5 | 512×512 至 2048×2048 |
+| **Kontext** | 20 步 | 3.5 | 512×512 至 2048×2048 |
+| **Krea** | 20 步 | 4.5 | 512×512 至 2048×2048 |
+
+#### SD3.5 系列参数
+
+| 模型类型 | 推荐步数 | CFG Scale | 分辨率范围 |
+|---------|---------|-----------|-----------|
+| **Large** | 25 步 | 7.0 | 512×512 至 2048×2048 |
+| **Large Turbo** | 8 步 | 3.5 | 512×512 至 1536×1536 |
+| **Medium** | 20 步 | 6.0 | 512×512 至 1536×1536 |
 
 <Steps>
   ### 步骤一：安装和配置 ComfyUI 服务器
@@ -89,25 +128,48 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
   python main.py --listen 0.0.0.0 --port 8188
   ```
 
-  #### 2. 下载 FLUX 模型
+  #### 2. 下载模型文件
 
-  将以下模型下载到相应目录：
+  LobeChat 支持 127 个模型，您可以根据需求选择下载：
 
-  **FLUX 主模型** (放入 `models/diffusion_models/` 目录)：
+  **推荐基础配置** (最小化安装)：
 
-  - `flux1-schnell.safetensors`
-  - `flux1-dev.safetensors`
-  - `flux1-krea-dev.safetensors`
-  - `flux1-kontext-dev.safetensors`
+  **主模型** (放入 `models/diffusion_models/` 目录)：
+  - `flux1-schnell.safetensors` - 快速生成（4步）
+  - `flux1-dev.safetensors` - 高质量创作（20步）
 
-  **VAE 模型** (放入 `models/vae/` 目录)：
+  **必需组件** (放入相应目录)：
+  - `models/vae/ae.safetensors` - VAE 编码器
+  - `models/clip/clip_l.safetensors` - CLIP 文本编码器
+  - `models/clip/t5xxl_fp16.safetensors` - T5 文本编码器
 
-  - `ae.safetensors`
+  **扩展模型选择** (可选)：
 
-  **文本编码器** (放入 `models/clip/` 目录)：
+  **图像编辑能力**：
+  - `flux1-kontext-dev.safetensors` - 支持图像编辑
+  - `flux1-krea-dev.safetensors` - 安全增强版本
 
-  - `t5xxl_fp16.safetensors`
-  - `clip_l.safetensors`
+  **SD3.5 支持**：
+  - `sd3.5_large.safetensors` - SD3.5 大模型
+  - `sd3.5_large_turbo.safetensors` - SD3.5 快速版本
+
+  **量化优化版本** (节省显存)：
+  - `flux1-dev-fp8-e4m3fn.safetensors` - FP8 量化版本
+  - `flux1-schnell-Q4_0.gguf` - GGUF Q4 量化版本
+
+  **LoRA 扩展** (放入 `models/loras/` 目录)：
+  - `realism_lora.safetensors` - 现实主义风格
+  - `anime_lora.safetensors` - 动漫风格
+  - `disney_lora.safetensors` - 迪士尼风格
+
+  **ControlNet 支持** (放入 `models/controlnet/` 目录)：
+  - `flux-controlnet-canny-v3.safetensors` - 边缘检测控制
+  - `flux-controlnet-depth-v3.safetensors` - 深度图控制
+  - `flux-controlnet-hed-v3.safetensors` - HED 边缘检测
+
+  <Callout type={'info'}>
+    **智能模型选择**：LobeChat 会根据服务器上可用的模型文件自动选择最佳模型。您无需下载所有模型，系统会在可用模型中按优先级（官方 > 企业 > 社区）自动选择。
+  </Callout>
 
   #### 3. 验证服务器运行
 
@@ -653,24 +715,56 @@ ComfyUI 是一个功能强大的稳定扩散和流扩散 GUI，提供基于节�
 
 #### 硬件要求
 
-**最低配置**：
+**最低配置** (GGUF 量化模型)：
 
-- GPU：8GB VRAM
-- RAM：16GB
-- 存储：50GB 可用空间
+- GPU：6GB VRAM (使用 Q4 量化)
+- RAM：12GB
+- 存储：30GB 可用空间
 
-**推荐配置**：
+**推荐配置** (标准模型)：
 
-- GPU：16GB+ VRAM (如 RTX 4080/4090)
-- RAM：32GB+
+- GPU：12GB+ VRAM (RTX 4070 Ti 或更高)
+- RAM：24GB+
 - 存储：SSD 100GB+ 可用空间
 
-#### 优化设置
+**高端配置** (全模型支持)：
 
-1. **启用半精度**：在 ComfyUI 启动参数中添加 `--fp16`
-2. **CPU 卸载**：内存不足时启用 `--cpu`
-3. **批量生成**：避免频繁的小批量请求
-4. **合理分辨率**：根据硬件能力选择合适的图像尺寸
+- GPU：24GB+ VRAM (RTX 4090/A6000)
+- RAM：64GB+
+- 存储：NVMe SSD 500GB+ 可用空间
+
+#### 量化选择策略
+
+**根据显存选择最佳量化**：
+
+| 显存容量 | 推荐量化 | 模型示例 | 性能特点 |
+|---------|---------|----------|----------|
+| **6-8GB** | Q4_0, Q4_K_S | `flux1-dev-Q4_0.gguf` | 最小显存占用 |
+| **10-12GB** | Q6_K, Q8_0 | `flux1-dev-Q6_K.gguf` | 平衡性能与质量 |
+| **16GB+** | FP8, FP16 | `flux1-dev-fp8-e4m3fn.safetensors` | 接近原始质量 |
+| **24GB+** | 完整模型 | `flux1-dev.safetensors` | 最佳质量 |
+
+#### 系统优化设置
+
+1. **智能模型选择**：系统自动根据可用显存选择合适的量化级别
+2. **动态精度**：启用 `--fp16` 或让系统自动选择 FP8 优化
+3. **内存管理**：使用 `--cpu` 在显存不足时卸载到系统内存
+4. **批量优化**：多图生成时使用批处理模式提高效率
+5. **缓存策略**：系统缓存模型解析结果，减少重复计算
+
+#### 企业级优化
+
+**专用优化版本**：
+- **MFLUX 系列**：Apple Silicon (M1/M2/M3) 优化
+- **TorchAO 系列**：使用 TorchAO 量化框架
+- **SVDQuant 系列**：使用奇异值分解量化
+- **NF4 系列**：使用 4-bit NormalFloat 量化
+
+**选择指南**：
+- **Apple Silicon**：优先选择 MFLUX 优化版本
+- **NVIDIA GPU**：使用 FP8 或 TorchAO 版本  
+- **AMD GPU**：使用标准 GGUF 量化版本
+- **CPU 推理**：选择 Q4 或 Q6 量化版本
 
 ## API 参考
 
