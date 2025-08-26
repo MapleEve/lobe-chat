@@ -181,13 +181,6 @@ export const imageRouter = router({
 
         // Check if operation has been cancelled
         checkAbortSignal(signal);
-
-        console.log(
-          '🚀 ASYNC ROUTE: About to call agentRuntime.createImage with provider:',
-          provider,
-          'model:',
-          model,
-        );
         log('Agent runtime initialized, calling createImage');
         const response = await agentRuntime.createImage({
           model,

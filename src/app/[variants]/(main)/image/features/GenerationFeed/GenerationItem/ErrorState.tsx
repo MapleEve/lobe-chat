@@ -39,9 +39,6 @@ export const ErrorState = memo<ErrorStateProps>(
           const translationKey = `response.${errorBody}`;
           const translated = tError(translationKey as any);
 
-          // Debug log
-          console.log('Translation attempt:', { errorBody, translated, translationKey });
-
           // If translation key is not found, it returns the key itself
           // Check if we got back the key (meaning translation failed)
           if (translated === translationKey || (translated as string).startsWith('response.')) {
