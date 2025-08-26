@@ -10,7 +10,8 @@ import { ModelProviderCard } from '@/types/llm';
  */
 const ComfyUI: ModelProviderCard = {
   chatModels: [],
-  description: '强大的开源图像生成工作流引擎，支持 FLUX 等先进模型',
+  description:
+    '强大的开源图像、视频、音频生成工作流引擎，支持 SD FLUX Qwen Hunyuan WAN 等先进模型，提供节点化工作流编辑和私有化部署能力',
   enabled: true,
   id: 'comfyui',
   name: 'ComfyUI',
