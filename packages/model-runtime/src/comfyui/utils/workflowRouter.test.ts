@@ -6,6 +6,7 @@ import { buildFluxDevWorkflow } from '../workflows/flux-dev';
 import { buildFluxKontextWorkflow } from '../workflows/flux-kontext';
 import { buildFluxKreaWorkflow } from '../workflows/flux-krea';
 import { buildFluxSchnellWorkflow } from '../workflows/flux-schnell';
+import { buildSD35Workflow } from '../workflows/sd35';
 import { type WorkflowDetectionResult, WorkflowRouter } from './workflowRouter';
 
 // Mock workflow builders
@@ -23,6 +24,10 @@ vi.mock('../workflows/flux-krea', () => ({
 
 vi.mock('../workflows/flux-schnell', () => ({
   buildFluxSchnellWorkflow: vi.fn(),
+}));
+
+vi.mock('../workflows/sd35', () => ({
+  buildSD35Workflow: vi.fn(),
 }));
 
 describe('WorkflowRouter', () => {
@@ -43,6 +48,7 @@ describe('WorkflowRouter', () => {
     (buildFluxSchnellWorkflow as Mock).mockReturnValue(mockPromptBuilder);
     (buildFluxKontextWorkflow as Mock).mockReturnValue(mockPromptBuilder);
     (buildFluxKreaWorkflow as Mock).mockReturnValue(mockPromptBuilder);
+    (buildSD35Workflow as Mock).mockReturnValue(mockPromptBuilder);
   });
 
   describe('Factory Pattern - routeWorkflow', () => {
@@ -222,6 +228,21 @@ describe('WorkflowRouter', () => {
         expect(result).toBe(mockPromptBuilder);
       });
 
+      it('should route sd35 to buildSD35Workflow', () => {
+        const result = WorkflowRouter.routeWorkflow(
+          'sd35',
+          supportedResult,
+          'sd3.5_large.safetensors',
+          { steps: 28, cfg: 4.5 },
+        );
+
+        expect(buildSD35Workflow).toHaveBeenCalledWith('sd3.5_large.safetensors', {
+          steps: 28,
+          cfg: 4.5,
+        });
+        expect(result).toBe(mockPromptBuilder);
+      });
+
       it('should pass empty params when not provided', () => {
         WorkflowRouter.routeWorkflow('flux-dev', supportedResult, 'flux-dev.safetensors');
 
@@ -315,6 +336,27 @@ describe('WorkflowRouter', () => {
         );
 
         expect(buildFluxKreaWorkflow).toHaveBeenCalledWith('custom-flux-krea.safetensors', {});
+        expect(result).toBe(mockPromptBuilder);
+      });
+
+      it('should fallback to sd35 variant for supported SD3.5 models', () => {
+        const detectionResult: WorkflowDetectionResult = {
+          architecture: 'SD3',
+          variant: 'sd35',
+          isSupported: true,
+        };
+
+        const result = WorkflowRouter.routeWorkflow(
+          'sd3.5_medium.safetensors',
+          detectionResult,
+          'sd3.5_medium.safetensors',
+          { steps: 50, cfg: 7.0 },
+        );
+
+        expect(buildSD35Workflow).toHaveBeenCalledWith('sd3.5_medium.safetensors', {
+          steps: 50,
+          cfg: 7.0,
+        });
         expect(result).toBe(mockPromptBuilder);
       });
 
@@ -426,7 +468,13 @@ describe('WorkflowRouter', () => {
     describe('getExactlySupportedModels', () => {
       it('should return all exact model IDs', () => {
         const models = WorkflowRouter.getExactlySupportedModels();
-        expect(models).toEqual(['flux-dev', 'flux-kontext-dev', 'flux-krea-dev', 'flux-schnell']);
+        expect(models).toEqual([
+          'flux-dev',
+          'flux-kontext-dev',
+          'flux-krea-dev',
+          'flux-schnell',
+          'sd35',
+        ]);
       });
 
       it('should return array of strings', () => {
@@ -447,7 +495,7 @@ describe('WorkflowRouter', () => {
     describe('getSupportedFluxVariants', () => {
       it('should return all supported variants', () => {
         const variants = WorkflowRouter.getSupportedFluxVariants();
-        expect(variants).toEqual(['dev', 'kontext', 'krea', 'schnell']);
+        expect(variants).toEqual(['dev', 'kontext', 'krea', 'schnell', 'sd35']);
       });
 
       it('should return array of strings', () => {
@@ -471,6 +519,7 @@ describe('WorkflowRouter', () => {
         expect(WorkflowRouter.hasExactSupport('flux-kontext-dev')).toBe(true);
         expect(WorkflowRouter.hasExactSupport('flux-krea-dev')).toBe(true);
         expect(WorkflowRouter.hasExactSupport('flux-schnell')).toBe(true);
+        expect(WorkflowRouter.hasExactSupport('sd35')).toBe(true);
       });
 
       it('should return false for unsupported models', () => {
@@ -498,6 +547,7 @@ describe('WorkflowRouter', () => {
         expect(WorkflowRouter.hasVariantSupport('kontext')).toBe(true);
         expect(WorkflowRouter.hasVariantSupport('krea')).toBe(true);
         expect(WorkflowRouter.hasVariantSupport('schnell')).toBe(true);
+        expect(WorkflowRouter.hasVariantSupport('sd35')).toBe(true);
       });
 
       it('should return false for unsupported variants', () => {
@@ -524,9 +574,9 @@ describe('WorkflowRouter', () => {
         const stats = WorkflowRouter.getRoutingStats();
 
         expect(stats).toEqual({
-          exactModelsCount: 4,
-          supportedVariantsCount: 4,
-          totalBuilders: 4, // All builders are unique
+          exactModelsCount: 5,
+          supportedVariantsCount: 5,
+          totalBuilders: 5, // All builders are unique
         });
       });
 
@@ -551,8 +601,8 @@ describe('WorkflowRouter', () => {
       it('should have totalBuilders equal to unique builders count', () => {
         const stats = WorkflowRouter.getRoutingStats();
 
-        // Since all 4 builders are unique, totalBuilders should be 4
-        expect(stats.totalBuilders).toBe(4);
+        // Since all 5 builders are unique, totalBuilders should be 5
+        expect(stats.totalBuilders).toBe(5);
       });
     });
   });
@@ -769,6 +819,65 @@ describe('WorkflowRouter', () => {
           height: 768,
         },
       );
+      expect(result).toBe(mockPromptBuilder);
+    });
+
+    it('should work with realistic SD3.5 detection result', () => {
+      const detectionResult: WorkflowDetectionResult = {
+        architecture: 'SD3',
+        category: 'model',
+        variant: 'sd35',
+        isSupported: true,
+      };
+
+      const result = WorkflowRouter.routeWorkflow(
+        'sd3.5_large_v1.0',
+        detectionResult,
+        'sd3.5_large_v1.0.safetensors',
+        {
+          steps: 28,
+          cfg: 4.5,
+          width: 1024,
+          height: 1024,
+          seed: 12345,
+        },
+      );
+
+      expect(buildSD35Workflow).toHaveBeenCalledWith('sd3.5_large_v1.0.safetensors', {
+        steps: 28,
+        cfg: 4.5,
+        width: 1024,
+        height: 1024,
+        seed: 12345,
+      });
+      expect(result).toBe(mockPromptBuilder);
+    });
+
+    it('should work with exact SD3.5 model ID matching', () => {
+      const detectionResult: WorkflowDetectionResult = {
+        architecture: 'SD3',
+        category: 'model',
+        isSupported: true,
+      };
+
+      const result = WorkflowRouter.routeWorkflow(
+        'sd35',
+        detectionResult,
+        'sd3.5_medium_v1.0.safetensors',
+        {
+          steps: 50,
+          cfg: 7.0,
+          width: 512,
+          height: 768,
+        },
+      );
+
+      expect(buildSD35Workflow).toHaveBeenCalledWith('sd3.5_medium_v1.0.safetensors', {
+        steps: 50,
+        cfg: 7.0,
+        width: 512,
+        height: 768,
+      });
       expect(result).toBe(mockPromptBuilder);
     });
   });
