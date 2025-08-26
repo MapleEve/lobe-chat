@@ -212,7 +212,7 @@ vi.mock('./workflows/sd35', () => ({
   })),
 }));
 
-vi.mock('./workflows/sd35-no-clip', () => ({
+vi.mock('./workflows/sd35-incl-clip', () => ({
   buildSD35NoClipWorkflow: vi.fn().mockImplementation(() => ({
     input: vi.fn().mockReturnThis(),
     setInputNode: vi.fn().mockReturnThis(),

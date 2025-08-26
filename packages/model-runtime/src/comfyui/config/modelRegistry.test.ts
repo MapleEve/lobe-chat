@@ -42,7 +42,7 @@ describe('ModelRegistry', () => {
           'fill',
           'redux',
           'sd35',
-          'sd35-no-clip',
+          'sd35-incl-clip',
         ]).toContain(config.variant);
 
         // Model family should be supported

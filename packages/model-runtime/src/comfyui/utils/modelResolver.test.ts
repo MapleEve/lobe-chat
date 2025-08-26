@@ -222,8 +222,8 @@ describe('modelResolver', () => {
         expect(mockGetModelsByVariant).toHaveBeenCalledWith('sd35');
       });
 
-      it('should map stable-diffusion-3.5-noclip to sd35-no-clip variant', async () => {
-        // Mock server response with no-clip SD3.5 model
+      it('should map stable-diffusion-3.5-inclclip to sd35-incl-clip variant', async () => {
+        // Mock server response with incl-clip SD3.5 model
         const mockServerModels = [
           'sd3.5_medium_incl_clips_t5xxlfp8scaled.safetensors',
           'flux1-dev.safetensors',
@@ -243,15 +243,15 @@ describe('modelResolver', () => {
             }),
         });
 
-        // Mock getModelsByVariant for sd35-no-clip variant
+        // Mock getModelsByVariant for sd35-incl-clip variant
         mockGetModelsByVariant.mockReturnValue([
           'sd3.5_medium_incl_clips_t5xxlfp8scaled.safetensors',
         ]);
 
-        const result = await resolver.resolveModelFileName('stable-diffusion-3.5-noclip');
+        const result = await resolver.resolveModelFileName('stable-diffusion-3.5-inclclip');
 
         expect(result).toBe('sd3.5_medium_incl_clips_t5xxlfp8scaled.safetensors');
-        expect(mockGetModelsByVariant).toHaveBeenCalledWith('sd35-no-clip');
+        expect(mockGetModelsByVariant).toHaveBeenCalledWith('sd35-incl-clip');
       });
 
       it('should handle direct sd35 variant name', async () => {
@@ -726,11 +726,9 @@ describe('modelResolver', () => {
       it('should return exists: false when model is not found', async () => {
         mockGetModelsByVariant.mockReturnValue([]);
 
-        const result = await resolver.validateModel('non-existent-model');
-
-        expect(result).toEqual({
-          exists: false,
-        });
+        await expect(resolver.validateModel('non-existent-model')).rejects.toThrow(
+          'Model not found: non-existent-model'
+        );
       });
 
       it('should re-throw connection errors', async () => {

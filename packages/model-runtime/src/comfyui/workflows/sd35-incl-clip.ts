@@ -1,5 +1,5 @@
 /**
- * SD3.5 No-CLIP Workflow
+ * SD3.5 INCL-CLIP Workflow
  *
  * For SD3.5 models with built-in CLIP/T5 encoders
  * E.g., sd3.5_medium_incl_clips_t5xxlfp8scaled.safetensors
@@ -14,9 +14,9 @@ import { DEFAULT_NEGATIVE_PROMPT } from '../constants';
  */
 
 /**
- * Build SD3.5 No-CLIP workflow for models with internal encoders
+ * Build SD3.5 INCL-CLIP workflow for models with internal encoders
  */
-export function buildSD35NoClipWorkflow(
+export function buildSD35InclClipWorkflow(
   modelFileName: string,
   params: Record<string, any>,
 ): PromptBuilder<any, any, any> {

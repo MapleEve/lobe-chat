@@ -6,7 +6,7 @@ import { buildFluxKontextWorkflow } from '../workflows/flux-kontext';
 import { buildFluxKreaWorkflow } from '../workflows/flux-krea';
 import { buildFluxSchnellWorkflow } from '../workflows/flux-schnell';
 import { buildSD35Workflow } from '../workflows/sd35';
-import { buildSD35NoClipWorkflow } from '../workflows/sd35-no-clip';
+import { buildSD35InclClipWorkflow } from '../workflows/sd35-incl-clip';
 
 // Re-export for backward compatibility
 export { WorkflowError as WorkflowBuilderError } from '../errors';
@@ -22,7 +22,7 @@ export interface WorkflowDetectionResult {
   /** Whether this model is supported / 是否支持的模型 */
   isSupported: boolean;
   /** Variant type / 变体类型 */
-  variant?: 'dev' | 'schnell' | 'kontext' | 'krea' | 'sd35' | 'sd35-no-clip';
+  variant?: 'dev' | 'schnell' | 'kontext' | 'krea' | 'sd35' | 'sd35-incl-clip';
 }
 
 /**
@@ -49,7 +49,7 @@ export class WorkflowRouter {
     'flux-krea-dev': buildFluxKreaWorkflow,
     'flux-schnell': buildFluxSchnellWorkflow,
     'sd35': buildSD35Workflow,
-    'sd35-no-clip': buildSD35NoClipWorkflow,
+    'sd35-incl-clip': buildSD35InclClipWorkflow,
   };
 
   /**
@@ -61,7 +61,7 @@ export class WorkflowRouter {
     'krea': buildFluxKreaWorkflow,
     'schnell': buildFluxSchnellWorkflow,
     'sd35': buildSD35Workflow,
-    'sd35-no-clip': buildSD35NoClipWorkflow,
+    'sd35-incl-clip': buildSD35InclClipWorkflow,
   };
 
   /**

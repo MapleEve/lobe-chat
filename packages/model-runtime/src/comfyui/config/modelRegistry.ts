@@ -7,7 +7,7 @@ export interface ModelConfig {
   modelFamily: 'FLUX' | 'SD1' | 'SDXL' | 'SD3';
   priority: number;
   recommendedDtype: 'default' | 'fp8_e4m3fn' | 'fp8_e4m3fn_fast' | 'fp8_e5m2';
-  variant: 'dev' | 'schnell' | 'kontext' | 'krea' | 'fill' | 'redux' | 'sd35' | 'sd35-no-clip';
+  variant: 'dev' | 'schnell' | 'kontext' | 'krea' | 'fill' | 'redux' | 'sd35' | 'sd35-incl-clip';
 }
 
 // ===================================================================
@@ -849,7 +849,7 @@ export const MODEL_REGISTRY: Record<string, ModelConfig> = {
   // SD3.5 Models (No CLIP - includes CLIP/T5 internally)
   'sd3.5_medium_incl_clips_t5xxlfp8scaled.safetensors': {
     priority: 1,
-    variant: 'sd35-no-clip',
+    variant: 'sd35-incl-clip',
     modelFamily: 'SD3',
     recommendedDtype: 'fp8_e4m3fn',
   },
