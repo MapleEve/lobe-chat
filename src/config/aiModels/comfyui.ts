@@ -161,10 +161,10 @@ const comfyuiImageModels: AIImageModelCard[] = [
   },
   {
     description:
-      'Stable Diffusion 3.5 No-CLIP 版本，内置 CLIP/T5 编码器，无需外部编码器文件。适用于 sd3.5_medium_incl_clips 等模型。',
-    displayName: 'Stable Diffusion 3.5 (No-CLIP)',
+      'Stable Diffusion 3.5 内置 CLIP 版本，内置 CLIP/T5 编码器，无需外部编码器文件。适用于 sd3.5_medium_incl_clips 等模型。',
+    displayName: 'Stable Diffusion 3.5 (内置编码器)',
     enabled: true,
-    id: 'stable-diffusion-3.5-noclip',
+    id: 'stable-diffusion-3.5-inclclip',
     parameters: sd35ParamsSchema,
     releasedAt: '2024-10-22',
     type: 'image',
