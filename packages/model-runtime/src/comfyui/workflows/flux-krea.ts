@@ -44,14 +44,11 @@ export function buildFluxKreaWorkflow(
       },
       class_type: 'SamplerCustomAdvanced',
       inputs: {
-        guider: ['14', 0], // Use BasicGuider output for GUIDER type
-        latent_image: ['7', 0],
-        model: ['4', 0],
-        negative: ['6', 0], // Use FluxGuidance output for negative conditioning
-        noise: ['13', 0],
-        positive: ['6', 0], // Use FluxGuidance output for positive conditioning
-        sampler: ['8', 0],
-        sigmas: ['9', 0],
+        guider: ['14', 0], // ✅ BasicGuider provides GUIDER type (handles model/conditioning)
+        latent_image: ['7', 0], // Empty latent image for txt2img
+        noise: ['13', 0], // Random noise for initialization
+        sampler: ['8', 0], // Sampling algorithm
+        sigmas: ['9', 0], // Noise schedule from BasicScheduler
       },
     },
     '11': {

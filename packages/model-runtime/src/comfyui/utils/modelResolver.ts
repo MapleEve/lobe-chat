@@ -5,6 +5,7 @@
  * with simple O(1) model registry lookups and basic server validation.
  */
 import { ComfyApi } from '@saintno/comfyui-sdk';
+import debug from 'debug';
 
 import { AgentRuntimeErrorType } from '../../error';
 import { AgentRuntimeError } from '../../utils/createError';
@@ -15,6 +16,8 @@ import {
   getModelsByVariant,
 } from '../config/modelRegistry';
 
+const log = debug('lobe-image:comfyui');
+
 /**
  * Simple model resolver - O(1) lookup via getModelConfig interface
  * @param modelName - The model filename (with or without path)
@@ -24,12 +27,12 @@ export function resolveModel(modelName: string): ModelConfig | null {
   // Remove path, keep only filename
   const fileName = modelName.split('/').pop() || modelName;
 
-  console.log('🔍 [ModelResolver] resolveModel called with:', { fileName, modelName });
+  log('🔍 [ModelResolver] resolveModel called with:', { fileName, modelName });
 
   // Direct O(1) lookup
   let config = getModelConfig(fileName);
 
-  console.log('🔍 [ModelResolver] Direct lookup result:', {
+  log('🔍 [ModelResolver] Direct lookup result:', {
     config: config ? { priority: config.priority, variant: config.variant } : null,
     fileName,
     found: !!config,
@@ -95,36 +98,36 @@ export class ModelResolver {
    * Get models from server with simple caching
    */
   async getAvailableModelFiles(): Promise<string[]> {
-    console.log('🎯 ModelResolver.getAvailableModelFiles() CALLED');
+    log('🎯 ModelResolver.getAvailableModelFiles() CALLED');
     if (this.modelCache && Date.now() < this.cacheExpiry) {
-      console.log('📦 ModelResolver: Returning cached models');
+      log('📦 ModelResolver: Returning cached models');
       return this.modelCache;
     }
 
-    console.log('🔄 ModelResolver: Cache miss, fetching from server');
+    log('🔄 ModelResolver: Cache miss, fetching from server');
     try {
-      console.log('🔧 ModelResolver: About to call /object_info');
+      log('🔧 ModelResolver: About to call /object_info');
       const response = await this.client.fetchApi('/object_info');
-      console.log('📡 ModelResolver: Response status:', response.status, response.statusText);
+      log('📡 ModelResolver: Response status:', response.status, response.statusText);
 
       if (!response.ok) {
         // Properly classify HTTP errors based on status code
         if (response.status === 401) {
-          console.log('✅ ModelResolver: 401 detected, throwing InvalidProviderAPIKey');
+          log('✅ ModelResolver: 401 detected, throwing InvalidProviderAPIKey');
           throw AgentRuntimeError.createImage({
             error: { message: `HTTP ${response.status}: ${response.statusText}` },
             errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
             provider: 'comfyui',
           });
         } else if (response.status === 403) {
-          console.log('✅ ModelResolver: 403 detected, throwing PermissionDenied');
+          log('✅ ModelResolver: 403 detected, throwing PermissionDenied');
           throw AgentRuntimeError.createImage({
             error: { message: `HTTP ${response.status}: ${response.statusText}` },
             errorType: AgentRuntimeErrorType.PermissionDenied,
             provider: 'comfyui',
           });
         } else {
-          console.log('✅ ModelResolver: Other HTTP error, throwing ComfyUIServiceUnavailable');
+          log('✅ ModelResolver: Other HTTP error, throwing ComfyUIServiceUnavailable');
           // Other HTTP errors (404, 5xx) are service unavailability issues
           throw AgentRuntimeError.createImage({
             error: { message: `HTTP ${response.status}: ${response.statusText}` },
@@ -150,7 +153,7 @@ export class ModelResolver {
 
       return this.modelCache;
     } catch (error: unknown) {
-      console.log('🔥 ModelResolver fetchApi caught error:', {
+      log('🔥 ModelResolver fetchApi caught error:', {
         error,
         errorCause: (error as any)?.cause,
         errorMessage: error instanceof Error ? error.message : 'Unknown error',
@@ -161,16 +164,16 @@ export class ModelResolver {
 
       // Check if SDK threw a Response object as the error
       if (error instanceof Response) {
-        console.log('📦 Error is a Response object, status:', error.status);
+        log('📦 Error is a Response object, status:', error.status);
         if (error.status === 401) {
-          console.log('✅ ModelResolver: 401 from Response object, throwing InvalidProviderAPIKey');
+          log('✅ ModelResolver: 401 from Response object, throwing InvalidProviderAPIKey');
           throw AgentRuntimeError.createImage({
             error: { message: `HTTP 401: Unauthorized` },
             errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
             provider: 'comfyui',
           });
         } else if (error.status === 403) {
-          console.log('✅ ModelResolver: 403 from Response object, throwing PermissionDenied');
+          log('✅ ModelResolver: 403 from Response object, throwing PermissionDenied');
           throw AgentRuntimeError.createImage({
             error: { message: `HTTP 403: Forbidden` },
             errorType: AgentRuntimeErrorType.PermissionDenied,
@@ -182,16 +185,16 @@ export class ModelResolver {
       // Check if error has a cause that's a Response object
       if ((error as any)?.cause instanceof Response) {
         const cause = (error as any).cause as Response;
-        console.log('📦 Error cause is a Response object, status:', cause.status);
+        log('📦 Error cause is a Response object, status:', cause.status);
         if (cause.status === 401) {
-          console.log('✅ ModelResolver: 401 from error.cause, throwing InvalidProviderAPIKey');
+          log('✅ ModelResolver: 401 from error.cause, throwing InvalidProviderAPIKey');
           throw AgentRuntimeError.createImage({
             error: { message: (error as Error).message || `HTTP 401: Unauthorized` },
             errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
             provider: 'comfyui',
           });
         } else if (cause.status === 403) {
-          console.log('✅ ModelResolver: 403 from error.cause, throwing PermissionDenied');
+          log('✅ ModelResolver: 403 from error.cause, throwing PermissionDenied');
           throw AgentRuntimeError.createImage({
             error: { message: (error as Error).message || `HTTP 403: Forbidden` },
             errorType: AgentRuntimeErrorType.PermissionDenied,
@@ -222,11 +225,11 @@ export class ModelResolver {
    * Prioritizes variant-based selection over direct filename matching
    */
   async resolveModelFileName(modelId: string): Promise<string> {
-    console.log('🔍 [ModelResolver] resolveModelFileName called with:', modelId);
+    log('🔍 [ModelResolver] resolveModelFileName called with:', modelId);
 
     // Get server models first
     const serverModels = await this.getAvailableModelFiles();
-    console.log('🔍 [ModelResolver] Available server models:', serverModels.length, 'models');
+    log('🔍 [ModelResolver] Available server models:', serverModels.length, 'models');
 
     // Clean up modelId (remove path if any)
     const cleanModelId = modelId.split('/').pop() || modelId;
@@ -253,11 +256,11 @@ export class ModelResolver {
     const isVariantName = variantName !== null;
 
     if (isVariantName) {
-      console.log('🔍 [ModelResolver] Input recognized as variant name:', variantName);
+      log('🔍 [ModelResolver] Input recognized as variant name:', variantName);
 
       // Get all models for this variant, sorted by priority
       const variantModels = getModelsByVariant(variantName as ModelConfig['variant']);
-      console.log('🔍 [ModelResolver] Found variant models:', {
+      log('🔍 [ModelResolver] Found variant models:', {
         models: variantModels.slice(0, 5),
         totalModels: variantModels.length,
         variant: variantName, // Log first 5 for debugging
@@ -266,16 +269,13 @@ export class ModelResolver {
       // Find the best match that exists on server
       for (const candidateModel of variantModels) {
         if (serverModels.includes(candidateModel)) {
-          console.log(
-            '✅ [ModelResolver] Best matching file found via variant selection:',
-            candidateModel,
-          );
+          log('✅ [ModelResolver] Best matching file found via variant selection:', candidateModel);
           return candidateModel;
         }
       }
 
       // No variant models found on server
-      console.log('❌ [ModelResolver] No variant models found on server for variant:', variantName);
+      log('❌ [ModelResolver] No variant models found on server for variant:', variantName);
       // Don't include detailed message - let frontend handle i18n
       throw AgentRuntimeError.createImage({
         error: new Error(`ModelNotFound`),
@@ -286,11 +286,11 @@ export class ModelResolver {
 
     // Second priority: Check if it's a direct filename on server (for backward compatibility)
     if (serverModels.includes(cleanModelId)) {
-      console.log('✅ [ModelResolver] Direct filename found on server:', cleanModelId);
+      log('✅ [ModelResolver] Direct filename found on server:', cleanModelId);
       // Still validate it's a supported model (but don't fail if not)
       const config = getModelConfig(cleanModelId);
       if (!config) {
-        console.log(
+        log(
           '⚠️ [ModelResolver] Direct filename found but not in registry, allowing for backward compatibility',
         );
       }
@@ -299,14 +299,14 @@ export class ModelResolver {
 
     // Third priority: Try to resolve as a model file that might have variant info
     const config = getModelConfig(cleanModelId);
-    console.log('🔍 [ModelResolver] getModelConfig result for direct lookup:', {
+    log('🔍 [ModelResolver] getModelConfig result for direct lookup:', {
       cleanModelId,
       found: !!config,
       variant: config?.variant,
     });
 
     if (config && config.variant) {
-      console.log(
+      log(
         '🔍 [ModelResolver] Found model config with variant, looking for files on server for variant:',
         config.variant,
       );
@@ -317,7 +317,7 @@ export class ModelResolver {
         return serverConfig && serverConfig.variant === config.variant;
       });
 
-      console.log('🔍 [ModelResolver] Matching files for variant:', {
+      log('🔍 [ModelResolver] Matching files for variant:', {
         matchingFiles,
         variant: config.variant,
       });
@@ -331,7 +331,7 @@ export class ModelResolver {
         });
 
         const bestMatch = sortedFiles[0];
-        console.log(
+        log(
           '✅ [ModelResolver] Best matching file found via model config variant lookup:',
           bestMatch,
         );

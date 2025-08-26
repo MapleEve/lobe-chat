@@ -66,8 +66,7 @@ const categorizeError = (
   error: any,
   isAborted: boolean,
 ): { errorMessage: string; errorType: AsyncTaskErrorType } => {
-  // 添加详细的错误调试日志
-  console.log('🔥🔥🔥 [ASYNC] categorizeError called:', {
+  log('🔥🔥🔥 [ASYNC] categorizeError called:', {
     errorMessage: error?.message,
     errorName: error?.name,
     errorStatus: error?.status,
@@ -75,7 +74,7 @@ const categorizeError = (
     fullError: JSON.stringify(error, null, 2),
     isAborted,
   });
-  // 处理 ComfyUI 服务不可用
+  // Handle Comfy UI errors
   if (error.errorType === AgentRuntimeErrorType.ComfyUIServiceUnavailable) {
     return {
       errorMessage:
@@ -84,7 +83,6 @@ const categorizeError = (
     };
   }
 
-  // 处理 ComfyUI 业务错误
   if (error.errorType === AgentRuntimeErrorType.ComfyUIBizError) {
     return {
       errorMessage: error.error?.message || error.message || AgentRuntimeErrorType.ComfyUIBizError,
@@ -92,7 +90,6 @@ const categorizeError = (
     };
   }
 
-  // 处理 ConnectionCheckFailed
   if (error.errorType === AgentRuntimeErrorType.ConnectionCheckFailed) {
     return {
       errorMessage: error.message || AgentRuntimeErrorType.ConnectionCheckFailed,
@@ -100,7 +97,6 @@ const categorizeError = (
     };
   }
 
-  // 处理 PermissionDenied
   if (error.errorType === AgentRuntimeErrorType.PermissionDenied) {
     return {
       errorMessage: error.error?.message || error.message || AgentRuntimeErrorType.PermissionDenied,
@@ -108,7 +104,6 @@ const categorizeError = (
     };
   }
 
-  // 处理 ModelNotFound
   if (error.errorType === AgentRuntimeErrorType.ModelNotFound) {
     return {
       errorMessage: error.error?.message || error.message || AgentRuntimeErrorType.ModelNotFound,

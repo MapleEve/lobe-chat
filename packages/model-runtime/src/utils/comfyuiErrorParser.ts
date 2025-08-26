@@ -179,28 +179,12 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
  * @returns 解析后的错误对象和错误类型
  */
 export function parseComfyUIErrorMessage(error: any): ParsedError {
-  console.log('🔍 ComfyUI Error Parser DEBUG:', {
-    error,
-    errorCode: error?.code,
-    errorMessage: error?.message,
-    errorName: error?.name,
-    errorStatus: error?.status,
-    errorStatusCode: error?.statusCode,
-    errorType: typeof error,
-  });
   const comfyError = extractComfyUIErrorInfo(error);
-
-  console.log('📤 Extracted ComfyError:', {
-    comfyErrorMessage: comfyError.message,
-    comfyErrorStatus: comfyError.status,
-    messageIncludes401: comfyError.message?.includes('HTTP 401'),
-  });
 
   // 1. HTTP状态码错误（优先检查）
   const status = comfyError.status;
   if (status) {
     if (status === 401) {
-      console.log('✅ HTTP 401 detected, returning InvalidProviderAPIKey');
       return {
         error: comfyError,
         errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
@@ -208,7 +192,6 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
     }
 
     if (status === 403) {
-      console.log('✅ HTTP 403 detected, returning PermissionDenied');
       return {
         error: comfyError,
         errorType: AgentRuntimeErrorType.PermissionDenied,
@@ -217,7 +200,6 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
 
     // 404 表示服务端点不存在，说明 ComfyUI 服务不可用或地址错误
     if (status === 404) {
-      console.log('✅ HTTP 404 detected, returning ComfyUIServiceUnavailable');
       return {
         error: comfyError,
         errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
@@ -225,7 +207,6 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
     }
 
     if (status >= 500) {
-      console.log('✅ HTTP 5xx detected, returning ComfyUIServiceUnavailable');
       return {
         error: comfyError,
         errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
@@ -235,7 +216,6 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
 
   // 2. 网络连接错误（只在没有HTTP状态码时检查）
   if (!status && isNetworkError(error)) {
-    console.log('✅ Network error detected (no HTTP status), returning ComfyUIServiceUnavailable');
     return {
       error: comfyError,
       errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
@@ -246,21 +226,18 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
   const message = comfyError.message;
   if (!status && message) {
     if (message.includes('HTTP 401') || message.includes('401')) {
-      console.log('✅ HTTP 401 found in message, returning InvalidProviderAPIKey');
       return {
         error: comfyError,
         errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
       };
     }
     if (message.includes('HTTP 403') || message.includes('403')) {
-      console.log('✅ HTTP 403 found in message, returning PermissionDenied');
       return {
         error: comfyError,
         errorType: AgentRuntimeErrorType.PermissionDenied,
       };
     }
     if (message.includes('HTTP 404') || message.includes('404')) {
-      console.log('✅ HTTP 404 found in message, returning ComfyUIServiceUnavailable');
       return {
         error: comfyError,
         errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,

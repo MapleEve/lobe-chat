@@ -47,14 +47,11 @@ export function buildFluxKontextWorkflow(
       },
       class_type: 'SamplerCustomAdvanced',
       inputs: {
-        guider: ['14', 0], // Use BasicGuider output for GUIDER type
+        guider: ['14', 0], // ✅ BasicGuider provides GUIDER type (handles model/conditioning)
         latent_image: hasInputImage ? ['img_encode', 0] : ['7', 0], // 根据是否有输入图像选择latent来源
-        model: ['4', 0],
-        negative: ['6', 0], // Use FluxGuidance output for negative conditioning
-        noise: ['13', 0],
-        positive: ['6', 0], // Use FluxGuidance output for positive conditioning
-        sampler: ['8', 0],
-        sigmas: ['9', 0],
+        noise: ['13', 0], // Random noise for initialization
+        sampler: ['8', 0], // Sampling algorithm
+        sigmas: ['9', 0], // Noise schedule from BasicScheduler
       },
     },
     '11': {
