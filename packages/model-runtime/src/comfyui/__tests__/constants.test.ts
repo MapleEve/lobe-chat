@@ -7,7 +7,7 @@ import {
   STYLE_KEYWORDS,
   WORKFLOW_DEFAULTS,
   getAllStyleKeywords,
-} from './constants';
+} from '../constants';
 
 describe('ComfyUI Constants', () => {
   describe('COMFYUI_DEFAULTS', () => {

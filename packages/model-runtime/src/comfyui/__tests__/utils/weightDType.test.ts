@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 
-import { selectOptimalWeightDtype } from './weightDType';
+import { selectOptimalWeightDtype } from '../../utils/weightDType';
 
 describe('selectOptimalWeightDtype', () => {
   it('should return model recommendedDtype for known FLUX models', () => {

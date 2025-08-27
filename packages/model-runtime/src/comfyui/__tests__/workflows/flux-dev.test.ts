@@ -2,18 +2,18 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
-import { buildFluxDevWorkflow } from './flux-dev';
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../../constants';
+import { buildFluxDevWorkflow } from '../../workflows/flux-dev';
 
 // Mock the utility functions
-vi.mock('../utils/prompt-splitter', () => ({
+vi.mock('../../utils/promptSplitter', () => ({
   splitPromptForDualCLIP: vi.fn((prompt: string) => ({
     clipLPrompt: prompt,
     t5xxlPrompt: prompt,
   })),
 }));
 
-vi.mock('../utils/weight-dtype', () => ({
+vi.mock('../../utils/weightDType', () => ({
   selectOptimalWeightDtype: vi.fn(() => 'default'),
 }));
 
@@ -51,7 +51,7 @@ describe('buildFluxDevWorkflow', () => {
           class_type: 'CLIPTextEncodeFlux',
           inputs: expect.objectContaining({
             clip: ['1', 0],
-            clip_l: 'landscape',
+            clip_l: 'A beautiful landscape',
             // ✅ 验证prompt正确设置
             guidance: WORKFLOW_DEFAULTS.SAMPLING.CFG,
             // ✅ 验证prompt正确设置
@@ -59,7 +59,7 @@ describe('buildFluxDevWorkflow', () => {
           }),
         }),
       }),
-      ['width', 'height', 'steps', 'cfg', 'seed'], // ✅ 修复后的参数列表
+      ['width', 'height', 'steps', 'cfg', 'seed', 'samplerName', 'scheduler'], // ✅ 修复后的参数列表
       ['images'],
     );
 
@@ -91,9 +91,9 @@ describe('buildFluxDevWorkflow', () => {
     expect(workflow['9'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SAMPLING.STEPS);
     expect(workflow['5'].inputs.guidance).toBe(4.5); // ✅ 直接设置到工作流
     expect(workflow['6'].inputs.guidance).toBe(4.5); // ✅ 修复: 现在直接设置
-    // samplerName and scheduler parameters are not currently supported in the implementation
-    expect(workflow['8'].inputs.sampler_name).toBe('euler'); // Uses default value
-    expect(workflow['9'].inputs.scheduler).toBe('simple'); // Uses default value
+    // ✅ samplerName and scheduler parameters are now supported
+    expect(workflow['8'].inputs.sampler_name).toBe('dpmpp_2m'); // Uses custom value
+    expect(workflow['9'].inputs.scheduler).toBe('karras'); // Uses custom value
   });
 
   it('should handle empty prompt', () => {
@@ -242,5 +242,55 @@ describe('buildFluxDevWorkflow', () => {
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
     expect(workflow['9'].inputs.denoise).toBe(1);
+  });
+
+  it('should support custom sampler configuration', () => {
+    const modelName = 'flux_dev.safetensors';
+    const params = { 
+      prompt: 'test',
+      samplerName: 'dpmpp_2m_sde',
+      scheduler: 'karras'
+    };
+
+    buildFluxDevWorkflow(modelName, params);
+
+    const workflow = (PromptBuilder as any).mock.calls[0][0];
+
+    expect(workflow['8'].inputs.sampler_name).toBe('dpmpp_2m_sde');
+    expect(workflow['9'].inputs.scheduler).toBe('karras');
+  });
+
+  it('should use default sampler configuration when not provided', () => {
+    const modelName = 'flux_dev.safetensors';
+    const params = { prompt: 'test' };
+
+    buildFluxDevWorkflow(modelName, params);
+
+    const workflow = (PromptBuilder as any).mock.calls[0][0];
+
+    expect(workflow['8'].inputs.sampler_name).toBe(WORKFLOW_DEFAULTS.SAMPLING.SAMPLER);
+    expect(workflow['9'].inputs.scheduler).toBe(WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER);
+  });
+
+  it('should handle Krea-style parameters via parameterized Dev template', () => {
+    const modelName = 'flux_krea_dev.safetensors';
+    const params = { 
+      prompt: 'photographic portrait',
+      cfg: 3.5,
+      steps: 15,
+      samplerName: 'dpmpp_2m_sde',
+      scheduler: 'karras'
+    };
+
+    buildFluxDevWorkflow(modelName, params);
+
+    const workflow = (PromptBuilder as any).mock.calls[0][0];
+
+    // Should handle Krea-style configuration through Dev template
+    expect(workflow['5'].inputs.guidance).toBe(3.5);
+    expect(workflow['6'].inputs.guidance).toBe(3.5);
+    expect(workflow['9'].inputs.steps).toBe(15);
+    expect(workflow['8'].inputs.sampler_name).toBe('dpmpp_2m_sde');
+    expect(workflow['9'].inputs.scheduler).toBe('karras');
   });
 });

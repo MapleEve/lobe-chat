@@ -1,11 +1,11 @@
 import { type Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { ModelConfig } from '../config/modelRegistry';
-import { resolveModel } from './modelResolver';
-import { type FluxVariant, type SD3Variant, WorkflowDetector } from './workflowDetector';
+import type { ModelConfig } from '../../config/modelRegistry';
+import { resolveModel } from '../../utils/modelResolver';
+import { type FluxVariant, type SD3Variant, WorkflowDetector } from '../../utils/workflowDetector';
 
 // Mock the modelResolver module
-vi.mock('./modelResolver', () => ({
+vi.mock('../../utils/modelResolver', () => ({
   resolveModel: vi.fn(),
 }));
 
@@ -310,10 +310,18 @@ describe('WorkflowDetector', () => {
 
         expect(result.variant).toBe('dev');
         expect(typeof result.variant).toBe('string');
-
-        // Verify it matches FluxVariant type expectations
-        const fluxVariants: FluxVariant[] = ['dev', 'schnell', 'kontext', 'krea'];
-        expect(fluxVariants).toContain(result.variant as FluxVariant);
+        
+        // Test with krea variant
+        const mockKreaConfig: ModelConfig = {
+          modelFamily: 'FLUX',
+          variant: 'krea',
+          priority: 1,
+          recommendedDtype: 'default',
+        };
+        mockedResolveModel.mockReturnValue(mockKreaConfig);
+        
+        const kreaResult = WorkflowDetector.detectModelType('flux-krea-model');
+        expect(kreaResult.variant).toBe('krea');
       });
 
       it('should properly cast SD3 variant to SD3Variant type', () => {

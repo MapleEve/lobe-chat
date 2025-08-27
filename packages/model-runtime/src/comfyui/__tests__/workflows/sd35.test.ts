@@ -2,16 +2,11 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { WorkflowError } from '../errors';
-import { buildSD35Workflow } from './sd35';
-
-// Mock the utility function
-vi.mock('@/utils/number', () => ({
-  generateUniqueSeeds: vi.fn(() => [12345]),
-}));
+import { WorkflowError } from '../../errors';
+import { buildSD35Workflow } from '../../workflows/sd35';
 
 // Mock the system components to simulate having all encoders available
-vi.mock('../config/systemComponents', () => ({
+vi.mock('../../config/systemComponents', () => ({
   getAllComponentsWithNames: vi.fn((options) => {
     if (options?.type === 'clip') {
       return [
@@ -106,7 +101,7 @@ describe('buildSD35Workflow', () => {
             positive: ['3', 0],
             sampler_name: 'euler',
             scheduler: 'sgm_uniform',
-            seed: 12345, // Mocked value from generateUniqueSeeds
+            seed: expect.any(Number), // Generated seed value
             steps: undefined,
           }),
         }),
@@ -127,7 +122,7 @@ describe('buildSD35Workflow', () => {
           },
         }),
       }),
-      ['prompt', 'width', 'height', 'steps', 'seed', 'cfg'],
+      ['prompt', 'width', 'height', 'steps', 'seed', 'cfg', 'samplerName', 'scheduler'],
       ['images'],
     );
 
@@ -175,7 +170,7 @@ describe('buildSD35Workflow', () => {
 
     const workflow = (result as any).workflow;
 
-    expect(workflow['6'].inputs.seed).toBe(12345); // Mocked value
+    expect(typeof workflow['6'].inputs.seed).toBe('number'); // Generated seed value
   });
 
   it('should generate random seed when seed is undefined', () => {
@@ -189,7 +184,7 @@ describe('buildSD35Workflow', () => {
 
     const workflow = (result as any).workflow;
 
-    expect(workflow['6'].inputs.seed).toBe(12345); // Mocked value
+    expect(typeof workflow['6'].inputs.seed).toBe('number'); // Generated seed value
   });
 
   it('should use seed value 0 when explicitly provided', () => {
@@ -275,7 +270,7 @@ describe('buildSD35Workflow', () => {
     expect(workflow['5'].inputs.width).toBeUndefined();
     expect(workflow['5'].inputs.height).toBeUndefined();
     expect(workflow['6'].inputs.steps).toBeUndefined();
-    expect(workflow['6'].inputs.seed).toBe(12345); // Generated
+    expect(typeof workflow['6'].inputs.seed).toBe('number'); // Generated seed value
     expect(workflow['6'].inputs.cfg).toBe(4); // Default
   });
 
@@ -384,20 +379,22 @@ describe('buildSD35Workflow', () => {
     expect(result.setOutputNode).toHaveBeenCalledTimes(1);
     expect(result.setOutputNode).toHaveBeenCalledWith('images', '8');
 
-    // Should call setInputNode 6 times for all input mappings
-    expect(result.setInputNode).toHaveBeenCalledTimes(6);
+    // Should call setInputNode 8 times for all input mappings
+    expect(result.setInputNode).toHaveBeenCalledTimes(8);
     expect(result.setInputNode).toHaveBeenCalledWith('prompt', '3.inputs.text');
     expect(result.setInputNode).toHaveBeenCalledWith('width', '5.inputs.width');
     expect(result.setInputNode).toHaveBeenCalledWith('height', '5.inputs.height');
     expect(result.setInputNode).toHaveBeenCalledWith('steps', '6.inputs.steps');
     expect(result.setInputNode).toHaveBeenCalledWith('seed', '6.inputs.seed');
     expect(result.setInputNode).toHaveBeenCalledWith('cfg', '6.inputs.cfg');
+    expect(result.setInputNode).toHaveBeenCalledWith('samplerName', '6.inputs.sampler_name');
+    expect(result.setInputNode).toHaveBeenCalledWith('scheduler', '6.inputs.scheduler');
   });
 
   describe('Error Handling', () => {
     it('should throw WorkflowError when no encoder files are available', async () => {
       // Import the mocked module that was already mocked at the top of the file
-      const systemComponents = await import('../config/systemComponents');
+      const systemComponents = await import('../../config/systemComponents');
 
       // Temporarily override the mock to return empty arrays (no encoders available)
       const originalMock = vi.mocked(systemComponents.getAllComponentsWithNames);

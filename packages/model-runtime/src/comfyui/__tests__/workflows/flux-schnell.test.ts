@@ -2,11 +2,11 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
-import { buildFluxSchnellWorkflow } from './flux-schnell';
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../../constants';
+import { buildFluxSchnellWorkflow } from '../../workflows/flux-schnell';
 
 // Mock the utility functions
-vi.mock('../utils/prompt-splitter', () => ({
+vi.mock('../../utils/promptSplitter', () => ({
   splitPromptForDualCLIP: vi.fn((prompt: string) => ({
     clipLPrompt: prompt,
     t5xxlPrompt: prompt,

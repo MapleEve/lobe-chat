@@ -2,18 +2,18 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
-import { buildFluxKontextWorkflow } from './flux-kontext';
+import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../../constants';
+import { buildFluxKontextWorkflow } from '../../workflows/flux-kontext';
 
 // Mock the utility functions
-vi.mock('../utils/prompt-splitter', () => ({
+vi.mock('../../utils/promptSplitter', () => ({
   splitPromptForDualCLIP: vi.fn((prompt: string) => ({
     clipLPrompt: prompt,
     t5xxlPrompt: prompt,
   })),
 }));
 
-vi.mock('../utils/weight-dtype', () => ({
+vi.mock('../../utils/weightDType', () => ({
   selectOptimalWeightDtype: vi.fn(() => 'default'),
 }));
 

@@ -275,13 +275,17 @@ export class ModelResolver {
       'flux-redux-dev': 'redux',
       'flux-schnell': 'schnell',
       'stable-diffusion-3.5': 'sd35',
-      'stable-diffusion-3.5-inclclip': 'sd35-incl-clip',
+      'stable-diffusion-3.5-inclclip': 'custom-sd',
+      // SD1.5 model ID mappings
+      'stable-diffusion-1.5': 'sd15',
+      'stable-diffusion-xl': 'sdxl',
     };
 
     // Determine if we have a variant (either direct variant name or model ID)
     const variantName =
       modelIdToVariant[cleanModelId] ||
-      (['dev', 'schnell', 'kontext', 'krea', 'fill', 'redux', 'sd35', 'sd35-incl-clip'].includes(
+      (['dev', 'schnell', 'kontext', 'krea', 'fill', 'redux', 'sd35', 'custom-sd', 'sd15', 'sdxl',
+        'sd15-t2i', 'sdxl-t2i', 'sdxl-i2i', 'custom-sd-t2i', 'custom-sd-i2i'].includes(
         cleanModelId,
       )
         ? cleanModelId

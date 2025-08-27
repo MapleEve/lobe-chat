@@ -6,7 +6,7 @@ import {
   UtilsError,
   WorkflowError,
   isComfyUIInternalError,
-} from './index';
+} from '../../errors/index';
 
 describe('ComfyUI Internal Error System', () => {
   describe('ComfyUIInternalError Base Class', () => {

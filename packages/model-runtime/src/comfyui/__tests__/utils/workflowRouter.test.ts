@@ -1,33 +1,33 @@
 import type { PromptBuilder } from '@saintno/comfyui-sdk';
 import { type Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { WorkflowError } from '../errors';
-import { buildFluxDevWorkflow } from '../workflows/flux-dev';
-import { buildFluxKontextWorkflow } from '../workflows/flux-kontext';
-import { buildFluxKreaWorkflow } from '../workflows/flux-krea';
-import { buildFluxSchnellWorkflow } from '../workflows/flux-schnell';
-import { buildSD35Workflow } from '../workflows/sd35';
-import { type WorkflowDetectionResult, WorkflowRouter } from './workflowRouter';
+import { WorkflowError } from '../../errors';
+import { buildFluxDevWorkflow } from '../../workflows/flux-dev';
+import { buildFluxKontextWorkflow } from '../../workflows/flux-kontext';
+import { buildFluxSchnellWorkflow } from '../../workflows/flux-schnell';
+import { buildSD35Workflow } from '../../workflows/sd35';
+import { buildSimpleSDWorkflow } from '../../workflows/simple-sd';
+import { type WorkflowDetectionResult, WorkflowRouter } from '../../utils/workflowRouter';
 
 // Mock workflow builders
-vi.mock('../workflows/flux-dev', () => ({
+vi.mock('../../workflows/flux-dev', () => ({
   buildFluxDevWorkflow: vi.fn(),
 }));
 
-vi.mock('../workflows/flux-kontext', () => ({
+vi.mock('../../workflows/flux-kontext', () => ({
   buildFluxKontextWorkflow: vi.fn(),
 }));
 
-vi.mock('../workflows/flux-krea', () => ({
-  buildFluxKreaWorkflow: vi.fn(),
-}));
-
-vi.mock('../workflows/flux-schnell', () => ({
+vi.mock('../../workflows/flux-schnell', () => ({
   buildFluxSchnellWorkflow: vi.fn(),
 }));
 
-vi.mock('../workflows/sd35', () => ({
+vi.mock('../../workflows/sd35', () => ({
   buildSD35Workflow: vi.fn(),
+}));
+
+vi.mock('../../workflows/simple-sd', () => ({
+  buildSimpleSDWorkflow: vi.fn(),
 }));
 
 describe('WorkflowRouter', () => {
@@ -47,8 +47,8 @@ describe('WorkflowRouter', () => {
     (buildFluxDevWorkflow as Mock).mockReturnValue(mockPromptBuilder);
     (buildFluxSchnellWorkflow as Mock).mockReturnValue(mockPromptBuilder);
     (buildFluxKontextWorkflow as Mock).mockReturnValue(mockPromptBuilder);
-    (buildFluxKreaWorkflow as Mock).mockReturnValue(mockPromptBuilder);
     (buildSD35Workflow as Mock).mockReturnValue(mockPromptBuilder);
+    (buildSimpleSDWorkflow as Mock).mockReturnValue(mockPromptBuilder);
   });
 
   describe('Factory Pattern - routeWorkflow', () => {
@@ -207,16 +207,18 @@ describe('WorkflowRouter', () => {
         expect(result).toBe(mockPromptBuilder);
       });
 
-      it('should route flux-krea-dev to buildFluxKreaWorkflow', () => {
+      it('should route flux-krea-dev to buildFluxDevWorkflow (merged template)', () => {
         const result = WorkflowRouter.routeWorkflow(
           'flux-krea-dev',
           supportedResult,
           'flux-krea-dev.safetensors',
-          { cfg: 3.5 },
+          { cfg: 3.5, samplerName: 'dpmpp_2m_sde', scheduler: 'karras' },
         );
 
-        expect(buildFluxKreaWorkflow).toHaveBeenCalledWith('flux-krea-dev.safetensors', {
+        expect(buildFluxDevWorkflow).toHaveBeenCalledWith('flux-krea-dev.safetensors', {
           cfg: 3.5,
+          samplerName: 'dpmpp_2m_sde', 
+          scheduler: 'karras'
         });
         expect(result).toBe(mockPromptBuilder);
       });
@@ -235,18 +237,40 @@ describe('WorkflowRouter', () => {
         expect(result).toBe(mockPromptBuilder);
       });
 
-      it('should route sd35 to buildSD35Workflow', () => {
+
+      it('should route stable-diffusion-15 to SimpleSD workflow', () => {
         const result = WorkflowRouter.routeWorkflow(
-          'sd35',
+          'stable-diffusion-15',
+          supportedResult,
+          'sd-v1-5.safetensors',
+          { steps: 20, cfg: 7.5 },
+        );
+
+        expect(buildSimpleSDWorkflow).toHaveBeenCalledWith('sd-v1-5.safetensors', { steps: 20, cfg: 7.5 });
+        expect(result).toBe(mockPromptBuilder);
+      });
+
+      it('should route stable-diffusion-xl to SimpleSD workflow', () => {
+        const result = WorkflowRouter.routeWorkflow(
+          'stable-diffusion-xl',
+          supportedResult,
+          'sdxl-base.safetensors',
+          { steps: 25, cfg: 7.0 },
+        );
+
+        expect(buildSimpleSDWorkflow).toHaveBeenCalledWith('sdxl-base.safetensors', { steps: 25, cfg: 7.0 });
+        expect(result).toBe(mockPromptBuilder);
+      });
+
+      it('should route stable-diffusion-35 to buildSD35Workflow', () => {
+        const result = WorkflowRouter.routeWorkflow(
+          'stable-diffusion-35',
           supportedResult,
           'sd3.5_large.safetensors',
           { steps: 28, cfg: 4.5 },
         );
 
-        expect(buildSD35Workflow).toHaveBeenCalledWith('sd3.5_large.safetensors', {
-          steps: 28,
-          cfg: 4.5,
-        });
+        expect(buildSD35Workflow).toHaveBeenCalledWith('sd3.5_large.safetensors', { steps: 28, cfg: 4.5 });
         expect(result).toBe(mockPromptBuilder);
       });
 
@@ -301,19 +325,15 @@ describe('WorkflowRouter', () => {
         expect(result).toBe(mockPromptBuilder);
       });
 
-      it('should fallback to krea variant builder', () => {
-        const detectionWithVariant: WorkflowDetectionResult = {
-          ...supportedResult,
-          variant: 'krea',
-        };
-
+      it('should route krea models through exact matching to dev template', () => {
         const result = WorkflowRouter.routeWorkflow(
-          'flux-special-krea',
-          detectionWithVariant,
-          'flux-special-krea.safetensors',
+          'flux-krea-dev',
+          supportedResult,
+          'flux-krea-dev.safetensors',
+          { cfg: 3.5 },
         );
 
-        expect(buildFluxKreaWorkflow).toHaveBeenCalledWith('flux-special-krea.safetensors', {});
+        expect(buildFluxDevWorkflow).toHaveBeenCalledWith('flux-krea-dev.safetensors', { cfg: 3.5 });
         expect(result).toBe(mockPromptBuilder);
       });
 
@@ -346,6 +366,27 @@ describe('WorkflowRouter', () => {
         );
 
         expect(buildSD35Workflow).toHaveBeenCalledWith('sd3.5_medium.safetensors', {});
+        expect(result).toBe(mockPromptBuilder);
+      });
+
+      // 简化后的sd variant测试
+      it('should route sd variant to SimpleSD workflow', () => {
+        const detectionWithVariant: WorkflowDetectionResult = {
+          ...supportedResult,
+          variant: 'sd',
+        };
+
+        const result = WorkflowRouter.routeWorkflow(
+          'stable-diffusion-custom',
+          detectionWithVariant,
+          'custom-model.safetensors',
+          { steps: 25, cfg: 7.5 },
+        );
+
+        expect(buildSimpleSDWorkflow).toHaveBeenCalledWith('custom-model.safetensors', { 
+          steps: 25,
+          cfg: 7.5
+        });
         expect(result).toBe(mockPromptBuilder);
       });
     });
