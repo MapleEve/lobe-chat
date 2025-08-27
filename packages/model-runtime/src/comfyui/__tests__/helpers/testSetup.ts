@@ -15,7 +15,7 @@ export function setupComfyUIMocks() {
     ModelResolver: vi.fn(),
     getAllModels: vi.fn().mockReturnValue(['flux-schnell.safetensors', 'flux-dev.safetensors']),
     isValidModel: vi.fn().mockReturnValue(true),
-    resolveModel: vi.fn().mockImplementation((_modelName: string) => {
+    resolveModel: vi.fn().mockImplementation(() => {
       return {
         modelFamily: 'FLUX',
         priority: 1,
@@ -23,7 +23,7 @@ export function setupComfyUIMocks() {
         variant: 'dev' as const,
       };
     }),
-    resolveModelStrict: vi.fn().mockImplementation((_modelName: string) => {
+    resolveModelStrict: vi.fn().mockImplementation(() => {
       return {
         modelFamily: 'FLUX',
         priority: 1,
@@ -168,7 +168,6 @@ export function setupWorkflowMocks() {
     buildFluxKontextWorkflow: vi.fn().mockImplementation(() => createMockBuilder()),
   }));
 
-
   vi.mock('../../workflows/sd35', () => ({
     buildSD35Workflow: vi.fn().mockImplementation(() => createMockBuilder()),
   }));
@@ -210,7 +209,7 @@ export function setupWorkflowMocks() {
       }
       return [];
     }),
-    getOptimalComponent: vi.fn().mockImplementation((type: string, _modelFamily: string) => {
+    getOptimalComponent: vi.fn().mockImplementation((type: string) => {
       if (type === 't5') return 't5xxl_fp16.safetensors';
       if (type === 'vae') return 'ae.safetensors';
       if (type === 'clip') return 'clip_l.safetensors';
