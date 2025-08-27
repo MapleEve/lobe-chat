@@ -2,8 +2,7 @@
 import { CallWrapper, ComfyApi, PromptBuilder } from '@saintno/comfyui-sdk';
 import { Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { CreateImagePayload } from '../../index';
-import { LobeComfyUI } from '../../index';
+import { CreateImagePayload , LobeComfyUI } from '../../index';
 import { processModelList } from '../../../utils/modelParse';
 import { WorkflowDetector } from '../../utils/workflowDetector';
 import {
@@ -45,17 +44,17 @@ vi.mock('../../utils/modelResolver', () => ({
         return Promise.resolve({ exists: false });
       }
       const fileName = modelId.split('/').pop() || modelId;
-      return Promise.resolve({ exists: true, actualFileName: fileName + '.safetensors' });
+      return Promise.resolve({ actualFileName: fileName + '.safetensors', exists: true });
     }),
   })),
   ModelResolverError: class extends Error {
     static Reasons = {
-      MODEL_NOT_FOUND: 'MODEL_NOT_FOUND',
+      CONNECTION_ERROR: 'CONNECTION_ERROR',
       INVALID_API_KEY: 'INVALID_API_KEY',
+      MODEL_NOT_FOUND: 'MODEL_NOT_FOUND',
+      NO_MODELS_AVAILABLE: 'NO_MODELS_AVAILABLE',
       PERMISSION_DENIED: 'PERMISSION_DENIED',
       SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
-      NO_MODELS_AVAILABLE: 'NO_MODELS_AVAILABLE',
-      CONNECTION_ERROR: 'CONNECTION_ERROR',
     };
     reason: string;
     constructor(message?: string, reason?: string) {
@@ -64,24 +63,24 @@ vi.mock('../../utils/modelResolver', () => ({
       this.reason = reason || 'Unknown';
     }
   },
-  resolveModel: vi.fn().mockImplementation((modelName: string) => {
-    return {
-      modelFamily: 'FLUX',
-      priority: 1,
-      recommendedDtype: 'default' as const,
-      variant: 'dev' as const,
-    };
-  }),
-  resolveModelStrict: vi.fn().mockImplementation((modelName: string) => {
-    return {
-      modelFamily: 'FLUX',
-      priority: 1,
-      recommendedDtype: 'default' as const,
-      variant: 'dev' as const,
-    };
-  }),
-  isValidModel: vi.fn().mockReturnValue(true),
   getAllModels: vi.fn().mockReturnValue(['flux-schnell.safetensors', 'flux-dev.safetensors']),
+  isValidModel: vi.fn().mockReturnValue(true),
+  resolveModel: vi.fn().mockImplementation((_modelName: string) => {
+    return {
+      modelFamily: 'FLUX',
+      priority: 1,
+      recommendedDtype: 'default' as const,
+      variant: 'dev' as const,
+    };
+  }),
+  resolveModelStrict: vi.fn().mockImplementation((_modelName: string) => {
+    return {
+      modelFamily: 'FLUX',
+      priority: 1,
+      recommendedDtype: 'default' as const,
+      variant: 'dev' as const,
+    };
+  }),
 }));
 
 // Mock fetch globally
@@ -99,26 +98,24 @@ vi.mock('../../utils/workflowDetector', () => ({
 
 // Mock processModels utility
 vi.mock('../../../utils/modelParse', () => ({
-  processModelList: vi.fn(),
-  detectModelProvider: vi.fn().mockImplementation((modelId: string) => {
-    if (modelId.includes('claude')) return 'anthropic';
-    if (modelId.includes('gpt')) return 'openai';
-    if (modelId.includes('gemini')) return 'google';
-    return 'unknown';
-  }),
   MODEL_LIST_CONFIGS: {
     comfyui: {
       id: 'comfyui',
       modelList: [],
     },
   },
+  detectModelProvider: vi.fn().mockImplementation((modelId: string) => {
+    if (modelId.includes('claude')) return 'anthropic';
+    if (modelId.includes('gpt')) return 'openai';
+    if (modelId.includes('gemini')) return 'google';
+    return 'unknown';
+  }),
+  processModelList: vi.fn(),
 }));
 
 // Mock the workflows
 const createMockBuilder = () => ({
   input: vi.fn().mockReturnThis(),
-  setInputNode: vi.fn().mockReturnThis(),
-  setOutputNode: vi.fn().mockReturnThis(),
   prompt: {
     '1': {
       _meta: { title: 'Checkpoint Loader' },
@@ -126,15 +123,17 @@ const createMockBuilder = () => ({
       inputs: { ckpt_name: 'test.safetensors' },
     },
   },
+  setInputNode: vi.fn().mockReturnThis(),
+  setOutputNode: vi.fn().mockReturnThis(),
 });
 
 vi.mock('../../workflows', () => ({
-  buildFluxSchnellWorkflow: vi.fn().mockImplementation(() => createMockBuilder()),
   buildFluxDevWorkflow: vi.fn().mockImplementation(() => createMockBuilder()),
   buildFluxKontextWorkflow: vi.fn().mockImplementation(() => createMockBuilder()),
   buildFluxKreaWorkflow: vi.fn().mockImplementation(() => createMockBuilder()),
-  buildSD35Workflow: vi.fn().mockImplementation(() => createMockBuilder()),
+  buildFluxSchnellWorkflow: vi.fn().mockImplementation(() => createMockBuilder()),
   buildSD35NoClipWorkflow: vi.fn().mockImplementation(() => createMockBuilder()),
+  buildSD35Workflow: vi.fn().mockImplementation(() => createMockBuilder()),
 }));
 
 // Mock WorkflowRouter
@@ -154,23 +153,23 @@ vi.mock('../../utils/workflowRouter', () => ({
 
 // Mock systemComponents
 vi.mock('../../config/systemComponents', () => ({
-  getOptimalComponent: vi.fn().mockImplementation((type: string, modelFamily: string) => {
+  getAllComponentsWithNames: vi.fn().mockImplementation((options: any) => {
+    if (options?.type === 'clip') {
+      return [
+        { config: { priority: 1 }, name: 'clip_l.safetensors' },
+        { config: { priority: 2 }, name: 'clip_g.safetensors' },
+      ];
+    }
+    if (options?.type === 't5') {
+      return [{ config: { priority: 1 }, name: 't5xxl_fp16.safetensors' }];
+    }
+    return [];
+  }),
+  getOptimalComponent: vi.fn().mockImplementation((type: string, _modelFamily: string) => {
     if (type === 't5') return 't5xxl_fp16.safetensors';
     if (type === 'vae') return 'ae.safetensors';
     if (type === 'clip') return 'clip_l.safetensors';
     return 'default.safetensors';
-  }),
-  getAllComponentsWithNames: vi.fn().mockImplementation((options: any) => {
-    if (options?.type === 'clip') {
-      return [
-        { name: 'clip_l.safetensors', config: { priority: 1 } },
-        { name: 'clip_g.safetensors', config: { priority: 2 } },
-      ];
-    }
-    if (options?.type === 't5') {
-      return [{ name: 't5xxl_fp16.safetensors', config: { priority: 1 } }];
-    }
-    return [];
   }),
 }));
 
@@ -217,18 +216,18 @@ describe('LobeComfyUI - Core Functionality', () => {
     });
 
     // Setup processModelList default behavior
-    vi.mocked(processModelList).mockImplementation(async (modelList: any, config: any, provider: any) => {
+    vi.mocked(processModelList).mockImplementation(async (modelList: any, _config: any, _provider: any) => {
       return modelList.map((model: any) => ({
         ...model,
-        displayName: model.id,
-        description: '',
-        type: 'chat' as const,
-        functionCall: false,
-        vision: false,
-        reasoning: false,
-        maxOutput: undefined,
         contextWindowTokens: undefined,
+        description: '',
+        displayName: model.id,
+        functionCall: false,
+        maxOutput: undefined,
+        reasoning: false,
         releasedAt: undefined,
+        type: 'chat' as const,
+        vision: false,
       }));
     });
 

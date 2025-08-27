@@ -71,9 +71,11 @@ export function buildSD35Workflow(
   modelFileName: string,
   params: Record<string, any>,
 ): PromptBuilder<any, any, any> {
-  const { prompt, width, height, steps, seed, cfg } = params;
+  const { prompt, width, height, steps, seed, cfg, samplerName, scheduler } = params;
 
   const actualSeed = seed ?? generateUniqueSeeds(1)[0];
+  const finalSamplerName = samplerName ?? 'euler';
+  const finalScheduler = scheduler ?? 'sgm_uniform';
 
   // Detect available encoders
   const encoderConfig = detectAvailableEncoder();
@@ -210,8 +212,8 @@ export function buildSD35Workflow(
       model: ['1', 0],
       negative: negativeConditioningNode,
       positive: positiveConditioningNode,
-      sampler_name: 'euler',
-      scheduler: 'sgm_uniform',
+      sampler_name: finalSamplerName,
+      scheduler: finalScheduler,
       seed: actualSeed,
       steps,
     },
@@ -238,7 +240,7 @@ export function buildSD35Workflow(
   // Create PromptBuilder
   const builder = new PromptBuilder(
     workflow,
-    ['prompt', 'width', 'height', 'steps', 'seed', 'cfg'],
+    ['prompt', 'width', 'height', 'steps', 'seed', 'cfg', 'samplerName', 'scheduler'],
     ['images'],
   );
 
@@ -252,6 +254,8 @@ export function buildSD35Workflow(
   builder.setInputNode('steps', '6.inputs.steps');
   builder.setInputNode('seed', '6.inputs.seed');
   builder.setInputNode('cfg', '6.inputs.cfg');
+  builder.setInputNode('samplerName', '6.inputs.sampler_name');
+  builder.setInputNode('scheduler', '6.inputs.scheduler');
 
   return builder;
 }

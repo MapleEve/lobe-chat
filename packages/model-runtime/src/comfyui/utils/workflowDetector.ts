@@ -7,8 +7,9 @@
 import { resolveModel } from './modelResolver';
 import type { WorkflowDetectionResult } from './workflowRouter';
 
-export type FluxVariant = 'dev' | 'schnell' | 'kontext' | 'krea';
-export type SD3Variant = 'sd35';
+export type FluxVariant = 'dev' | 'schnell' | 'kontext' ;
+export type SD3Variant = 'sd35' | 'sd-t2i';
+export type SDVariant = 'sd-t2i' | 'sd-i2i';
 
 /**
  * Simple workflow type detector using model registry
@@ -24,19 +25,16 @@ export const WorkflowDetector = {
     const config = resolveModel(cleanId);
 
     if (config) {
-      if (config.modelFamily === 'FLUX') {
-        return {
-          architecture: 'FLUX',
-          isSupported: true,
-          variant: config.variant as FluxVariant,
-        };
-      } else if (config.modelFamily === 'SD3') {
-        return {
-          architecture: 'SD3',
-          isSupported: true,
-          variant: config.variant as SD3Variant,
-        };
-      }
+      // Return the detection result with the actual variant from config
+      // No type casting needed - just pass through the variant
+      return {
+        architecture: config.modelFamily === 'FLUX' ? 'FLUX' : 
+                     config.modelFamily === 'SD3' ? 'SD3' :
+                     config.modelFamily === 'SD1' ? 'SD1' :
+                     config.modelFamily === 'SDXL' ? 'SDXL' : 'unknown',
+        isSupported: true,
+        variant: config.variant,
+      };
     }
 
     return {

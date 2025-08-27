@@ -10,12 +10,12 @@ vi.mock('../../config/systemComponents', () => ({
   getAllComponentsWithNames: vi.fn((options) => {
     if (options?.type === 'clip') {
       return [
-        { name: 'clip_l.safetensors', config: { priority: 1 } },
-        { name: 'clip_g.safetensors', config: { priority: 2 } },
+        { config: { priority: 1 }, name: 'clip_l.safetensors' },
+        { config: { priority: 2 }, name: 'clip_g.safetensors' },
       ];
     }
     if (options?.type === 't5') {
-      return [{ name: 't5xxl_fp16.safetensors', config: { priority: 1 } }];
+      return [{ config: { priority: 1 }, name: 't5xxl_fp16.safetensors' }];
     }
     return [];
   }),
@@ -23,7 +23,7 @@ vi.mock('../../config/systemComponents', () => ({
 
 // Mock PromptBuilder - capture constructor arguments for test access
 vi.mock('@saintno/comfyui-sdk', () => ({
-  PromptBuilder: vi.fn().mockImplementation((workflow, inputs, outputs) => {
+  PromptBuilder: vi.fn().mockImplementation((workflow, _inputs, _outputs) => {
     // Store the workflow reference so modifications are reflected
     const mockInstance = {
       input: vi.fn().mockReturnThis(),
@@ -141,7 +141,7 @@ describe('buildSD35Workflow', () => {
       cfg: 7.5,
       height: 768,
       prompt: 'Custom prompt text',
-      seed: 98765,
+      seed: 98_765,
       steps: 30,
       width: 512,
     };
@@ -155,7 +155,7 @@ describe('buildSD35Workflow', () => {
     expect(workflow['5'].inputs.width).toBe(512);
     expect(workflow['5'].inputs.height).toBe(768);
     expect(workflow['6'].inputs.steps).toBe(30);
-    expect(workflow['6'].inputs.seed).toBe(98765);
+    expect(workflow['6'].inputs.seed).toBe(98_765);
     expect(workflow['6'].inputs.cfg).toBe(7.5);
   });
 

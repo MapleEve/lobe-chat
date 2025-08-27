@@ -2,7 +2,7 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../../constants';
+import { WORKFLOW_DEFAULTS } from '../../constants';
 import { buildFluxSchnellWorkflow } from '../../workflows/flux-schnell';
 
 // Mock the utility functions
@@ -19,7 +19,7 @@ vi.mock('../utils/weight-dtype', () => ({
 
 // Mock PromptBuilder and seed function - capture constructor arguments for test access
 vi.mock('@saintno/comfyui-sdk', () => ({
-  PromptBuilder: vi.fn().mockImplementation((workflow, inputs, outputs) => {
+  PromptBuilder: vi.fn().mockImplementation((workflow, _inputs, _outputs) => {
     // Store the workflow reference so modifications are reflected
     const mockInstance = {
       input: vi.fn().mockReturnThis(),

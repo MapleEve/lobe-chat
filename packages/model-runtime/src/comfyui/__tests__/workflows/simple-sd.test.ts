@@ -6,7 +6,7 @@ import { buildSimpleSDWorkflow, SimpleSDParams } from '../../workflows/simple-sd
 
 // Mock PromptBuilder
 vi.mock('@saintno/comfyui-sdk', () => ({
-  PromptBuilder: vi.fn().mockImplementation((workflow, inputs, outputs) => {
+  PromptBuilder: vi.fn().mockImplementation((workflow, _inputs, _outputs) => {
     const mockInstance = {
       input: vi.fn().mockReturnThis(),
       setInputNode: vi.fn().mockReturnThis(),
@@ -26,11 +26,11 @@ describe('buildSimpleSDWorkflow', () => {
     it('should create t2i workflow with default parameters', () => {
       const modelName = 'sd_xl_base_1.0.safetensors';
       const params: SimpleSDParams = {
-        prompt: 'A beautiful landscape',
-        width: 512,
-        height: 512,
-        steps: 20,
         cfg: 7.5,
+        height: 512,
+        prompt: 'A beautiful landscape',
+        steps: 20,
+        width: 512,
       };
 
       const builder = buildSimpleSDWorkflow(modelName, params);
@@ -73,7 +73,7 @@ describe('buildSimpleSDWorkflow', () => {
 
       // Verify KSampler uses EmptyLatentImage for t2i mode
       expect(workflow['5'].inputs.latent_image).toEqual(['4', 0]);
-      expect(workflow['5'].inputs.denoise).toBe(1.0);
+      expect(workflow['5'].inputs.denoise).toBe(1);
 
       // Verify i2i-specific nodes don't exist
       expect(workflow['IMG_LOAD']).toBeUndefined();
@@ -82,8 +82,8 @@ describe('buildSimpleSDWorkflow', () => {
 
     it('should handle explicit t2i mode', () => {
       const params: SimpleSDParams = {
-        prompt: 'A beautiful landscape',
         mode: 't2i',
+        prompt: 'A beautiful landscape',
       };
 
       const builder = buildSimpleSDWorkflow('test.safetensors', params);
@@ -99,10 +99,10 @@ describe('buildSimpleSDWorkflow', () => {
   describe('Image-to-Image Mode (i2i)', () => {
     it('should create i2i workflow when mode is i2i and inputImage is provided', () => {
       const params: SimpleSDParams = {
-        prompt: 'Transform this image',
-        mode: 'i2i',
-        inputImage: 'test-image.jpg',
         denoise: 0.6,
+        inputImage: 'test-image.jpg',
+        mode: 'i2i',
+        prompt: 'Transform this image',
       };
 
       const builder = buildSimpleSDWorkflow('test.safetensors', params);
@@ -146,9 +146,9 @@ describe('buildSimpleSDWorkflow', () => {
 
     it('should use default denoise value when not provided in i2i mode', () => {
       const params: SimpleSDParams = {
-        prompt: 'Transform this image',
-        mode: 'i2i',
         inputImage: 'test-image.jpg',
+        mode: 'i2i',
+        prompt: 'Transform this image',
       };
 
       const builder = buildSimpleSDWorkflow('test.safetensors', params);
@@ -160,8 +160,8 @@ describe('buildSimpleSDWorkflow', () => {
 
     it('should fallback to t2i mode when i2i mode is specified but no inputImage', () => {
       const params: SimpleSDParams = {
-        prompt: 'Generate image',
         mode: 'i2i',
+        prompt: 'Generate image',
         // inputImage is missing
       };
 
@@ -182,7 +182,7 @@ describe('buildSimpleSDWorkflow', () => {
       
       // Should use EmptyLatentImage
       expect(workflow['5'].inputs.latent_image).toEqual(['4', 0]);
-      expect(workflow['5'].inputs.denoise).toBe(1.0);
+      expect(workflow['5'].inputs.denoise).toBe(1);
     });
   });
 
@@ -190,9 +190,9 @@ describe('buildSimpleSDWorkflow', () => {
     it('should work with legacy parameter format (Record<string, any>)', () => {
       const modelName = 'legacy_model.safetensors';
       const params = {
+        height: 512,
         prompt: 'Legacy test',
         width: 512,
-        height: 512,
       };
 
       const builder = buildSimpleSDWorkflow(modelName, params);
@@ -217,7 +217,7 @@ describe('buildSimpleSDWorkflow', () => {
 
       // Should use sensible defaults
       expect(typeof workflow['5'].inputs.seed).toBe('number'); // seed should be a number
-      expect(workflow['5'].inputs.denoise).toBe(1.0);
+      expect(workflow['5'].inputs.denoise).toBe(1);
     });
   });
 
@@ -242,9 +242,9 @@ describe('buildSimpleSDWorkflow', () => {
 
     it('should use string IDs for dynamic i2i nodes to avoid conflicts', () => {
       const params: SimpleSDParams = {
-        prompt: 'ID test',
-        mode: 'i2i',
         inputImage: 'test.jpg',
+        mode: 'i2i',
+        prompt: 'ID test',
       };
 
       const builder = buildSimpleSDWorkflow('test.safetensors', params);
@@ -322,9 +322,9 @@ describe('buildSimpleSDWorkflow', () => {
 
     it('should use external VAE in i2i mode for compatible models', () => {
       const params: SimpleSDParams = {
-        prompt: 'Test i2i with SDXL',
-        mode: 'i2i',
         inputImage: 'test.jpg',
+        mode: 'i2i',
+        prompt: 'Test i2i with SDXL',
       };
 
       const builder = buildSimpleSDWorkflow('sd_xl_base_1.0.safetensors', params);
@@ -341,9 +341,9 @@ describe('buildSimpleSDWorkflow', () => {
 
     it('should not use external VAE in i2i mode for SD3.5 models', () => {
       const params: SimpleSDParams = {
-        prompt: 'Test i2i with SD3.5',
-        mode: 'i2i',
         inputImage: 'test.jpg',
+        mode: 'i2i',
+        prompt: 'Test i2i with SD3.5',
       };
 
       const builder = buildSimpleSDWorkflow('sd3.5_large.safetensors', params);

@@ -2,7 +2,7 @@ import { type Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ModelConfig } from '../../config/modelRegistry';
 import { resolveModel } from '../../utils/modelResolver';
-import { type FluxVariant, type SD3Variant, WorkflowDetector } from '../../utils/workflowDetector';
+import { type SD3Variant, WorkflowDetector } from '../../utils/workflowDetector';
 
 // Mock the modelResolver module
 vi.mock('../../utils/modelResolver', () => ({
@@ -21,9 +21,9 @@ describe('WorkflowDetector', () => {
       it('should remove "comfyui/" prefix from modelId', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'FLUX',
-          variant: 'dev',
           priority: 1,
           recommendedDtype: 'default',
+          variant: 'dev',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -40,9 +40,9 @@ describe('WorkflowDetector', () => {
       it('should handle modelId without comfyui prefix', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'FLUX',
-          variant: 'schnell',
           priority: 1,
           recommendedDtype: 'default',
+          variant: 'schnell',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -59,9 +59,9 @@ describe('WorkflowDetector', () => {
       it('should handle multiple comfyui prefixes correctly', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'SD3',
-          variant: 'sd35',
           priority: 1,
           recommendedDtype: 'default',
+          variant: 'sd35',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -81,9 +81,9 @@ describe('WorkflowDetector', () => {
       it('should detect FLUX dev variant', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'FLUX',
-          variant: 'dev',
           priority: 1,
           recommendedDtype: 'default',
+          variant: 'dev',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -99,9 +99,9 @@ describe('WorkflowDetector', () => {
       it('should detect FLUX schnell variant', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'FLUX',
-          variant: 'schnell',
           priority: 2,
           recommendedDtype: 'fp8_e4m3fn',
+          variant: 'schnell',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -117,9 +117,9 @@ describe('WorkflowDetector', () => {
       it('should detect FLUX kontext variant', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'FLUX',
-          variant: 'kontext',
           priority: 1,
           recommendedDtype: 'default',
+          variant: 'kontext',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -132,12 +132,12 @@ describe('WorkflowDetector', () => {
         });
       });
 
-      it('should detect FLUX krea variant', () => {
+      it('should detect FLUX krea model with dev variant', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'FLUX',
-          variant: 'krea',
           priority: 1,
           recommendedDtype: 'default',
+          variant: 'dev',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -146,16 +146,16 @@ describe('WorkflowDetector', () => {
         expect(result).toEqual({
           architecture: 'FLUX',
           isSupported: true,
-          variant: 'krea',
+          variant: 'dev',
         });
       });
 
       it('should handle FLUX model with comfyui prefix', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'FLUX',
-          variant: 'dev',
           priority: 2,
           recommendedDtype: 'fp8_e5m2',
+          variant: 'dev',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -174,9 +174,9 @@ describe('WorkflowDetector', () => {
       it('should detect SD3 sd35 variant', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'SD3',
-          variant: 'sd35',
           priority: 1,
           recommendedDtype: 'default',
+          variant: 'sd35',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -192,9 +192,9 @@ describe('WorkflowDetector', () => {
       it('should handle SD3 model with comfyui prefix', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'SD3',
-          variant: 'sd35',
           priority: 2,
           recommendedDtype: 'default',
+          variant: 'sd35',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -221,37 +221,39 @@ describe('WorkflowDetector', () => {
         });
       });
 
-      it('should return unknown architecture for unsupported model family', () => {
+      it('should return SDXL architecture for SDXL model family', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'SDXL' as any,
-          variant: 'dev',
           priority: 1,
           recommendedDtype: 'default',
+          variant: 'sd-t2i',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
         const result = WorkflowDetector.detectModelType('sdxl-base');
 
         expect(result).toEqual({
-          architecture: 'unknown',
-          isSupported: false,
+          architecture: 'SDXL',
+          isSupported: true,
+          variant: 'sd-t2i',
         });
       });
 
-      it('should return unknown architecture for SD1 model family', () => {
+      it('should return SD1 architecture for SD1 model family', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'SD1' as any,
-          variant: 'schnell',
           priority: 3,
           recommendedDtype: 'default',
+          variant: 'sd-t2i',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
         const result = WorkflowDetector.detectModelType('stable-diffusion-v1-5');
 
         expect(result).toEqual({
-          architecture: 'unknown',
-          isSupported: false,
+          architecture: 'SD1',
+          isSupported: true,
+          variant: 'sd-t2i',
         });
       });
 
@@ -300,9 +302,9 @@ describe('WorkflowDetector', () => {
       it('should properly cast FLUX variant to FluxVariant type', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'FLUX',
-          variant: 'dev',
           priority: 1,
           recommendedDtype: 'default',
+          variant: 'dev',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -311,25 +313,25 @@ describe('WorkflowDetector', () => {
         expect(result.variant).toBe('dev');
         expect(typeof result.variant).toBe('string');
         
-        // Test with krea variant
+        // Test with dev variant (krea uses dev workflow)
         const mockKreaConfig: ModelConfig = {
           modelFamily: 'FLUX',
-          variant: 'krea',
           priority: 1,
           recommendedDtype: 'default',
+          variant: 'dev',
         };
         mockedResolveModel.mockReturnValue(mockKreaConfig);
         
         const kreaResult = WorkflowDetector.detectModelType('flux-krea-model');
-        expect(kreaResult.variant).toBe('krea');
+        expect(kreaResult.variant).toBe('dev');
       });
 
       it('should properly cast SD3 variant to SD3Variant type', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'SD3',
-          variant: 'sd35',
           priority: 1,
           recommendedDtype: 'default',
+          variant: 'sd35',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -360,9 +362,9 @@ describe('WorkflowDetector', () => {
       it('should handle modelId with path separators', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'FLUX',
-          variant: 'dev',
           priority: 1,
           recommendedDtype: 'default',
+          variant: 'dev',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -404,9 +406,9 @@ describe('WorkflowDetector', () => {
       it('should handle case sensitivity in modelId', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'FLUX',
-          variant: 'dev',
           priority: 1,
           recommendedDtype: 'default',
+          variant: 'dev',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -444,9 +446,9 @@ describe('WorkflowDetector', () => {
       it('should handle config with null variant', () => {
         const mockConfig: ModelConfig = {
           modelFamily: 'SD3',
-          variant: null as any,
           priority: 1,
           recommendedDtype: 'default',
+          variant: null as any,
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 

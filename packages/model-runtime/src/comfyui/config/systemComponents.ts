@@ -4,12 +4,16 @@
 import { ConfigError } from '../errors';
 
 export interface ComponentConfig {
+  /** Compatible model variants (for LoRA and ControlNet) */
+  compatibleVariants?: string[];
+  /** ControlNet type (for ControlNet components only) */
+  controlnetType?: 'canny' | 'depth' | 'hed' | 'pose' | 'scribble' | 'normal' | 'semantic';
   /** Model family this component is designed for */
-  modelFamily: 'FLUX' | 'SD3';
-  /** Priority level: 1=Essential, 2=Standard, 3=Optional */
+  modelFamily: 'FLUX' | 'SD3' | 'SD1' | 'SDXL';
+  /** Priority level: 1=Essential/Official, 2=Standard/Professional, 3=Optional/Community */
   priority: number;
-  /** Component type: vae, clip, or t5 encoder */
-  type: 'vae' | 'clip' | 't5';
+  /** Component type */
+  type: 'vae' | 'clip' | 't5' | 'lora' | 'controlnet';
 }
 
 /* eslint-disable sort-keys-fix/sort-keys-fix */
@@ -43,7 +47,7 @@ export const SYSTEM_COMPONENTS: Record<string, ComponentConfig> = {
   },
 
   // ===================================================================
-  // === OPTIONAL COMPONENTS ===
+  // === OPTIONAL COMPONENTS (Priority 2-3) ===
   // ===================================================================
   't5xxl_fp8_e4m3fn.safetensors': {
     modelFamily: 'FLUX',
@@ -62,6 +66,241 @@ export const SYSTEM_COMPONENTS: Record<string, ComponentConfig> = {
     priority: 3,
     type: 't5',
   },
+
+  // ===================================================================
+  // === VAE MODELS ===
+  // ===================================================================
+
+  // SD1 VAE Models
+  'vae-ft-mse-840000-ema-pruned.safetensors': {
+    modelFamily: 'SD1',
+    priority: 1,
+    type: 'vae',
+  },
+
+  'sd-vae-ft-ema.safetensors': {
+    modelFamily: 'SD1',
+    priority: 1,
+    type: 'vae',
+  },
+
+  // SDXL VAE Models
+  'sdxl_vae.safetensors': {
+    modelFamily: 'SDXL',
+    priority: 1,
+    type: 'vae',
+  },
+
+  'sdxl.vae.safetensors': {
+    modelFamily: 'SDXL',
+    priority: 1,
+    type: 'vae',
+  },
+
+  'sd_xl_base_1.0_0.9vae.safetensors': {
+    modelFamily: 'SDXL',
+    priority: 2,
+    type: 'vae',
+  },
+
+  // ===================================================================
+  // === LORA ADAPTERS ===
+  // ===================================================================
+
+  // XLabs-AI Official FLUX LoRA Adapters (Priority 1 - Official)
+  'realism_lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 'lora',
+  },
+
+  'anime_lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 'lora',
+  },
+
+  'disney_lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 'lora',
+  },
+
+  'scenery_lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 'lora',
+  },
+
+  'art_lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 'lora',
+  },
+
+  'mjv6_lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 'lora',
+  },
+
+  'flux-realism-lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 'lora',
+  },
+
+  'flux-lora-collection-8-styles.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 'lora',
+  },
+
+  'disney-anime-art-lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 'lora',
+  },
+
+  // LiblibAI Professional LoRA (Priority 2 - Professional)
+  'flux-kodak-grain-lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 2,
+    type: 'lora',
+  },
+
+  'flux-first-person-selfie-lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 2,
+    type: 'lora',
+  },
+
+  'flux-anime-rainbow-light-lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 2,
+    type: 'lora',
+  },
+
+  'flux-detailer-enhancement-lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 2,
+    type: 'lora',
+  },
+
+  // CivitAI Special Effects LoRA (Priority 2 - Professional)
+  'Envy_Flux_Reanimated_lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 2,
+    type: 'lora',
+  },
+
+  'Photon_Construct_Flux_V1_0_lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 2,
+    type: 'lora',
+  },
+
+  // ModelScope LoRA Collection (Priority 2 - Professional)
+  'flux-ultimate-lora-collection.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 2,
+    type: 'lora',
+  },
+
+  'artaug-flux-enhancement-lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 2,
+    type: 'lora',
+  },
+
+  'flux-canny-dev-lora.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 2,
+    type: 'lora',
+  },
+
+  // Community and Experimental LoRA (Priority 3 - Community)
+  'watercolor_painting_schnell_lora.safetensors': {
+    compatibleVariants: ['schnell'],
+    modelFamily: 'FLUX',
+    priority: 3,
+    type: 'lora',
+  },
+
+  'juggernaut_lora_flux.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 3,
+    type: 'lora',
+  },
+
+  'chinese-style-flux-lora-collection.safetensors': {
+    compatibleVariants: ['dev'],
+    modelFamily: 'FLUX',
+    priority: 3,
+    type: 'lora',
+  },
+
+  'flux-medical-environment-lora.safetensors': {
+    compatibleVariants: ['kontext'],
+    modelFamily: 'FLUX',
+    priority: 3,
+    type: 'lora',
+  },
+
+  'flux-fill-object-removal.safetensors': {
+    compatibleVariants: ['kontext'],
+    modelFamily: 'FLUX',
+    priority: 3,
+    type: 'lora',
+  },
+
+  // ===================================================================
+  // === CONTROLNET MODELS ===
+  // ===================================================================
+
+  // XLabs-AI Official FLUX ControlNet Models (Priority 1 - Official)
+  'flux-controlnet-canny-v3.safetensors': {
+    compatibleVariants: ['dev'],
+    controlnetType: 'canny',
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 'controlnet',
+  },
+
+  'flux-controlnet-depth-v3.safetensors': {
+    compatibleVariants: ['dev'],
+    controlnetType: 'depth',
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 'controlnet',
+  },
+
+  'flux-controlnet-hed-v3.safetensors': {
+    compatibleVariants: ['dev'],
+    controlnetType: 'hed',
+    modelFamily: 'FLUX',
+    priority: 1,
+    type: 'controlnet',
+  },
 } as const;
 
 /**
@@ -71,6 +310,8 @@ export const SYSTEM_COMPONENTS: Record<string, ComponentConfig> = {
 export function getComponentConfig(
   componentName: string,
   options?: {
+    compatibleVariant?: string;
+    controlnetType?: ComponentConfig['controlnetType'];
     modelFamily?: ComponentConfig['modelFamily'];
     priority?: number;
     type?: ComponentConfig['type'];
@@ -86,7 +327,9 @@ export function getComponentConfig(
   const matches =
     (!options.type || config.type === options.type) &&
     (!options.priority || config.priority === options.priority) &&
-    (!options.modelFamily || config.modelFamily === options.modelFamily);
+    (!options.modelFamily || config.modelFamily === options.modelFamily) &&
+    (!options.compatibleVariant || (config.compatibleVariants && config.compatibleVariants.includes(options.compatibleVariant))) &&
+    (!options.controlnetType || config.controlnetType === options.controlnetType);
 
   return matches ? config : undefined;
 }
@@ -95,6 +338,8 @@ export function getComponentConfig(
  * Get all component configs matching filters
  */
 export function getAllComponentConfigs(options?: {
+  compatibleVariant?: string;
+  controlnetType?: ComponentConfig['controlnetType'];
   modelFamily?: ComponentConfig['modelFamily'];
   priority?: number;
   type?: ComponentConfig['type'];
@@ -105,7 +350,9 @@ export function getAllComponentConfigs(options?: {
     (config) =>
       (!options.type || config.type === options.type) &&
       (!options.priority || config.priority === options.priority) &&
-      (!options.modelFamily || config.modelFamily === options.modelFamily),
+      (!options.modelFamily || config.modelFamily === options.modelFamily) &&
+      (!options.compatibleVariant || (config.compatibleVariants && config.compatibleVariants.includes(options.compatibleVariant))) &&
+      (!options.controlnetType || config.controlnetType === options.controlnetType),
   );
 }
 
@@ -113,6 +360,8 @@ export function getAllComponentConfigs(options?: {
  * Get all components with names matching filters
  */
 export function getAllComponentsWithNames(options?: {
+  compatibleVariant?: string;
+  controlnetType?: ComponentConfig['controlnetType'];
   modelFamily?: ComponentConfig['modelFamily'];
   priority?: number;
   type?: ComponentConfig['type'];
@@ -122,7 +371,9 @@ export function getAllComponentsWithNames(options?: {
       ([, config]) =>
         (!options?.type || config.type === options.type) &&
         (!options?.priority || config.priority === options.priority) &&
-        (!options?.modelFamily || config.modelFamily === options.modelFamily),
+        (!options?.modelFamily || config.modelFamily === options.modelFamily) &&
+        (!options?.compatibleVariant || (config.compatibleVariants && config.compatibleVariants.includes(options.compatibleVariant))) &&
+        (!options?.controlnetType || config.controlnetType === options.controlnetType),
     )
     .map(([name, config]) => ({ name, config }));
 }
@@ -130,18 +381,25 @@ export function getAllComponentsWithNames(options?: {
 /**
  * Get optimal component of specified type
  */
-export function getOptimalComponent(type: ComponentConfig['type']): string {
-  const components = getAllComponentsWithNames({ type }).sort(
+export function getOptimalComponent(
+  type: ComponentConfig['type'],
+  modelFamily: ComponentConfig['modelFamily']
+): string {
+  const components = getAllComponentsWithNames({ type, modelFamily }).sort(
     (a, b) => a.config.priority - b.config.priority,
   );
 
   if (components.length === 0) {
     throw new ConfigError(
-      `No ${type} components configured in system`,
+      `No ${type} components configured for model family ${modelFamily}`,
       ConfigError.Reasons.MISSING_CONFIG,
-      { type },
+      { type, modelFamily },
     );
   }
 
   return components[0].name;
 }
+
+
+
+

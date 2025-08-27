@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  type ComponentConfig,
   SYSTEM_COMPONENTS,
   getAllComponentConfigs,
   getAllComponentsWithNames,
@@ -16,7 +15,7 @@ describe('SystemComponents', () => {
       expect(Object.keys(SYSTEM_COMPONENTS).length).toBeGreaterThan(0);
 
       // Check that all components have required fields
-      Object.entries(SYSTEM_COMPONENTS).forEach(([name, config]) => {
+      Object.entries(SYSTEM_COMPONENTS).forEach(([_name, config]) => {
         expect(config).toBeDefined();
         expect(config.type).toBeDefined();
         expect(config.priority).toBeTypeOf('number');
@@ -61,14 +60,14 @@ describe('SystemComponents', () => {
     it('should return components with names for valid type', () => {
       const result = getAllComponentsWithNames({ type: 'vae' });
       expect(result.length).toBeGreaterThan(0);
-      result.forEach(({ name, config }) => {
+      result.forEach(({ config }) => {
         expect(name).toBeTypeOf('string');
         expect(config.type).toBe('vae');
       });
     });
 
     it('should filter by modelFamily when specified', () => {
-      const result = getAllComponentsWithNames({ type: 'vae', modelFamily: 'FLUX' });
+      const result = getAllComponentsWithNames({ modelFamily: 'FLUX', type: 'vae' });
       expect(result.length).toBeGreaterThan(0);
       result.forEach(({ config }) => {
         expect(config.modelFamily).toBe('FLUX');

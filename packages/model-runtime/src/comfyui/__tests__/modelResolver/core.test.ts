@@ -13,8 +13,8 @@ import {
 
 // Mock the modelRegistry module
 vi.mock('../../config/modelRegistry', () => ({
-  getModelConfig: vi.fn(),
   getAllModelNames: vi.fn(),
+  getModelConfig: vi.fn(),
   getModelsByVariant: vi.fn(),
 }));
 

@@ -21,9 +21,9 @@ export function buildFluxKontextWorkflow(
   params: Record<string, any>,
 ): PromptBuilder<any, any, any> {
   // 获取最优组件
-  const selectedT5Model = getOptimalComponent('t5');
-  const selectedVAE = getOptimalComponent('vae');
-  const selectedCLIP = getOptimalComponent('clip');
+  const selectedT5Model = getOptimalComponent('t5', 'FLUX');
+  const selectedVAE = getOptimalComponent('vae', 'FLUX');
+  const selectedCLIP = getOptimalComponent('clip', 'FLUX');
 
   // 检查是否有输入图像
   const hasInputImage = Boolean(params.imageUrl || params.imageUrls?.[0]);

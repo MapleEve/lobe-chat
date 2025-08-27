@@ -30,7 +30,7 @@ describe('ComfyUI Internal Error System', () => {
     });
 
     it('should create error with details', () => {
-      const details = { key: 'value', code: 123 };
+      const details = { code: 123, key: 'value' };
       const error = new TestError('Error with details', 'DETAILED_ERROR', details);
 
       expect(error.message).toBe('Error with details');
@@ -75,16 +75,16 @@ describe('ComfyUI Internal Error System', () => {
         'Invalid model configuration',
         ConfigError.Reasons.INVALID_CONFIG,
         {
-          modelName: 'test-model',
-          expectedFormat: '.safetensors',
           actualFormat: '.ckpt',
+          expectedFormat: '.safetensors',
+          modelName: 'test-model',
         },
       );
 
       expect(error.details).toEqual({
-        modelName: 'test-model',
-        expectedFormat: '.safetensors',
         actualFormat: '.ckpt',
+        expectedFormat: '.safetensors',
+        modelName: 'test-model',
       });
     });
 
@@ -103,14 +103,14 @@ describe('ComfyUI Internal Error System', () => {
       const error = new ConfigError(
         'Failed to parse model config',
         ConfigError.Reasons.CONFIG_PARSE_ERROR,
-        { line: 42, column: 10, file: 'modelRegistry.ts' },
+        { column: 10, file: 'modelRegistry.ts', line: 42 },
       );
 
       expect(error.reason).toBe('CONFIG_PARSE_ERROR');
       expect(error.details).toMatchObject({
-        line: 42,
         column: 10,
         file: 'modelRegistry.ts',
+        line: 42,
       });
     });
 
@@ -155,9 +155,9 @@ describe('ComfyUI Internal Error System', () => {
         'Required workflow component not found',
         WorkflowError.Reasons.MISSING_COMPONENT,
         {
+          availableComponents: ['KSampler', 'CLIPTextEncode'],
           component: 'VAEDecode',
           workflow: 'flux-dev',
-          availableComponents: ['KSampler', 'CLIPTextEncode'],
         },
       );
 
@@ -172,9 +172,9 @@ describe('ComfyUI Internal Error System', () => {
         'SD3.5 requires triple encoder',
         WorkflowError.Reasons.MISSING_ENCODER,
         {
-          requiredEncoders: ['CLIP-L', 'CLIP-G', 'T5XXL'],
           foundEncoders: ['CLIP-L'],
           model: 'sd3.5_large',
+          requiredEncoders: ['CLIP-L', 'CLIP-G', 'T5XXL'],
         },
       );
 
@@ -188,8 +188,8 @@ describe('ComfyUI Internal Error System', () => {
         'Model architecture not supported',
         WorkflowError.Reasons.UNSUPPORTED_MODEL,
         {
-          model: 'stable-cascade',
           architecture: 'CASCADE',
+          model: 'stable-cascade',
           supportedArchitectures: ['FLUX', 'SD3'],
         },
       );
@@ -204,8 +204,8 @@ describe('ComfyUI Internal Error System', () => {
         WorkflowError.Reasons.INVALID_PARAMS,
         {
           invalidParams: ['steps', 'cfg'],
+          providedValues: { cfg: 50, steps: -1 },
           reason: 'Steps must be positive, CFG must be between 1 and 20',
-          providedValues: { steps: -1, cfg: 50 },
         },
       );
 
@@ -247,8 +247,8 @@ describe('ComfyUI Internal Error System', () => {
         'Model not found on server',
         UtilsError.Reasons.MODEL_NOT_FOUND,
         {
-          modelName: 'flux-unknown.safetensors',
           availableModels: ['flux1-dev.safetensors', 'flux1-schnell.safetensors'],
+          modelName: 'flux-unknown.safetensors',
           searchLocation: 'ComfyUI server',
         },
       );
@@ -264,8 +264,8 @@ describe('ComfyUI Internal Error System', () => {
         UtilsError.Reasons.DETECTION_FAILED,
         {
           filename: 'ambiguous-model.safetensors',
-          testedPatterns: ['FLUX', 'SD3', 'SDXL'],
           reason: 'No pattern matched',
+          testedPatterns: ['FLUX', 'SD3', 'SDXL'],
         },
       );
 
@@ -278,9 +278,9 @@ describe('ComfyUI Internal Error System', () => {
         'Failed to connect to ComfyUI server',
         UtilsError.Reasons.CONNECTION_ERROR,
         {
-          url: 'http://localhost:8188',
-          error: 'ECONNREFUSED',
           attempts: 3,
+          error: 'ECONNREFUSED',
+          url: 'http://localhost:8188',
         },
       );
 
@@ -292,8 +292,8 @@ describe('ComfyUI Internal Error System', () => {
     it('should handle invalid API key scenario', () => {
       const error = new UtilsError('Authentication failed', UtilsError.Reasons.INVALID_API_KEY, {
         authType: 'bearer',
-        status: 401,
         message: 'Unauthorized',
+        status: 401,
       });
 
       expect(error.reason).toBe('INVALID_API_KEY');
@@ -303,9 +303,9 @@ describe('ComfyUI Internal Error System', () => {
 
     it('should handle routing failed scenario', () => {
       const error = new UtilsError('Workflow routing failed', UtilsError.Reasons.ROUTING_FAILED, {
+        availableRoutes: ['dev', 'schnell', 'sd35'],
         model: 'unknown-model',
         variant: undefined,
-        availableRoutes: ['dev', 'schnell', 'sd35'],
       });
 
       expect(error.reason).toBe('ROUTING_FAILED');
@@ -369,14 +369,13 @@ describe('ComfyUI Internal Error System', () => {
     });
 
     it('should allow catching at different levels', () => {
-      const throwError = () => {
+      const throwWorkflowError = () => {
         throw new WorkflowError('test', WorkflowError.Reasons.UNSUPPORTED_MODEL);
       };
-
       // Can catch as specific error
       expect(() => {
         try {
-          throwError();
+          throwWorkflowError();
         } catch (error) {
           if (error instanceof WorkflowError) {
             throw new Error('Caught as WorkflowError');
@@ -387,7 +386,7 @@ describe('ComfyUI Internal Error System', () => {
       // Can catch as base internal error
       expect(() => {
         try {
-          throwError();
+          throwWorkflowError();
         } catch (error) {
           if (error instanceof ComfyUIInternalError) {
             throw new Error('Caught as ComfyUIInternalError');
@@ -398,7 +397,7 @@ describe('ComfyUI Internal Error System', () => {
       // Can catch as standard Error
       expect(() => {
         try {
-          throwError();
+          throwWorkflowError();
         } catch (error) {
           if (error instanceof Error) {
             throw new Error('Caught as Error');
@@ -415,10 +414,10 @@ describe('ComfyUI Internal Error System', () => {
       });
 
       const serialized = JSON.stringify({
-        name: error.name,
-        message: error.message,
-        reason: error.reason,
         details: error.details,
+        message: error.message,
+        name: error.name,
+        reason: error.reason,
       });
 
       const parsed = JSON.parse(serialized);
@@ -436,8 +435,8 @@ describe('ComfyUI Internal Error System', () => {
         'Model not found in registry: flux-unknown-variant',
         ConfigError.Reasons.MISSING_CONFIG,
         {
-          modelName: 'flux-unknown-variant',
           availableVariants: ['dev', 'schnell', 'kontext', 'krea'],
+          modelName: 'flux-unknown-variant',
           suggestion: 'Use one of the available variants',
         },
       );
@@ -451,10 +450,10 @@ describe('ComfyUI Internal Error System', () => {
         'No workflow builder found for model',
         WorkflowError.Reasons.UNSUPPORTED_MODEL,
         {
-          modelId: 'experimental-model',
-          variant: undefined,
           architecture: 'UNKNOWN',
           availableBuilders: ['flux-dev', 'flux-schnell', 'sd35'],
+          modelId: 'experimental-model',
+          variant: undefined,
         },
       );
 
@@ -468,10 +467,10 @@ describe('ComfyUI Internal Error System', () => {
         'Unable to detect model architecture',
         UtilsError.Reasons.DETECTION_FAILED,
         {
+          fallbackArchitecture: 'FLUX',
+          fallbackUsed: true,
           filename: 'ambiguous-model.safetensors',
           hints: [],
-          fallbackUsed: true,
-          fallbackArchitecture: 'FLUX',
         },
       );
 
@@ -485,18 +484,18 @@ describe('ComfyUI Internal Error System', () => {
         'SD3.5 workflow requires triple encoder setup',
         WorkflowError.Reasons.MISSING_ENCODER,
         {
-          model: 'sd3.5_large.safetensors',
-          requiredEncoders: {
-            clipL: true,
-            clipG: true,
-            t5xxl: true,
-          },
           availableEncoders: {
-            clipL: true,
             clipG: false,
+            clipL: true,
             t5xxl: false,
           },
           fallbackMode: 'single-encoder',
+          model: 'sd3.5_large.safetensors',
+          requiredEncoders: {
+            clipG: true,
+            clipL: true,
+            t5xxl: true,
+          },
         },
       );
 

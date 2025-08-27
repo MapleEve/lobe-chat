@@ -2,7 +2,7 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../../constants';
+import { WORKFLOW_DEFAULTS } from '../../constants';
 import { buildFluxKontextWorkflow } from '../../workflows/flux-kontext';
 
 // Mock the utility functions
@@ -19,7 +19,7 @@ vi.mock('../../utils/weightDType', () => ({
 
 // Mock PromptBuilder and seed function - capture constructor arguments for test access
 vi.mock('@saintno/comfyui-sdk', () => ({
-  PromptBuilder: vi.fn().mockImplementation((workflow, inputs, outputs) => {
+  PromptBuilder: vi.fn().mockImplementation((workflow, _inputs, _outputs) => {
     // Store the workflow reference so modifications are reflected
     const mockInstance = {
       input: vi.fn().mockReturnThis(),
@@ -326,12 +326,12 @@ describe('buildFluxKontextWorkflow', () => {
     // This test covers lines 269-271 in flux-kontext.ts
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      prompt: 'Enhanced landscape',
+      denoise: 0.8,
+      height: 768,
       imageUrl:
         'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
-      denoise: 0.8,
+      prompt: 'Enhanced landscape',
       width: 512,
-      height: 768,
     };
 
     const result = buildFluxKontextWorkflow(modelName, params);
@@ -372,13 +372,13 @@ describe('buildFluxKontextWorkflow', () => {
     // We need to manually create a scenario where hasInputImage=true AND workflow['7'] exists
 
     // Override PromptBuilder to capture and modify the workflow
-    const mockPromptBuilder = vi.fn().mockImplementation((workflow, inputs, outputs) => {
+    const mockPromptBuilder = vi.fn().mockImplementation((workflow, _inputs, _outputs) => {
       // For this test, manually add an EmptySD3LatentImage node to simulate the condition
       // where workflow['7'] exists even in image-to-image mode
       workflow['7'] = {
         _meta: { title: 'Test EmptySD3LatentImage' },
         class_type: 'EmptySD3LatentImage',
-        inputs: { width: 1024, height: 1024 },
+        inputs: { height: 1024, width: 1024 },
       };
 
       return {
@@ -394,10 +394,10 @@ describe('buildFluxKontextWorkflow', () => {
 
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      prompt: 'Test image modification',
-      imageUrl: 'data:image/png;base64,test',
-      width: 640,
       height: 480,
+      imageUrl: 'data:image/png;base64,test',
+      prompt: 'Test image modification',
+      width: 640,
     };
 
     buildFluxKontextWorkflow(modelName, params);
@@ -416,8 +416,8 @@ describe('buildFluxKontextWorkflow', () => {
     it('should handle fallback imageUrl logic in LoadImage node with params.imageUrls', () => {
       const modelName = 'flux_kontext.safetensors';
       const params = {
-        prompt: 'Test with imageUrls array',
         imageUrls: ['http://example.com/image1.jpg', 'http://example.com/image2.jpg'],
+        prompt: 'Test with imageUrls array',
         // No imageUrl property, should fall back to imageUrls[0]
       };
 
@@ -425,7 +425,7 @@ describe('buildFluxKontextWorkflow', () => {
 
       // Get the most recent call to PromptBuilder
       const calls = (PromptBuilder as any).mock.calls;
-      const lastCall = calls[calls.length - 1];
+      const lastCall = calls.at(-1);
       const workflow = lastCall[0];
 
       // This covers line 182: image: params.imageUrl || params.imageUrls?.[0] || ''
@@ -437,16 +437,18 @@ describe('buildFluxKontextWorkflow', () => {
     it('should handle empty imageUrl fallback logic in LoadImage node', () => {
       const modelName = 'flux_kontext.safetensors';
       const params = {
-        prompt: 'Test with valid image URL',
-        imageUrls: [], // Empty array to test fallback
-        imageUrl: 'http://example.com/test.jpg', // Provide a URL to trigger image mode
+        // Empty array to test fallback
+imageUrl: 'http://example.com/test.jpg',
+        
+imageUrls: [], 
+        prompt: 'Test with valid image URL', // Provide a URL to trigger image mode
       };
 
       buildFluxKontextWorkflow(modelName, params);
 
       // Get the most recent call to PromptBuilder
       const calls = (PromptBuilder as any).mock.calls;
-      const lastCall = calls[calls.length - 1];
+      const lastCall = calls.at(-1);
       const workflow = lastCall[0];
 
       // This covers line 182: image: params.imageUrl || params.imageUrls?.[0] || ''
@@ -458,9 +460,9 @@ describe('buildFluxKontextWorkflow', () => {
     it('should handle hasInputImage branch logic with imageUrl fallback in builder input', () => {
       const modelName = 'flux_kontext.safetensors';
       const params = {
-        prompt: 'Test hasInputImage branch',
-        imageUrls: ['http://example.com/fallback-image.jpg'],
         denoise: 0.8,
+        imageUrls: ['http://example.com/fallback-image.jpg'],
+        prompt: 'Test hasInputImage branch',
         // No imageUrl, should use imageUrls[0]
       };
 
@@ -478,8 +480,8 @@ describe('buildFluxKontextWorkflow', () => {
     it('should handle hasInputImage branch with empty fallback in builder input', () => {
       const modelName = 'flux_kontext.safetensors';
       const params = {
-        prompt: 'Test hasInputImage with no image',
         denoise: 0.9,
+        prompt: 'Test hasInputImage with no image',
         // No imageUrl or imageUrls
       };
 

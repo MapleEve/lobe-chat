@@ -13,8 +13,8 @@ vi.mock('@saintno/comfyui-sdk', () => ({
 
 // Mock the modelRegistry module
 vi.mock('../../config/modelRegistry', () => ({
-  getModelConfig: vi.fn(),
   getAllModelNames: vi.fn(),
+  getModelConfig: vi.fn(),
   getModelsByVariant: vi.fn(),
 }));
 
@@ -49,7 +49,6 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
       ];
 
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -60,6 +59,7 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
               },
             },
           }),
+        ok: true,
       });
 
       // Mock getModelsByVariant to return SD3.5 models
@@ -80,7 +80,6 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
       ];
 
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -91,6 +90,7 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
               },
             },
           }),
+        ok: true,
       });
 
       // Mock getModelsByVariant for custom-sd variant
@@ -101,14 +101,13 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
       const result = await resolver.resolveModelFileName('stable-diffusion-35-inclclip');
 
       expect(result).toBe('sd3.5_medium_incl_clips_t5xxlfp8scaled.safetensors');
-      expect(mockGetModelsByVariant).toHaveBeenCalledWith('custom-sd');
+      expect(mockGetModelsByVariant).toHaveBeenCalledWith('sd-t2i');
     });
 
     it('should handle direct sd35 variant name', async () => {
       const mockServerModels = ['sd3.5_large.safetensors', 'sd3.5_medium.safetensors'];
 
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -119,6 +118,7 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
               },
             },
           }),
+        ok: true,
       });
 
       const mockSd35Models = ['sd3.5_large.safetensors', 'sd3.5_medium.safetensors'];
@@ -137,7 +137,6 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
       ];
 
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -148,6 +147,7 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
               },
             },
           }),
+        ok: true,
       });
 
       // getModelsByVariant should return models sorted by priority (large has higher priority)
@@ -166,7 +166,6 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
       ];
 
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -177,6 +176,7 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
               },
             },
           }),
+        ok: true,
       });
 
       const mockSd35Models = ['sd3.5_large.safetensors', 'sd3.5_medium.safetensors'];
@@ -194,7 +194,6 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
       ];
 
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -205,6 +204,7 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
               },
             },
           }),
+        ok: true,
       });
 
       const mockSd35Models = ['sd3.5_large.safetensors', 'sd3.5_medium.safetensors'];
@@ -230,7 +230,6 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
       const mockServerModels = ['flux1-dev.safetensors', 'flux1-schnell.safetensors'];
 
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -241,6 +240,7 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
               },
             },
           }),
+        ok: true,
       });
 
       const mockDevModels = ['flux1-dev.safetensors'];
@@ -256,7 +256,6 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
       const mockServerModels = ['flux1-dev.safetensors', 'flux1-schnell.safetensors'];
 
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -267,6 +266,7 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
               },
             },
           }),
+        ok: true,
       });
 
       const mockSchnellModels = ['flux1-schnell.safetensors'];
@@ -279,10 +279,9 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
     });
 
     it('should handle kontext variant mapping', async () => {
-      const mockServerModels = ['flux1-kontext.safetensors'];
+      const mockServerModels = ['flux1-kontext-dev.safetensors'];
 
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -293,22 +292,22 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
               },
             },
           }),
+        ok: true,
       });
 
-      const mockKontextModels = ['flux1-kontext.safetensors'];
+      const mockKontextModels = ['flux1-kontext-dev.safetensors'];
       mockGetModelsByVariant.mockReturnValue(mockKontextModels);
 
-      const result = await resolver.resolveModelFileName('flux-kontext');
+      const result = await resolver.resolveModelFileName('flux-kontext-dev');
 
-      expect(result).toBe('flux1-kontext.safetensors');
+      expect(result).toBe('flux1-kontext-dev.safetensors');
       expect(mockGetModelsByVariant).toHaveBeenCalledWith('kontext');
     });
 
     it('should handle krea variant mapping', async () => {
-      const mockServerModels = ['flux1-krea.safetensors'];
+      const mockServerModels = ['flux1-krea-dev.safetensors'];
 
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -319,15 +318,16 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
               },
             },
           }),
+        ok: true,
       });
 
-      const mockKreaModels = ['flux1-krea.safetensors'];
+      const mockKreaModels = ['flux1-krea-dev.safetensors'];
       mockGetModelsByVariant.mockReturnValue(mockKreaModels);
 
-      const result = await resolver.resolveModelFileName('flux-krea');
+      const result = await resolver.resolveModelFileName('flux-krea-dev');
 
-      expect(result).toBe('flux1-krea.safetensors');
-      expect(mockGetModelsByVariant).toHaveBeenCalledWith('krea');
+      expect(result).toBe('flux1-krea-dev.safetensors');
+      expect(mockGetModelsByVariant).toHaveBeenCalledWith('dev');
     });
   });
 
@@ -336,7 +336,6 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
       const mockServerModels = ['some-other-model.safetensors'];
 
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -347,6 +346,7 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
               },
             },
           }),
+        ok: true,
       });
 
       mockGetModelsByVariant.mockReturnValue(['flux1-dev.safetensors']); // Not available on server
@@ -367,7 +367,6 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
       const mockServerModels = ['flux1-dev.safetensors'];
 
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -378,6 +377,7 @@ describe('ModelResolver - SD3.5 Mapping Logic', () => {
               },
             },
           }),
+        ok: true,
       });
 
       mockGetModelsByVariant.mockReturnValue([]); // No models in variant

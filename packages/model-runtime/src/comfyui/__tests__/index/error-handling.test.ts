@@ -23,14 +23,14 @@ vi.mock('@saintno/comfyui-sdk', () => ({
 // Mock the ModelResolver with complete export structure
 vi.mock('../../utils/modelResolver', () => ({
   ModelResolver: vi.fn().mockImplementation(() => createMockModelResolver()),
+  ModelResolverError: Error,
+  getAllModels: vi.fn(),
+  isValidModel: vi.fn(),
   resolveModel: vi.fn(),
   resolveModelStrict: vi.fn(),
-  isValidModel: vi.fn(),
-  getAllModels: vi.fn(),
-  ModelResolverError: Error,
 }));
 
-const provider = 'comfyui';
+const _provider = 'comfyui';
 const bizErrorType = 'ComfyUIBizError';
 const emptyResultErrorType = AgentRuntimeErrorType.ComfyUIEmptyResult;
 const serviceUnavailableErrorType = 'ComfyUIServiceUnavailable';
@@ -311,7 +311,7 @@ describe('LobeComfyUI - Error Handling', () => {
         errorType: serviceUnavailableErrorType,
         provider: 'comfyui',
       });
-    }, 10000);
+    }, 10_000);
 
     it('should throw ComfyUIServiceUnavailable for fetch failed', async () => {
       // Mock successful validation
@@ -408,7 +408,7 @@ describe('LobeComfyUI - Error Handling', () => {
         errorType: 'InvalidProviderAPIKey',
         provider: 'comfyui',
       });
-    }, 10000);
+    }, 10_000);
 
     it('should throw InvalidProviderAPIKey for 401 status with bearer token', async () => {
       const comfyuiWithBearer = new LobeComfyUI({
@@ -439,7 +439,7 @@ describe('LobeComfyUI - Error Handling', () => {
         errorType: 'InvalidProviderAPIKey',
         provider: 'comfyui',
       });
-    }, 10000);
+    }, 10_000);
 
     it('should throw PermissionDenied for 403 status', async () => {
       mockModelResolver.validateModel.mockRejectedValueOnce(
@@ -461,7 +461,7 @@ describe('LobeComfyUI - Error Handling', () => {
         errorType: 'PermissionDenied',
         provider: 'comfyui',
       });
-    }, 10000);
+    }, 10_000);
   });
 
   describe('Server Errors', () => {

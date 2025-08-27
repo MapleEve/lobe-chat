@@ -3,10 +3,9 @@ import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { WorkflowError } from '../errors';
 import { buildFluxDevWorkflow } from '../workflows/flux-dev';
 import { buildFluxKontextWorkflow } from '../workflows/flux-kontext';
-import { buildFluxKreaWorkflow } from '../workflows/flux-krea';
 import { buildFluxSchnellWorkflow } from '../workflows/flux-schnell';
 import { buildSD35Workflow } from '../workflows/sd35';
-import { buildSD35InclClipWorkflow } from '../workflows/sd35-incl-clip';
+import { buildSimpleSDWorkflow } from '../workflows/simple-sd';
 
 // Re-export for backward compatibility
 export { WorkflowError as WorkflowBuilderError } from '../errors';
@@ -21,8 +20,8 @@ export interface WorkflowDetectionResult {
   category?: 'model' | 'lora' | 'controlnet' | 'component';
   /** Whether this model is supported / 是否支持的模型 */
   isSupported: boolean;
-  /** Variant type / 变体类型 */
-  variant?: 'dev' | 'schnell' | 'kontext' | 'krea' | 'sd35' | 'sd35-incl-clip';
+  /** Variant type */
+  variant?: 'dev' | 'schnell' | 'kontext' | 'sd35' | 'sd-t2i' | 'sd-i2i';
 }
 
 /**
@@ -46,22 +45,35 @@ export class WorkflowRouter {
   private static readonly EXACT_MODEL_BUILDERS: Record<string, WorkflowBuilderFunction> = {
     'flux-dev': buildFluxDevWorkflow,
     'flux-kontext-dev': buildFluxKontextWorkflow,
-    'flux-krea-dev': buildFluxKreaWorkflow,
+    'flux-krea-dev': buildFluxDevWorkflow,
     'flux-schnell': buildFluxSchnellWorkflow,
-    'sd35': buildSD35Workflow,
-    'sd35-incl-clip': buildSD35InclClipWorkflow,
+    'stable-diffusion-15': buildSimpleSDWorkflow,
+    'stable-diffusion-35': buildSD35Workflow,
+    'stable-diffusion-35-inclclip': buildSD35Workflow,
+    'stable-diffusion-custom': buildSimpleSDWorkflow,
+    'stable-diffusion-custom-refiner': buildSimpleSDWorkflow,
+    'stable-diffusion-refiner': buildSimpleSDWorkflow,
+    'stable-diffusion-xl': buildSimpleSDWorkflow,
   };
 
   /**
-   * FLUX variant to builder mapping / FLUX 变体到构建器的映射
+   * Variant to builder mapping / 变体到构建器映射
    */
   private static readonly VARIANT_BUILDERS: Record<string, WorkflowBuilderFunction> = {
-    'dev': buildFluxDevWorkflow,
-    'kontext': buildFluxKontextWorkflow,
-    'krea': buildFluxKreaWorkflow,
-    'schnell': buildFluxSchnellWorkflow,
-    'sd35': buildSD35Workflow,
-    'sd35-incl-clip': buildSD35InclClipWorkflow,
+    'dev': buildFluxDevWorkflow,        
+    // FLUX Schnell  
+'kontext': buildFluxKontextWorkflow, 
+    // FLUX Dev
+'schnell': buildFluxSchnellWorkflow, 
+    
+// SD text-to-image (1.5/XL/3.5-inclclip)
+'sd-i2i': buildSimpleSDWorkflow,          
+    
+
+// SD3.5 requires external encoders
+'sd-t2i': buildSimpleSDWorkflow,    
+    // FLUX Kontext
+'sd35': buildSD35Workflow,    // SD image-to-image (refiners)
   };
 
   /**
@@ -89,6 +101,11 @@ export class WorkflowRouter {
       );
     }
 
+    // Remove comfyui/ prefix if present for routing logic
+    const cleanModelId = modelId.startsWith('comfyui/')
+      ? modelId.slice('comfyui/'.length)
+      : modelId;
+
     // Check if supported / 检查是否支持
     if (!detectionResult.isSupported) {
       throw new WorkflowError(
@@ -99,7 +116,7 @@ export class WorkflowRouter {
     }
 
     // 1. First try exact model name matching / 首先尝试精确模型名称匹配
-    const exactBuilder = this.EXACT_MODEL_BUILDERS[modelId];
+    const exactBuilder = this.EXACT_MODEL_BUILDERS[cleanModelId];
     if (exactBuilder) {
       try {
         return exactBuilder(modelFileName, params);
@@ -115,15 +132,7 @@ export class WorkflowRouter {
     // 2. Then try variant matching / 然后尝试变体匹配
     if (detectionResult.variant && this.VARIANT_BUILDERS[detectionResult.variant]) {
       const variantBuilder = this.VARIANT_BUILDERS[detectionResult.variant];
-      try {
-        return variantBuilder(modelFileName, params);
-      } catch (error) {
-        if (error instanceof WorkflowError) {
-          // Re-throw workflow errors - they will be caught at the main entry / 重新抛出工作流错误 - 将在主入口捕获
-          throw error;
-        }
-        throw error; // Re-throw other errors / 其他错误继续抛出
-      }
+      return variantBuilder(modelFileName, params);
     }
 
     // 3. If all fail to match, throw error / 如果都无法匹配，抛出错误
@@ -173,22 +182,44 @@ export class WorkflowRouter {
   }
 
   /**
-   * Get routing statistics / 获取路由统计信息
+   * Get routing statistics with accurate unique builder count / 获取路由统计信息（准确的唯一构建器计数）
    *
    * @returns Router statistics / 路由器统计信息
    */
   static getRoutingStats(): {
+    buildersReuse: Record<string, string[]>;
     exactModelsCount: number;
     supportedVariantsCount: number;
     totalBuilders: number;
+    uniqueBuilders: number;
   } {
+    // Calculate builder reuse mapping / 计算构建器复用映射
+    const builderToVariants = new Map<WorkflowBuilderFunction, string[]>();
+
+    // Group variants by their builder function / 按构建器函数分组变体
+    Object.entries(this.VARIANT_BUILDERS).forEach(([variant, builder]) => {
+      if (!builderToVariants.has(builder)) {
+        builderToVariants.set(builder, []);
+      }
+      builderToVariants.get(builder)!.push(variant);
+    });
+
+    // Create reuse mapping with function names for readability / 创建可读的函数名复用映射
+    const buildersReuse: Record<string, string[]> = {};
+    builderToVariants.forEach((variants, builder) => {
+      const builderName = builder.name || 'anonymous';
+      buildersReuse[builderName] = variants.toSorted((a, b) => a.localeCompare(b)); // Sort variants for consistent output
+    });
+
     return {
+      buildersReuse,
       exactModelsCount: Object.keys(this.EXACT_MODEL_BUILDERS).length,
       supportedVariantsCount: Object.keys(this.VARIANT_BUILDERS).length,
       totalBuilders: new Set([
         ...Object.values(this.EXACT_MODEL_BUILDERS),
         ...Object.values(this.VARIANT_BUILDERS),
       ]).size,
+      uniqueBuilders: builderToVariants.size,
     };
   }
 }

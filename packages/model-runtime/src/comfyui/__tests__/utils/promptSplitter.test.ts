@@ -6,18 +6,18 @@ import { splitPromptForDualCLIP } from '../../utils/promptSplitter';
 describe('splitPromptForDualCLIP', () => {
   it('should handle empty or null prompt', () => {
     expect(splitPromptForDualCLIP('')).toEqual({
-      t5xxlPrompt: '',
       clipLPrompt: '',
+      t5xxlPrompt: '',
     });
 
     expect(splitPromptForDualCLIP(null as any)).toEqual({
-      t5xxlPrompt: '',
       clipLPrompt: '',
+      t5xxlPrompt: '',
     });
 
     expect(splitPromptForDualCLIP(undefined as any)).toEqual({
-      t5xxlPrompt: '',
       clipLPrompt: '',
+      t5xxlPrompt: '',
     });
   });
 

@@ -2,7 +2,7 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../../constants';
+import { WORKFLOW_DEFAULTS } from '../../constants';
 import { buildFluxDevWorkflow } from '../../workflows/flux-dev';
 
 // Mock the utility functions
@@ -19,7 +19,7 @@ vi.mock('../../utils/weightDType', () => ({
 
 // Mock PromptBuilder and seed function - capture constructor arguments for test access
 vi.mock('@saintno/comfyui-sdk', () => ({
-  PromptBuilder: vi.fn().mockImplementation((workflow, inputs, outputs) => {
+  PromptBuilder: vi.fn().mockImplementation((workflow, _inputs, _outputs) => {
     // Store the workflow reference so modifications are reflected
     const mockInstance = {
       input: vi.fn().mockReturnThis(),
@@ -275,11 +275,11 @@ describe('buildFluxDevWorkflow', () => {
   it('should handle Krea-style parameters via parameterized Dev template', () => {
     const modelName = 'flux_krea_dev.safetensors';
     const params = { 
-      prompt: 'photographic portrait',
       cfg: 3.5,
-      steps: 15,
+      prompt: 'photographic portrait',
       samplerName: 'dpmpp_2m_sde',
-      scheduler: 'karras'
+      scheduler: 'karras',
+      steps: 15
     };
 
     buildFluxDevWorkflow(modelName, params);

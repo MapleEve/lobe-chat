@@ -15,24 +15,24 @@ vi.mock('@saintno/comfyui-sdk', () => ({
 // Mock the ModelResolver
 vi.mock('../../utils/modelResolver', () => ({
   ModelResolver: vi.fn(),
-  resolveModel: vi.fn().mockImplementation((modelName: string) => {
-    return {
-      modelFamily: 'FLUX',
-      priority: 1,
-      recommendedDtype: 'default' as const,
-      variant: 'dev' as const,
-    };
-  }),
-  resolveModelStrict: vi.fn().mockImplementation((modelName: string) => {
-    return {
-      modelFamily: 'FLUX',
-      priority: 1,
-      recommendedDtype: 'default' as const,
-      variant: 'dev' as const,
-    };
-  }),
-  isValidModel: vi.fn().mockReturnValue(true),
   getAllModels: vi.fn().mockReturnValue(['flux-schnell.safetensors', 'flux-dev.safetensors']),
+  isValidModel: vi.fn().mockReturnValue(true),
+  resolveModel: vi.fn().mockImplementation((_modelName: string) => {
+    return {
+      modelFamily: 'FLUX',
+      priority: 1,
+      recommendedDtype: 'default' as const,
+      variant: 'dev' as const,
+    };
+  }),
+  resolveModelStrict: vi.fn().mockImplementation((_modelName: string) => {
+    return {
+      modelFamily: 'FLUX',
+      priority: 1,
+      recommendedDtype: 'default' as const,
+      variant: 'dev' as const,
+    };
+  }),
 }));
 
 // Mock WorkflowDetector
@@ -44,22 +44,8 @@ vi.mock('../../utils/workflowDetector', () => ({
 
 // Mock the workflows
 vi.mock('../../workflows', () => ({
-  buildFluxSchnellWorkflow: vi.fn().mockImplementation(() => ({
-    input: vi.fn().mockReturnThis(),
-    setInputNode: vi.fn().mockReturnThis(),
-    setOutputNode: vi.fn().mockReturnThis(),
-    prompt: {
-      '1': {
-        _meta: { title: 'Checkpoint Loader' },
-        class_type: 'CheckpointLoaderSimple',
-        inputs: { ckpt_name: 'test.safetensors' },
-      },
-    },
-  })),
   buildFluxDevWorkflow: vi.fn().mockImplementation(() => ({
     input: vi.fn().mockReturnThis(),
-    setInputNode: vi.fn().mockReturnThis(),
-    setOutputNode: vi.fn().mockReturnThis(),
     prompt: {
       '1': {
         _meta: { title: 'Checkpoint Loader' },
@@ -67,11 +53,11 @@ vi.mock('../../workflows', () => ({
         inputs: { ckpt_name: 'test.safetensors' },
       },
     },
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
   })),
   buildFluxKontextWorkflow: vi.fn().mockImplementation(() => ({
     input: vi.fn().mockReturnThis(),
-    setInputNode: vi.fn().mockReturnThis(),
-    setOutputNode: vi.fn().mockReturnThis(),
     prompt: {
       '1': {
         _meta: { title: 'Checkpoint Loader' },
@@ -79,11 +65,11 @@ vi.mock('../../workflows', () => ({
         inputs: { ckpt_name: 'test.safetensors' },
       },
     },
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
   })),
   buildFluxKreaWorkflow: vi.fn().mockImplementation(() => ({
     input: vi.fn().mockReturnThis(),
-    setInputNode: vi.fn().mockReturnThis(),
-    setOutputNode: vi.fn().mockReturnThis(),
     prompt: {
       '1': {
         _meta: { title: 'Checkpoint Loader' },
@@ -91,6 +77,20 @@ vi.mock('../../workflows', () => ({
         inputs: { ckpt_name: 'test.safetensors' },
       },
     },
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
+  })),
+  buildFluxSchnellWorkflow: vi.fn().mockImplementation(() => ({
+    input: vi.fn().mockReturnThis(),
+    prompt: {
+      '1': {
+        _meta: { title: 'Checkpoint Loader' },
+        class_type: 'CheckpointLoaderSimple',
+        inputs: { ckpt_name: 'test.safetensors' },
+      },
+    },
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
   })),
 }));
 
@@ -101,8 +101,6 @@ vi.mock('../../utils/workflowRouter', () => ({
     getSupportedFluxVariants: () => ['dev', 'schnell', 'kontext', 'krea'],
     routeWorkflow: () => ({
       input: vi.fn().mockReturnThis(),
-      setInputNode: vi.fn().mockReturnThis(),
-      setOutputNode: vi.fn().mockReturnThis(),
       prompt: {
         '1': {
           _meta: { title: 'Checkpoint Loader' },
@@ -110,6 +108,8 @@ vi.mock('../../utils/workflowRouter', () => ({
           inputs: { ckpt_name: 'test.safetensors' },
         },
       },
+      setInputNode: vi.fn().mockReturnThis(),
+      setOutputNode: vi.fn().mockReturnThis(),
     }),
   },
   WorkflowRoutingError: class extends Error {
@@ -122,41 +122,41 @@ vi.mock('../../utils/workflowRouter', () => ({
 
 // Mock systemComponents
 vi.mock('../../config/systemComponents', () => ({
-  getOptimalComponent: vi.fn().mockImplementation((type: string, modelFamily: string) => {
+  getAllComponentsWithNames: vi.fn().mockImplementation((options: any) => {
+    if (options?.type === 'clip') {
+      return [
+        { config: { priority: 1 }, name: 'clip_l.safetensors' },
+        { config: { priority: 2 }, name: 'clip_g.safetensors' },
+      ];
+    }
+    if (options?.type === 't5') {
+      return [{ config: { priority: 1 }, name: 't5xxl_fp16.safetensors' }];
+    }
+    return [];
+  }),
+  getOptimalComponent: vi.fn().mockImplementation((type: string, _modelFamily: string) => {
     if (type === 't5') return 't5xxl_fp16.safetensors';
     if (type === 'vae') return 'ae.safetensors';
     if (type === 'clip') return 'clip_l.safetensors';
     return 'default.safetensors';
   }),
-  getAllComponentsWithNames: vi.fn().mockImplementation((options: any) => {
-    if (options?.type === 'clip') {
-      return [
-        { name: 'clip_l.safetensors', config: { priority: 1 } },
-        { name: 'clip_g.safetensors', config: { priority: 2 } },
-      ];
-    }
-    if (options?.type === 't5') {
-      return [{ name: 't5xxl_fp16.safetensors', config: { priority: 1 } }];
-    }
-    return [];
-  }),
 }));
 
 // Mock processModels utility
 vi.mock('../../utils/modelParse', () => ({
-  processModelList: vi.fn(),
-  detectModelProvider: vi.fn().mockImplementation((modelId: string) => {
-    if (modelId.includes('claude')) return 'anthropic';
-    if (modelId.includes('gpt')) return 'openai';
-    if (modelId.includes('gemini')) return 'google';
-    return 'unknown';
-  }),
   MODEL_LIST_CONFIGS: {
     comfyui: {
       id: 'comfyui',
       modelList: [],
     },
   },
+  detectModelProvider: vi.fn().mockImplementation((modelId: string) => {
+    if (modelId.includes('claude')) return 'anthropic';
+    if (modelId.includes('gpt')) return 'openai';
+    if (modelId.includes('gemini')) return 'google';
+    return 'unknown';
+  }),
+  processModelList: vi.fn(),
 }));
 
 // Mock console.error to avoid polluting test output
@@ -174,23 +174,23 @@ describe('LobeComfyUI - Constructor', () => {
 
   describe('Basic Configuration', () => {
     it('should initialize with default baseURL and no credentials', () => {
-      const instance = new LobeComfyUI({});
+      const _instance = new LobeComfyUI({});
 
       expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8188', undefined, {
         credentials: undefined,
       });
       expect(mockComfyApi.init).toHaveBeenCalled();
-      expect(instance.baseURL).toBe('http://localhost:8188');
+      expect(_instance.baseURL).toBe('http://localhost:8188');
     });
 
     it('should initialize with custom baseURL', () => {
       const customBaseURL = 'https://my-comfyui.example.com';
-      const instance = new LobeComfyUI({ baseURL: customBaseURL });
+      const _instance = new LobeComfyUI({ baseURL: customBaseURL });
 
       expect(ComfyApi).toHaveBeenCalledWith(customBaseURL, undefined, {
         credentials: undefined,
       });
-      expect(instance.baseURL).toBe(customBaseURL);
+      expect(_instance.baseURL).toBe(customBaseURL);
     });
   });
 
@@ -257,7 +257,7 @@ describe('LobeComfyUI - Constructor', () => {
 
   describe('ComfyUIKeyVault Authentication', () => {
     it('should create basic credentials from authType and username/password fields', () => {
-      const instance = new LobeComfyUI({
+      const _instance = new LobeComfyUI({
         authType: 'basic',
         password: 'testpass',
         username: 'testuser',
@@ -273,7 +273,7 @@ describe('LobeComfyUI - Constructor', () => {
     });
 
     it('should create bearer credentials from authType and apiKey fields', () => {
-      const instance = new LobeComfyUI({
+      const _instance = new LobeComfyUI({
         apiKey: 'my-bearer-token',
         authType: 'bearer',
       });
@@ -287,7 +287,7 @@ describe('LobeComfyUI - Constructor', () => {
     });
 
     it('should create custom credentials from authType and customHeaders fields', () => {
-      const instance = new LobeComfyUI({
+      const _instance = new LobeComfyUI({
         authType: 'custom',
         customHeaders: {
           'Authorization': 'Custom token456',
@@ -307,7 +307,7 @@ describe('LobeComfyUI - Constructor', () => {
     });
 
     it('should handle authType none with no credentials', () => {
-      const instance = new LobeComfyUI({
+      const _instance = new LobeComfyUI({
         authType: 'none',
       });
 
@@ -334,7 +334,7 @@ describe('LobeComfyUI - Constructor', () => {
     });
 
     it('should prioritize new authType over legacy apiKey format', () => {
-      const instance = new LobeComfyUI({
+      const _instance = new LobeComfyUI({
         apiKey: 'bearer:legacy-token',
         authType: 'basic',
         password: 'newpass',

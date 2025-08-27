@@ -38,9 +38,9 @@ describe('WorkflowRouter', () => {
 
     // Create mock PromptBuilder instance
     mockPromptBuilder = {
-      prompt: { '1': { class_type: 'TestNode', inputs: {} } },
-      input: vi.fn(),
       clone: vi.fn(),
+      input: vi.fn(),
+      prompt: { '1': { class_type: 'TestNode', inputs: {} } },
     } as unknown as PromptBuilder<any, any, any>;
 
     // Setup workflow builder mocks
@@ -243,10 +243,10 @@ describe('WorkflowRouter', () => {
           'stable-diffusion-15',
           supportedResult,
           'sd-v1-5.safetensors',
-          { steps: 20, cfg: 7.5 },
+          { cfg: 7.5, steps: 20 },
         );
 
-        expect(buildSimpleSDWorkflow).toHaveBeenCalledWith('sd-v1-5.safetensors', { steps: 20, cfg: 7.5 });
+        expect(buildSimpleSDWorkflow).toHaveBeenCalledWith('sd-v1-5.safetensors', { cfg: 7.5, steps: 20 });
         expect(result).toBe(mockPromptBuilder);
       });
 
@@ -255,10 +255,10 @@ describe('WorkflowRouter', () => {
           'stable-diffusion-xl',
           supportedResult,
           'sdxl-base.safetensors',
-          { steps: 25, cfg: 7.0 },
+          { cfg: 7, steps: 25 },
         );
 
-        expect(buildSimpleSDWorkflow).toHaveBeenCalledWith('sdxl-base.safetensors', { steps: 25, cfg: 7.0 });
+        expect(buildSimpleSDWorkflow).toHaveBeenCalledWith('sdxl-base.safetensors', { cfg: 7, steps: 25 });
         expect(result).toBe(mockPromptBuilder);
       });
 
@@ -267,10 +267,10 @@ describe('WorkflowRouter', () => {
           'stable-diffusion-35',
           supportedResult,
           'sd3.5_large.safetensors',
-          { steps: 28, cfg: 4.5 },
+          { cfg: 4.5, steps: 28 },
         );
 
-        expect(buildSD35Workflow).toHaveBeenCalledWith('sd3.5_large.safetensors', { steps: 28, cfg: 4.5 });
+        expect(buildSD35Workflow).toHaveBeenCalledWith('sd3.5_large.safetensors', { cfg: 4.5, steps: 28 });
         expect(result).toBe(mockPromptBuilder);
       });
 
@@ -370,22 +370,22 @@ describe('WorkflowRouter', () => {
       });
 
       // 简化后的sd variant测试
-      it('should route sd variant to SimpleSD workflow', () => {
+      it('should route sd-t2i variant to SimpleSD workflow', () => {
         const detectionWithVariant: WorkflowDetectionResult = {
           ...supportedResult,
-          variant: 'sd',
+          variant: 'sd-t2i',
         };
 
         const result = WorkflowRouter.routeWorkflow(
           'stable-diffusion-custom',
           detectionWithVariant,
           'custom-model.safetensors',
-          { steps: 25, cfg: 7.5 },
+          { cfg: 7.5, steps: 25 },
         );
 
         expect(buildSimpleSDWorkflow).toHaveBeenCalledWith('custom-model.safetensors', { 
-          steps: 25,
-          cfg: 7.5
+          cfg: 7.5,
+          steps: 25
         });
         expect(result).toBe(mockPromptBuilder);
       });

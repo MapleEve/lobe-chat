@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   COMFYUI_DEFAULTS,
-  DEFAULT_NEGATIVE_PROMPT,
   FLUX_MODEL_CONFIG,
   STYLE_KEYWORDS,
   WORKFLOW_DEFAULTS,
@@ -13,7 +12,7 @@ describe('ComfyUI Constants', () => {
   describe('COMFYUI_DEFAULTS', () => {
     it('should have correct default configuration', () => {
       expect(COMFYUI_DEFAULTS.BASE_URL).toBe('http://localhost:8188');
-      expect(COMFYUI_DEFAULTS.CONNECTION_TIMEOUT).toBe(30000);
+      expect(COMFYUI_DEFAULTS.CONNECTION_TIMEOUT).toBe(30_000);
       expect(COMFYUI_DEFAULTS.MAX_RETRIES).toBe(3);
     });
 

@@ -42,6 +42,7 @@ export class ModelResolverError extends Error {
     CONNECTION_ERROR: 'CONNECTION_ERROR',
     INVALID_API_KEY: 'INVALID_API_KEY',
     MODEL_NOT_FOUND: 'MODEL_NOT_FOUND',
+    NO_MODELS_AVAILABLE: 'NO_MODELS_AVAILABLE',
     PERMISSION_DENIED: 'PERMISSION_DENIED',
     SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
   } as const;
@@ -166,18 +167,56 @@ export class ModelResolver {
         }
       }
 
-      const objectInfo = await response.json();
+      let objectInfo;
+      try {
+        objectInfo = await response.json();
+      } catch (jsonError) {
+        throw new ModelResolverError(
+          'Failed to parse server response as JSON',
+          ModelResolverError.Reasons.SERVICE_UNAVAILABLE,
+          { originalError: jsonError },
+        );
+      }
+
+      if (!objectInfo || typeof objectInfo !== 'object') {
+        throw new ModelResolverError(
+          'Invalid server response: null or non-object',
+          ModelResolverError.Reasons.SERVICE_UNAVAILABLE,
+          { response: objectInfo },
+        );
+      }
+
       const checkpointLoader = objectInfo.CheckpointLoaderSimple;
 
-      if (!checkpointLoader?.input?.required?.ckpt_name?.[0]) {
+      // Check if CheckpointLoaderSimple exists
+      if (!checkpointLoader) {
         throw new ModelResolverError(
-          'No models available on ComfyUI server',
-          ModelResolverError.Reasons.MODEL_NOT_FOUND,
+          'CheckpointLoaderSimple not available on ComfyUI server',
+          ModelResolverError.Reasons.SERVICE_UNAVAILABLE,
           { server: true },
         );
       }
 
-      this.modelCache = checkpointLoader.input.required.ckpt_name[0] as string[];
+      // Check if input structure exists
+      if (!checkpointLoader.input?.required?.ckpt_name) {
+        throw new ModelResolverError(
+          'Invalid server response structure',
+          ModelResolverError.Reasons.SERVICE_UNAVAILABLE,
+          { server: true },
+        );
+      }
+
+      // Check if ckpt_name contains model list
+      const modelList = checkpointLoader.input.required.ckpt_name[0];
+      if (!modelList || !Array.isArray(modelList) || modelList.length === 0) {
+        throw new ModelResolverError(
+          'No models available on ComfyUI server',
+          ModelResolverError.Reasons.NO_MODELS_AVAILABLE,
+          { server: true },
+        );
+      }
+
+      this.modelCache = modelList as string[];
       this.cacheExpiry = Date.now() + this.CACHE_TTL;
 
       return this.modelCache;
@@ -259,36 +298,66 @@ export class ModelResolver {
   async resolveModelFileName(modelId: string): Promise<string> {
     log('🔍 [ModelResolver] resolveModelFileName called with:', modelId);
 
+    // Remove comfyui/ prefix if present
+    const cleanModelId = modelId.startsWith('comfyui/')
+      ? modelId.slice('comfyui/'.length)
+      : modelId;
+
+    log('🔍 [ModelResolver] After prefix removal:', cleanModelId);
+
     // Get server models first
     const serverModels = await this.getAvailableModelFiles();
     log('🔍 [ModelResolver] Available server models:', serverModels.length, 'models');
 
     // Clean up modelId (remove path if any)
-    const cleanModelId = modelId.split('/').pop() || modelId;
+    const finalModelId = cleanModelId.split('/').pop() || cleanModelId;
 
-    // Map model IDs to variants (e.g., 'flux-dev' -> 'dev')
+    // Map model IDs to workflow variants (simplified to match VARIANT_BUILDERS)
     const modelIdToVariant: Record<string, string> = {
       'flux-dev': 'dev',
-      'flux-fill-dev': 'fill',
-      'flux-kontext-dev': 'kontext',
-      'flux-krea-dev': 'krea',
-      'flux-redux-dev': 'redux',
+      'flux-kontext-dev': 'kontext', 
+      'flux-krea-dev': 'dev',  // krea uses dev template
       'flux-schnell': 'schnell',
-      'stable-diffusion-3.5': 'sd35',
-      'stable-diffusion-3.5-inclclip': 'custom-sd',
-      // SD1.5 model ID mappings
-      'stable-diffusion-1.5': 'sd15',
-      'stable-diffusion-xl': 'sdxl',
+      'stable-diffusion-15': 'sd-t2i',     
+      
+
+// Custom refiner (image-to-image)
+'stable-diffusion-35': 'sd35',     
+      
+
+
+
+
+// SD3.5 needs external encoders
+'stable-diffusion-35-inclclip': 'sd-t2i', 
+      
+
+
+
+// SDXL refiner (image-to-image)
+'stable-diffusion-custom': 'sd-t2i',  
+      
+
+
+
+// Custom SD text-to-image
+'stable-diffusion-custom-refiner': 'sd-i2i', 
+      
+
+
+
+// SDXL text-to-image
+'stable-diffusion-refiner': 'sd-i2i',   
+      
+// SD1.5 text-to-image
+'stable-diffusion-xl': 'sd-t2i',  // Inclclip uses SimpleSD workflow
     };
 
     // Determine if we have a variant (either direct variant name or model ID)
     const variantName =
-      modelIdToVariant[cleanModelId] ||
-      (['dev', 'schnell', 'kontext', 'krea', 'fill', 'redux', 'sd35', 'custom-sd', 'sd15', 'sdxl',
-        'sd15-t2i', 'sdxl-t2i', 'sdxl-i2i', 'custom-sd-t2i', 'custom-sd-i2i'].includes(
-        cleanModelId,
-      )
-        ? cleanModelId
+      modelIdToVariant[finalModelId] ||
+      (['dev', 'schnell', 'kontext', 'sd35', 'sd-t2i', 'sd-i2i'].includes(finalModelId)
+        ? finalModelId
         : null);
 
     // First priority: Check if it's a variant name (e.g., 'dev', 'schnell')
@@ -324,22 +393,22 @@ export class ModelResolver {
     }
 
     // Second priority: Check if it's a direct filename on server (for backward compatibility)
-    if (serverModels.includes(cleanModelId)) {
-      log('✅ [ModelResolver] Direct filename found on server:', cleanModelId);
+    if (serverModels.includes(finalModelId)) {
+      log('✅ [ModelResolver] Direct filename found on server:', finalModelId);
       // Still validate it's a supported model (but don't fail if not)
-      const config = getModelConfig(cleanModelId);
+      const config = getModelConfig(finalModelId);
       if (!config) {
         log(
           '⚠️ [ModelResolver] Direct filename found but not in registry, allowing for backward compatibility',
         );
       }
-      return cleanModelId;
+      return finalModelId;
     }
 
     // Third priority: Try to resolve as a model file that might have variant info
-    const config = getModelConfig(cleanModelId);
+    const config = getModelConfig(finalModelId);
     log('🔍 [ModelResolver] getModelConfig result for direct lookup:', {
-      cleanModelId,
+      finalModelId,
       found: !!config,
       variant: config?.variant,
     });

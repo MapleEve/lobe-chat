@@ -13,8 +13,8 @@ vi.mock('@saintno/comfyui-sdk', () => ({
 
 // Mock the modelRegistry module
 vi.mock('../../config/modelRegistry', () => ({
-  getModelConfig: vi.fn(),
   getAllModelNames: vi.fn(),
+  getModelConfig: vi.fn(),
   getModelsByVariant: vi.fn(),
 }));
 
@@ -43,7 +43,6 @@ describe('ModelResolver - Validation and Error Handling', () => {
     it('should fetch and cache model files from server', async () => {
       const mockModels = ['flux1-dev.safetensors', 'flux1-schnell.safetensors'];
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -54,6 +53,7 @@ describe('ModelResolver - Validation and Error Handling', () => {
               },
             },
           }),
+        ok: true,
       });
 
       const result = await resolver.getAvailableModelFiles();
@@ -65,7 +65,6 @@ describe('ModelResolver - Validation and Error Handling', () => {
     it('should return cached models on subsequent calls', async () => {
       const mockModels = ['flux1-dev.safetensors'];
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -76,6 +75,7 @@ describe('ModelResolver - Validation and Error Handling', () => {
               },
             },
           }),
+        ok: true,
       });
 
       // First call
@@ -218,7 +218,6 @@ describe('ModelResolver - Validation and Error Handling', () => {
 
     it('should throw error when no models are available', async () => {
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -229,6 +228,7 @@ describe('ModelResolver - Validation and Error Handling', () => {
               },
             },
           }),
+        ok: true,
       });
 
       await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);
@@ -245,8 +245,8 @@ describe('ModelResolver - Validation and Error Handling', () => {
 
     it('should throw error when CheckpointLoaderSimple is not available', async () => {
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () => Promise.resolve({}),
+        ok: true,
       });
 
       await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);
@@ -263,7 +263,6 @@ describe('ModelResolver - Validation and Error Handling', () => {
 
     it('should throw error when ckpt_name input is not available', async () => {
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () =>
           Promise.resolve({
             CheckpointLoaderSimple: {
@@ -272,6 +271,7 @@ describe('ModelResolver - Validation and Error Handling', () => {
               },
             },
           }),
+        ok: true,
       });
 
       await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);
@@ -288,8 +288,8 @@ describe('ModelResolver - Validation and Error Handling', () => {
 
     it('should throw error for malformed server response', async () => {
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () => Promise.resolve(null),
+        ok: true,
       });
 
       await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);
@@ -306,8 +306,8 @@ describe('ModelResolver - Validation and Error Handling', () => {
 
     it('should throw error when JSON parsing fails', async () => {
       mockComfyApi.fetchApi.mockResolvedValue({
-        ok: true,
         json: () => Promise.reject(new Error('Invalid JSON')),
+        ok: true,
       });
 
       await expect(resolver.getAvailableModelFiles()).rejects.toThrow(ModelResolverError);

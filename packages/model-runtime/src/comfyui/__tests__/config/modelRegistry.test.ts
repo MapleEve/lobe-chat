@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   MODEL_REGISTRY,
-  type ModelConfig,
   getAllModelNames,
   getModelConfig,
   getModelsByVariant,
@@ -15,7 +14,7 @@ describe('ModelRegistry', () => {
       expect(Object.keys(MODEL_REGISTRY).length).toBeGreaterThan(0);
 
       // Check that all models have required fields
-      Object.entries(MODEL_REGISTRY).forEach(([name, config]) => {
+      Object.entries(MODEL_REGISTRY).forEach(([_name, config]) => {
         expect(config).toBeDefined();
         expect(config.modelFamily).toBeDefined();
         expect(config.priority).toBeTypeOf('number');
@@ -33,7 +32,7 @@ describe('ModelRegistry', () => {
     });
 
     it('should have valid priority ranges', () => {
-      Object.entries(MODEL_REGISTRY).forEach(([name, config]) => {
+      Object.entries(MODEL_REGISTRY).forEach(([_name, config]) => {
         // Priorities should be positive numbers
         expect(config.priority).toBeGreaterThan(0);
         expect(config.priority).toBeLessThanOrEqual(10);

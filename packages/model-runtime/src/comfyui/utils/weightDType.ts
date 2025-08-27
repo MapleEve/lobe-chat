@@ -14,5 +14,5 @@ export function selectOptimalWeightDtype(modelName: string): string {
   if (!config) {
     return 'default';
   }
-  return config.recommendedDtype;
+  return config.recommendedDtype || 'default';
 }

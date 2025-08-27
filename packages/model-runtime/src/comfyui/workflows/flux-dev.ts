@@ -21,9 +21,9 @@ export function buildFluxDevWorkflow(
   params: Record<string, any>,
 ): PromptBuilder<any, any, any> {
   // 获取最优组件
-  const selectedT5Model = getOptimalComponent('t5');
-  const selectedVAE = getOptimalComponent('vae');
-  const selectedCLIP = getOptimalComponent('clip');
+  const selectedT5Model = getOptimalComponent('t5', 'FLUX');
+  const selectedVAE = getOptimalComponent('vae', 'FLUX');
+  const selectedCLIP = getOptimalComponent('clip', 'FLUX');
 
   const workflow = {
     '1': {
@@ -191,6 +191,8 @@ export function buildFluxDevWorkflow(
   const cfg = params.cfg ?? WORKFLOW_DEFAULTS.SAMPLING.CFG;
   const steps = params.steps ?? WORKFLOW_DEFAULTS.SAMPLING.STEPS;
   const seed = params.seed ?? generateUniqueSeeds(1)[0];
+  const samplerName = params.samplerName ?? WORKFLOW_DEFAULTS.SAMPLING.SAMPLER;
+  const scheduler = params.scheduler ?? WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER;
 
   // Set shared values directly to avoid conflicts
   workflow['4'].inputs.width = width; // ModelSamplingFlux needs width/height
@@ -199,13 +201,15 @@ export function buildFluxDevWorkflow(
   workflow['7'].inputs.width = width; // EmptySD3LatentImage needs width/height
   workflow['7'].inputs.height = height;
   workflow['6'].inputs.guidance = cfg; // FluxGuidance needs guidance
+  workflow['8'].inputs.sampler_name = samplerName; // KSamplerSelect needs sampler_name
   workflow['9'].inputs.steps = steps; // BasicScheduler needs steps
+  workflow['9'].inputs.scheduler = scheduler; // BasicScheduler needs scheduler
   workflow['13'].inputs.noise_seed = seed; // RandomNoise needs seed
 
   // 创建 PromptBuilder - 移除prompt相关的输入参数，因为已直接设置
   const builder = new PromptBuilder(
     workflow,
-    ['width', 'height', 'steps', 'cfg', 'seed'], // 移除 'prompt_clip_l', 'prompt_t5xxl'
+    ['width', 'height', 'steps', 'cfg', 'seed', 'samplerName', 'scheduler'], // 添加新的参数
     ['images'],
   );
 
@@ -218,6 +222,8 @@ export function buildFluxDevWorkflow(
   builder.setInputNode('height', '7.inputs.height');
   builder.setInputNode('steps', '9.inputs.steps');
   builder.setInputNode('cfg', '6.inputs.guidance');
+  builder.setInputNode('samplerName', '8.inputs.sampler_name');
+  builder.setInputNode('scheduler', '9.inputs.scheduler');
 
   // 设置输入值（不包括prompt，已直接设置到工作流）
   builder
@@ -225,7 +231,9 @@ export function buildFluxDevWorkflow(
     .input('height', height)
     .input('steps', steps)
     .input('cfg', cfg)
-    .input('seed', seed);
+    .input('seed', seed)
+    .input('samplerName', samplerName)
+    .input('scheduler', scheduler);
 
   return builder;
 }
