@@ -2,7 +2,6 @@
  * FLUX Model Registry - Separated for maintainability
  * Contains all FLUX model family registrations
  */
-
 import type { ModelConfig } from './modelRegistry';
 
 /* eslint-disable sort-keys-fix/sort-keys-fix */
@@ -28,7 +27,7 @@ export const FLUX_MODEL_REGISTRY: Record<string, ModelConfig> = {
   },
   'flux1-krea-dev.safetensors': {
     priority: 1,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
@@ -274,72 +273,78 @@ export const FLUX_MODEL_REGISTRY: Record<string, ModelConfig> = {
   // 2.5 GGUF Series - FLUX.1-krea (11 models)
   'flux1-krea-dev-F16.gguf': {
     priority: 2,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
   'flux1-krea-dev-Q8_0.gguf': {
     priority: 2,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
   'flux1-krea-dev-Q6_K.gguf': {
     priority: 2,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
   'flux1-krea-dev-Q5_K_M.gguf': {
     priority: 2,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
   'flux1-krea-dev-Q5_K_S.gguf': {
     priority: 2,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
   'flux1-krea-dev-Q4_K_M.gguf': {
     priority: 2,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
   'flux1-krea-dev-Q4_K_S.gguf': {
     priority: 2,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
   'flux1-krea-dev-Q4_0.gguf': {
     priority: 2,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
   'flux1-krea-dev-Q3_K_M.gguf': {
     priority: 2,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
   'flux1-krea-dev-Q3_K_S.gguf': {
     priority: 2,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
   'flux1-krea-dev-Q2_K.gguf': {
     priority: 2,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
 
-  // 2.6 FP8 Series - dev variant (9 models)
+  // 2.6 FP8 Series - dev variant (10 models)
+  'flux1-dev-fp8.safetensors': {
+    priority: 2,
+    variant: 'dev',
+    modelFamily: 'FLUX',
+    recommendedDtype: 'fp8_e4m3fn',
+  },
   'flux1-dev-fp8-e4m3fn.safetensors': {
     priority: 2,
     variant: 'dev',
@@ -353,7 +358,13 @@ export const FLUX_MODEL_REGISTRY: Record<string, ModelConfig> = {
     recommendedDtype: 'fp8_e5m2',
   },
 
-  // 2.7 FP8 Series - schnell variant (3 models)
+  // 2.7 FP8 Series - schnell variant (4 models)
+  'flux1-schnell-fp8.safetensors': {
+    priority: 2,
+    variant: 'schnell',
+    modelFamily: 'FLUX',
+    recommendedDtype: 'fp8_e4m3fn',
+  },
   'flux1-schnell-fp8-e4m3fn.safetensors': {
     priority: 2,
     variant: 'schnell',
@@ -367,7 +378,13 @@ export const FLUX_MODEL_REGISTRY: Record<string, ModelConfig> = {
     recommendedDtype: 'fp8_e5m2',
   },
 
-  // 2.8 FP8 Series - kontext variant (2 models)
+  // 2.8 FP8 Series - kontext variant (3 models)
+  'flux1-dev-kontext_fp8_scaled.safetensors': {
+    priority: 2,
+    variant: 'kontext',
+    modelFamily: 'FLUX',
+    recommendedDtype: 'fp8_e4m3fn',
+  },
   'flux1-kontext-dev-fp8-e4m3fn.safetensors': {
     priority: 2,
     variant: 'kontext',
@@ -381,12 +398,24 @@ export const FLUX_MODEL_REGISTRY: Record<string, ModelConfig> = {
     recommendedDtype: 'fp8_e5m2',
   },
 
-  // 2.9 FP8 Series - krea variant (1 model)
-  'flux1-krea-dev-fp8-e4m3fn.safetensors': {
+  // 2.9 FP8 Series - krea variant (3 models)
+  'flux1-krea-dev_fp8_scaled.safetensors': {
     priority: 2,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'fp8_e4m3fn',
+  },
+  'flux1-krea-dev-fp8-e4m3fn.safetensors': {
+    priority: 2,
+    variant: 'krea',
+    modelFamily: 'FLUX',
+    recommendedDtype: 'fp8_e4m3fn',
+  },
+  'flux1-krea-dev-fp8-e5m2.safetensors': {
+    priority: 2,
+    variant: 'krea',
+    modelFamily: 'FLUX',
+    recommendedDtype: 'fp8_e5m2',
   },
 
   // 2.10 NF4 Quantization Series (7 models)
@@ -416,7 +445,7 @@ export const FLUX_MODEL_REGISTRY: Record<string, ModelConfig> = {
   },
   'flux1-krea-dev-bnb-nf4.safetensors': {
     priority: 2,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
@@ -632,7 +661,7 @@ export const FLUX_MODEL_REGISTRY: Record<string, ModelConfig> = {
   // 3.7 Fluxmania系列
   'FluxMania_Kreamania_v1.safetensors': {
     priority: 3,
-    variant: 'dev',
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },
@@ -770,7 +799,13 @@ export const FLUX_MODEL_REGISTRY: Record<string, ModelConfig> = {
   },
   'flux-depth-fp16.safetensors': {
     priority: 3,
-    variant: 'kontext',
+    variant: 'krea',
+    modelFamily: 'FLUX',
+    recommendedDtype: 'default',
+  },
+  'commercial-flux-toolkit.safetensors': {
+    priority: 3,
+    variant: 'krea',
     modelFamily: 'FLUX',
     recommendedDtype: 'default',
   },

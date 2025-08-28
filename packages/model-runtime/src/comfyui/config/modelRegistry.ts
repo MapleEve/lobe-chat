@@ -3,7 +3,6 @@
  * Combines FLUX and SD model families while maintaining KISS principle
  * Interface shared, registries split for maintainability
  */
-
 import { FLUX_MODEL_REGISTRY } from './fluxModelRegistry';
 import { SD_MODEL_REGISTRY } from './sdModelRegistry';
 
@@ -11,7 +10,18 @@ export interface ModelConfig {
   modelFamily: 'FLUX' | 'SD1' | 'SDXL' | 'SD3';
   priority: number;
   recommendedDtype?: 'default' | 'fp8_e4m3fn' | 'fp8_e4m3fn_fast' | 'fp8_e5m2';
-  variant: 'dev' | 'schnell' | 'kontext' | 'sd35' | 'sd-t2i' | 'sd-i2i';
+  variant:
+    | 'dev'
+    | 'schnell'
+    | 'kontext'
+    | 'krea'
+    | 'sd35'
+    | 'sd35-inclclip'
+    | 'sd3'
+    | 'sd15-t2i'
+    | 'sdxl-t2i'
+    | 'sdxl-i2i'
+    | 'custom-sd';
 }
 
 // ===================================================================

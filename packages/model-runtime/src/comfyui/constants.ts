@@ -31,6 +31,7 @@ export const FLUX_MODEL_CONFIG = {
  * Default workflow node parameters / 工作流节点默认参数
  * Based on 2024 community best practices configuration / 基于 2024 年社区最佳实践配置
  */
+
 export const WORKFLOW_DEFAULTS = {
   IMAGE: {
     BATCH_SIZE: 1,
@@ -69,6 +70,20 @@ export const WORKFLOW_DEFAULTS = {
   SCHNELL: {
     CFG: 1, // Schnell should use CFG 1 / Schnell 应使用 CFG 1
     STEPS: 4, // Schnell recommended 1-4 steps, 4 steps optimal / Schnell 推荐 1-4 步，4 步最佳
+  },
+
+  // SD family defaults / SD 系列默认值
+  SD: {
+    DENOISE: {
+      I2I: 0.75, // Image-to-image denoising strength
+      T2I: 1, // Text-to-image always 1.0
+    },
+    SAMPLER: 'euler',
+    SCHEDULER: {
+      SD1: 'normal',
+      SD3: 'sgm_uniform',
+      SDXL: 'normal',
+    },
   },
 } as const;
 
@@ -171,3 +186,46 @@ export const getAllStyleKeywords = (): readonly string[] => {
  * Default negative prompt for all SD models
  */
 export const DEFAULT_NEGATIVE_PROMPT = `worst quality, normal quality, low quality, low res, blurry, distortion, text, watermark, logo, banner, extra digits, cropped, jpeg artifacts, signature, username, error, sketch, duplicate, ugly, monochrome, horror, geometry, mutation, disgusting, bad anatomy, bad proportions, bad quality, deformed, disconnected limbs, out of frame, out of focus, dehydrated, disfigured, extra arms, extra limbs, extra hands, fused fingers, gross proportions, long neck, jpeg, malformed limbs, mutated, mutated hands, mutated limbs, missing arms, missing fingers, picture frame, poorly drawn hands, poorly drawn face, collage, pixel, pixelated, grainy, color aberration, amputee, autograph, bad illustration, beyond the borders, blank background, body out of frame, boring background, branding, cut off, dismembered, disproportioned, distorted, draft, duplicated features, extra fingers, extra legs, fault, flaw, grains, hazy, identifying mark, improper scale, incorrect physiology, incorrect ratio, indistinct, kitsch, low resolution, macabre, malformed, mark, misshapen, missing hands, missing legs, mistake, morbid, mutilated, off-screen, outside the picture, poorly drawn feet, printed words, render, repellent, replicate, reproduce, revolting dimensions, script, shortened, sign, split image, squint, storyboard, tiling, trimmed, unfocused, unattractive, unnatural pose, unreal engine, unsightly, written language`;
+
+/**
+ * Supported model file formats
+ * Used for model file validation and detection
+ */
+export const SUPPORTED_MODEL_FORMATS = [
+  '.safetensors',
+  '.ckpt',
+  '.pt',
+  '.pth',
+  '.bin',
+  '.gguf', // GGUF format for quantized models
+] as const;
+
+/**
+ * Check if a filename has a supported model format extension
+ * @param filename - The filename to check
+ * @returns True if the filename has a supported model format extension
+ */
+export const isModelFile = (filename: string): boolean => {
+  return SUPPORTED_MODEL_FORMATS.some((ext) => filename.endsWith(ext));
+};
+
+/**
+ * Custom SD model configuration
+ * Fixed model and VAE filenames for custom SD models
+ */
+export const CUSTOM_SD_CONFIG = {
+  MODEL_FILENAME: 'custom_sd_lobe.safetensors',
+  VAE_FILENAME: 'custom_sd_vae_lobe.safetensors',
+} as const;
+
+/**
+ * Component to ComfyUI node mappings
+ * Maps component types to their corresponding ComfyUI loader nodes and input fields
+ */
+export const COMPONENT_NODE_MAPPINGS: Record<string, { field: string; node: string }> = {
+  clip: { field: 'clip_name', node: 'CLIPLoader' },
+  t5: { field: 'clip_name', node: 'CLIPLoader' }, // T5 is also CLIP type
+  vae: { field: 'vae_name', node: 'VAELoader' },
+  // Main models (UNET) are fetched via getCheckpoints(), not here
+  // Can easily add new types in the future
+} as const;
