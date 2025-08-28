@@ -285,7 +285,7 @@ describe('ImageService', () => {
       );
     });
 
-    it('should reject images larger than 10MB', async () => {
+    it('should reject images larger than 30MB', async () => {
       const payload: CreateImagePayload = {
         model: 'flux-schnell',
         params: {
@@ -313,6 +313,61 @@ describe('ImageService', () => {
 
       // Execute and verify
       await expect(imageService.createImage(payload)).rejects.toThrow(/Image too large/);
+    });
+
+    it('should handle empty image data', async () => {
+      const payload: CreateImagePayload = {
+        model: 'flux-schnell',
+        params: {
+          prompt: 'test prompt',
+          imageUrl: 'https://s3.test/empty.png',
+        },
+      };
+
+      // Setup
+      mockModelResolverService.validateModel.mockResolvedValue({
+        exists: true,
+        actualFileName: 'model.safetensors',
+      });
+
+      // Empty image data
+      mockFetch.mockResolvedValue({
+        ok: true,
+        arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
+      });
+
+      mockErrorHandler.handleError.mockImplementation((error: any) => {
+        throw error;
+      });
+
+      // Execute and verify
+      await expect(imageService.createImage(payload)).rejects.toThrow(/Invalid image data/);
+    });
+
+    it('should handle network fetch errors', async () => {
+      const payload: CreateImagePayload = {
+        model: 'flux-schnell',
+        params: {
+          prompt: 'test prompt',
+          imageUrl: 'https://s3.test/network-error.png',
+        },
+      };
+
+      // Setup
+      mockModelResolverService.validateModel.mockResolvedValue({
+        exists: true,
+        actualFileName: 'model.safetensors',
+      });
+
+      // Network error
+      mockFetch.mockRejectedValue(new TypeError('Failed to fetch'));
+
+      mockErrorHandler.handleError.mockImplementation((error: any) => {
+        throw error;
+      });
+
+      // Execute and verify  
+      await expect(imageService.createImage(payload)).rejects.toThrow(/Unable to fetch image/);
     });
 
     it('should handle imageUrls array format', async () => {

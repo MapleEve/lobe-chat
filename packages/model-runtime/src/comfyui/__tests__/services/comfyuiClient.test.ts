@@ -4,8 +4,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ComfyUIKeyVault } from '@/types/user/settings/keyVaults';
 
 import { AgentRuntimeErrorType } from '../../../error';
+import { ServicesError } from '../../errors';
 import { ModelResolverError } from '../../errors/modelResolverError';
 import { ComfyUIClientService } from '../../services/comfyuiClient';
+
+// Import for mocking
+import { ComfyApi } from '@saintno/comfyui-sdk';
 
 // Mock the SDK
 vi.mock('@saintno/comfyui-sdk', () => ({
@@ -166,6 +170,66 @@ describe('ComfyUIClientService', () => {
       }
     });
 
+    it('should handle 401 authentication error', async () => {
+      // Setup
+      const authError = new Error('Request failed with status: 401');
+      mockClient.uploadImage.mockRejectedValue(authError);
+
+      // Execute and verify
+      try {
+        await service.uploadImage(Buffer.from('data'), 'file.png');
+      } catch (error: any) {
+        expect(error).toBeInstanceOf(ModelResolverError);
+        expect(error.reason).toBe('PERMISSION_DENIED');
+        expect(error.message).toBe('Authentication failed');
+      }
+    });
+
+    it('should handle 403 forbidden error', async () => {
+      // Setup
+      const forbiddenError = new Error('Request failed with status: 403');
+      mockClient.uploadImage.mockRejectedValue(forbiddenError);
+
+      // Execute and verify
+      try {
+        await service.uploadImage(Buffer.from('data'), 'file.png');
+      } catch (error: any) {
+        expect(error).toBeInstanceOf(ModelResolverError);
+        expect(error.reason).toBe('PERMISSION_DENIED');
+        expect(error.message).toBe('Authentication failed');
+      }
+    });
+
+    it('should handle 500+ server errors', async () => {
+      // Setup
+      const serverError = new Error('Request failed with status: 503');
+      mockClient.uploadImage.mockRejectedValue(serverError);
+
+      // Execute and verify
+      try {
+        await service.uploadImage(Buffer.from('data'), 'file.png');
+      } catch (error: any) {
+        expect(error).toBeInstanceOf(ModelResolverError);
+        expect(error.reason).toBe('SERVICE_UNAVAILABLE');
+        expect(error.message).toBe('ComfyUI server error');
+      }
+    });
+
+    it('should handle unknown errors', async () => {
+      // Setup
+      const unknownError = 'Some unexpected error string';
+      mockClient.uploadImage.mockRejectedValue(unknownError);
+
+      // Execute and verify
+      try {
+        await service.uploadImage(Buffer.from('data'), 'file.png');
+      } catch (error: any) {
+        expect(error).toBeInstanceOf(ServicesError);
+        expect(error.message).toBe('Unknown error occurred');
+        expect(error.reason).toBe('EXECUTION_FAILED');
+      }
+    });
+
     it('should support Blob upload', async () => {
       // Setup
       const mockBlob = new Blob(['test data']);
@@ -249,7 +313,7 @@ describe('ComfyUIClientService', () => {
 
       // Execute and verify
       await expect(service.executeWorkflow(mockWorkflow as any)).rejects.toMatchObject({
-        provider: 'comfyui',
+        reason: 'EXECUTION_FAILED',
       });
     });
 
@@ -367,4 +431,173 @@ describe('ComfyUIClientService', () => {
 
   // getRawClient removed - violates Law of Demeter
   // All SDK methods should be wrapped in service methods
+
+  describe('getCheckpoints', () => {
+    beforeEach(() => {
+      service = new ComfyUIClientService();
+      mockClient.getCheckpoints = vi.fn();
+    });
+
+    it('should get checkpoints successfully', async () => {
+      const mockCheckpoints = ['flux1-dev.safetensors', 'sd3.5_large.safetensors'];
+      mockClient.getCheckpoints.mockResolvedValue(mockCheckpoints);
+
+      const result = await service.getCheckpoints();
+
+      expect(result).toEqual(mockCheckpoints);
+      expect(mockClient.getCheckpoints).toHaveBeenCalled();
+    });
+
+    it('should handle error when getting checkpoints', async () => {
+      mockClient.getCheckpoints.mockRejectedValue(new Error('Failed to fetch'));
+
+      await expect(service.getCheckpoints()).rejects.toThrow();
+    });
+  });
+
+  describe('getLoras', () => {
+    beforeEach(() => {
+      service = new ComfyUIClientService();
+      mockClient.getLoras = vi.fn();
+    });
+
+    it('should get LoRAs successfully', async () => {
+      const mockLoras = ['lora1.safetensors', 'lora2.safetensors'];
+      mockClient.getLoras.mockResolvedValue(mockLoras);
+
+      const result = await service.getLoras();
+
+      expect(result).toEqual(mockLoras);
+      expect(mockClient.getLoras).toHaveBeenCalled();
+    });
+
+    it('should handle error when getting LoRAs', async () => {
+      mockClient.getLoras.mockRejectedValue(new Error('Failed to fetch'));
+
+      await expect(service.getLoras()).rejects.toThrow();
+    });
+  });
+
+  describe('getNodeDefs', () => {
+    beforeEach(() => {
+      service = new ComfyUIClientService();
+      mockClient.getNodeDefs = vi.fn();
+    });
+
+    it('should get node definitions with caching', async () => {
+      const mockNodeDefs = {
+        CheckpointLoaderSimple: { 
+          input: { 
+            required: { 
+              ckpt_name: [['flux1-dev.safetensors']] 
+            } 
+          } 
+        }
+      };
+      mockClient.getNodeDefs.mockResolvedValue(mockNodeDefs);
+
+      // First call - should fetch from API
+      const result1 = await service.getNodeDefs();
+      expect(result1).toEqual(mockNodeDefs);
+      expect(mockClient.getNodeDefs).toHaveBeenCalledTimes(1);
+
+      // Second call - should use cache
+      const result2 = await service.getNodeDefs();
+      expect(result2).toEqual(mockNodeDefs);
+      expect(mockClient.getNodeDefs).toHaveBeenCalledTimes(1); // Still 1, used cache
+
+      // Get specific node - should return full cache since SDK doesn't support filtering
+      const result3 = await service.getNodeDefs('CheckpointLoaderSimple');
+      expect(result3).toEqual(mockNodeDefs);
+      expect(mockClient.getNodeDefs).toHaveBeenCalledTimes(1); // Still 1, used cache
+    });
+
+    it('should refresh cache after TTL expires', async () => {
+      const mockNodeDefs1 = { node1: {} };
+      const mockNodeDefs2 = { node2: {} };
+      
+      mockClient.getNodeDefs.mockResolvedValueOnce(mockNodeDefs1)
+                             .mockResolvedValueOnce(mockNodeDefs2);
+
+      // First call
+      const result1 = await service.getNodeDefs();
+      expect(result1).toEqual(mockNodeDefs1);
+
+      // Simulate time passing (more than 1 minute)
+      const originalNow = Date.now;
+      Date.now = vi.fn(() => originalNow() + 61000);
+
+      // Second call after TTL - should fetch again
+      const result2 = await service.getNodeDefs();
+      expect(result2).toEqual(mockNodeDefs2);
+      expect(mockClient.getNodeDefs).toHaveBeenCalledTimes(2);
+
+      // Restore Date.now
+      Date.now = originalNow;
+    });
+
+    it('should handle error when getting node definitions', async () => {
+      mockClient.getNodeDefs.mockRejectedValue(new Error('Failed to fetch'));
+
+      await expect(service.getNodeDefs()).rejects.toThrow();
+    });
+  });
+
+  describe('getSamplerInfo', () => {
+    beforeEach(() => {
+      service = new ComfyUIClientService();
+      mockClient.getSamplerInfo = vi.fn();
+    });
+
+    it('should get sampler info successfully', async () => {
+      const mockSamplerInfo = {
+        sampler: ['euler', 'ddim'],
+        scheduler: ['normal', 'karras']
+      };
+      mockClient.getSamplerInfo.mockResolvedValue(mockSamplerInfo);
+
+      const result = await service.getSamplerInfo();
+
+      expect(result).toEqual(mockSamplerInfo);
+      expect(mockClient.getSamplerInfo).toHaveBeenCalled();
+    });
+
+    it('should handle error when getting sampler info', async () => {
+      mockClient.getSamplerInfo.mockRejectedValue(new Error('Failed to fetch'));
+
+      await expect(service.getSamplerInfo()).rejects.toThrow();
+    });
+  });
+
+  describe('uploadImage', () => {
+    beforeEach(() => {
+      service = new ComfyUIClientService();
+      mockClient.uploadImage = vi.fn();
+    });
+
+    it('should upload image successfully', async () => {
+      const mockFile = new File(['test'], 'test.png', { type: 'image/png' });
+      const mockResponse = { 
+        info: { 
+          filename: 'uploaded.png',
+          type: 'input' 
+        } 
+      };
+      
+      mockClient.uploadImage.mockResolvedValue(mockResponse);
+
+      const result = await service.uploadImage(mockFile);
+
+      expect(result).toEqual('uploaded.png');
+      expect(mockClient.uploadImage).toHaveBeenCalledWith(mockFile, undefined);
+    });
+
+    it('should handle upload error', async () => {
+      const mockFile = new File(['test'], 'test.png', { type: 'image/png' });
+      
+      mockClient.uploadImage.mockRejectedValue(new Error('Upload failed'));
+
+      await expect(service.uploadImage(mockFile)).rejects.toThrow();
+    });
+  });
 });

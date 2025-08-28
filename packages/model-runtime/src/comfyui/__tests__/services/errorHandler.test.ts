@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { AgentRuntimeErrorType } from '../../../error';
-import { ConfigError, UtilsError, WorkflowError } from '../../errors';
+import { ConfigError, ServicesError, UtilsError, WorkflowError } from '../../errors';
 import { ModelResolverError } from '../../errors/modelResolverError';
 import { ErrorHandlerService } from '../../services/errorHandler';
 
@@ -35,7 +35,7 @@ describe('ErrorHandlerService', () => {
         const error = new WorkflowError(
           'Model not supported',
           WorkflowError.Reasons.UNSUPPORTED_MODEL,
-          { model: 'test-model' },
+          { model: 'flux1-dev.safetensors' },
         );
 
         try {
@@ -85,6 +85,34 @@ describe('ErrorHandlerService', () => {
 
         try {
           service.handleError(error);
+        } catch (e: any) {
+          expect(e.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        }
+      });
+
+      it('should handle ServicesError with all mapped reasons', () => {
+        // Test a mapped reason
+        const error1 = new ServicesError(
+          'Model not found',
+          ServicesError.Reasons.MODEL_NOT_FOUND,
+          { model: 'test' }
+        );
+
+        try {
+          service.handleError(error1);
+        } catch (e: any) {
+          expect(e.errorType).toBe(AgentRuntimeErrorType.ModelNotFound);
+        }
+
+        // Test unmapped reason - should hit line 120 and return default
+        const error2 = new ServicesError(
+          'Unknown error', 
+          'UNMAPPED_REASON' as any,
+          {}
+        );
+
+        try {
+          service.handleError(error2);
         } catch (e: any) {
           expect(e.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
         }
