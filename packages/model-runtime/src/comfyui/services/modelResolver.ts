@@ -246,23 +246,7 @@ export class ModelResolverService {
       return undefined;
     }
 
-    // 3. Special handling for SDXL models - they often need external VAE
-    if (modelFileName.toLowerCase().includes('sdxl')) {
-      const availableVAEs = await this.getAvailableVAEFiles();
-      
-      // Look for SDXL-specific VAE
-      const sdxlVAE = availableVAEs.find(vae => 
-        vae.toLowerCase().includes('sdxl') && 
-        (vae.includes('vae') || vae.includes('VAE'))
-      );
-      
-      if (sdxlVAE) {
-        log('Found SDXL VAE:', sdxlVAE);
-        return sdxlVAE;
-      }
-    }
-
-    // 4. Try to find VAE based on model family
+    // 3. Try to find VAE based on model family
     const modelConfig = getModelConfig(modelFileName);
     if (!modelConfig) {
       return undefined;

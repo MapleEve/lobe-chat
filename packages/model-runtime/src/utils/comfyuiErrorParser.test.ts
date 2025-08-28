@@ -323,5 +323,51 @@ describe('ComfyUIErrorParser', () => {
         expect(booleanResult.error.message).toBe('true');
       });
     });
+
+    describe('edge cases for status extraction', () => {
+      it('should extract status from error.error.status', () => {
+        const error = {
+          message: 'Error occurred',
+          error: {
+            status: 503,
+          },
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.status).toBe(503);
+      });
+
+      it('should extract status from error.error.statusCode', () => {
+        const error = {
+          message: 'Error occurred',
+          error: {
+            statusCode: 429,
+          },
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.status).toBe(429);
+      });
+
+      it('should extract code from error.error.code', () => {
+        const error = {
+          message: 'Error occurred',
+          error: {
+            code: 'RATE_LIMIT',
+          },
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.code).toBe('RATE_LIMIT');
+      });
+
+      it('should handle error without code property', () => {
+        const error = {
+          message: 'Error occurred',
+          response: {
+            status: 400,
+          },
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.code).toBeUndefined();
+      });
+    });
   });
 });
