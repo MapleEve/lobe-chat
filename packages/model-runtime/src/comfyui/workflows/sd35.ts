@@ -1,7 +1,7 @@
 /**
- * SD3.5 Workflow with Dynamic Encoder Detection
+ * SD3.5 Workflow with Static JSON Structure
  *
- * Supports three encoder configurations:
+ * Supports three encoder configurations through conditional values:
  * 1. Triple: CLIP L + CLIP G + T5 (best quality)
  * 2. Dual CLIP: CLIP L + CLIP G only
  * 3. T5 only: T5XXL encoder only
@@ -10,8 +10,23 @@ import { PromptBuilder } from '@saintno/comfyui-sdk';
 
 import { generateUniqueSeeds } from '../../../../utils/src/number';
 import { getAllComponentsWithNames } from '../config/systemComponents';
-import { DEFAULT_NEGATIVE_PROMPT } from '../constants';
+import { DEFAULT_NEGATIVE_PROMPT, WORKFLOW_DEFAULTS } from '../constants';
 import { WorkflowError } from '../errors';
+import type { WorkflowContext } from '../services/workflowBuilder';
+
+export interface SD35WorkflowParams {
+  cfg?: number;
+  denoise?: number;
+  height?: number;
+  negativePrompt?: string;
+  prompt: string;
+  sampler?: string;
+  scheduler?: string;
+  seed?: number;
+  shift?: number;
+  steps?: number;
+  width?: number;
+}
 
 /**
  * Detect available encoder configuration
@@ -26,12 +41,16 @@ function detectAvailableEncoder(): {
   const clipComponents = getAllComponentsWithNames({ type: 'clip' });
   const t5Components = getAllComponentsWithNames({ type: 't5' });
 
-  // Find CLIP L and CLIP G
+  // Find CLIP L and CLIP G for SD3
   const clipL = clipComponents.find((c) => c.name === 'clip_l.safetensors');
-  const clipG = clipComponents.find((c) => c.name === 'clip_g.safetensors');
+  const clipG = clipComponents.find(
+    (c) => c.name === 'clip_g.safetensors' && c.config.modelFamily === 'SD3',
+  );
 
   // Find T5XXL (prefer fp16, fallback to fp8)
-  const t5 = t5Components.sort((a, b) => a.config.priority - b.config.priority)[0];
+  const t5 = t5Components
+    .filter((c) => c.config.modelFamily === 'SD3' || c.config.modelFamily === 'FLUX')
+    .sort((a, b) => a.config.priority - b.config.priority)[0];
 
   // Best case: all three encoders available
   if (clipL && clipG && t5) {
@@ -65,17 +84,20 @@ function detectAvailableEncoder(): {
 }
 
 /**
- * Build SD3.5 workflow with dynamic encoder detection
+ * Build SD3.5 workflow with static JSON structure
  */
-export function buildSD35Workflow(
+export async function buildSD35Workflow(
   modelFileName: string,
-  params: Record<string, any>,
-): PromptBuilder<any, any, any> {
-  const { prompt, width, height, steps, seed, cfg, samplerName, scheduler } = params;
+  params: SD35WorkflowParams,
+  _context: WorkflowContext,
+): Promise<PromptBuilder<any, any, any>> {
+  void _context; // Context not used in SD3.5 workflow
+  const { prompt, width, height, steps, seed, cfg, sampler, scheduler, negativePrompt, shift } =
+    params;
 
   const actualSeed = seed ?? generateUniqueSeeds(1)[0];
-  const finalSamplerName = samplerName ?? 'euler';
-  const finalScheduler = scheduler ?? 'sgm_uniform';
+  const finalSampler = sampler ?? WORKFLOW_DEFAULTS.SAMPLING.SAMPLER;
+  const finalScheduler = scheduler ?? WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER;
 
   // Detect available encoders
   const encoderConfig = detectAvailableEncoder();
@@ -89,8 +111,14 @@ export function buildSD35Workflow(
     );
   }
 
-  // Base workflow structure
-  const workflow: Record<string, any> = {
+  // Configure conditioning references based on encoder type
+  const clipNode = ['2', 0];
+  const positiveConditioningNode: [string, number] = ['3', 0];
+  const negativeConditioningNode: [string, number] = ['4', 0];
+
+  // Build complete static JSON structure with conditional values
+  /* eslint-disable sort-keys-fix/sort-keys-fix */
+  const workflow = {
     '1': {
       _meta: { title: 'Load Checkpoint' },
       class_type: 'CheckpointLoaderSimple',
@@ -98,149 +126,118 @@ export function buildSD35Workflow(
         ckpt_name: modelFileName,
       },
     },
-  };
-
-  // Configure conditioning based on available encoders
-  let positiveConditioningNode: [string, number] = ['3', 0];
-  let negativeConditioningNode: [string, number] = ['4', 0];
-
-  if (encoderConfig && encoderConfig.type === 'triple') {
-    // Triple encoder: Use TripleCLIPLoader to combine all three
-    workflow['2'] = {
-      _meta: { title: 'Triple CLIP Loader' },
-      class_type: 'TripleCLIPLoader',
-      inputs: {
-        clip_name1: encoderConfig.clipL,
-        clip_name2: encoderConfig.clipG,
-        clip_name3: encoderConfig.t5,
-      },
-    };
-    workflow['3'] = {
+    '2':
+      encoderConfig.type === 'triple'
+        ? {
+            _meta: { title: 'Triple CLIP Loader' },
+            class_type: 'TripleCLIPLoader',
+            inputs: {
+              clip_name1: encoderConfig.clipL,
+              clip_name2: encoderConfig.clipG,
+              clip_name3: encoderConfig.t5,
+            },
+          }
+        : encoderConfig.type === 'dual_clip'
+          ? {
+              _meta: { title: 'Dual CLIP Loader' },
+              class_type: 'DualCLIPLoader',
+              inputs: {
+                clip_name1: encoderConfig.clipL,
+                clip_name2: encoderConfig.clipG,
+              },
+            }
+          : {
+              _meta: { title: 'Load T5' },
+              class_type: 'CLIPLoader',
+              inputs: {
+                clip_name: encoderConfig.t5,
+                type: 't5',
+              },
+            },
+    '3': {
       _meta: { title: 'Positive Prompt' },
       class_type: 'CLIPTextEncode',
       inputs: {
-        clip: ['2', 0],
+        clip: clipNode,
         text: prompt,
       },
-    };
-    workflow['4'] = {
+    },
+    '4': {
       _meta: { title: 'Negative Prompt' },
       class_type: 'CLIPTextEncode',
       inputs: {
-        clip: ['2', 0],
-        text: DEFAULT_NEGATIVE_PROMPT,
+        clip: clipNode,
+        text: negativePrompt || DEFAULT_NEGATIVE_PROMPT,
       },
-    };
-    positiveConditioningNode = ['3', 0];
-    negativeConditioningNode = ['4', 0];
-  } else if (encoderConfig && encoderConfig.type === 'dual_clip') {
-    // Dual CLIP: Use DualCLIPLoader
-    workflow['2'] = {
-      _meta: { title: 'Dual CLIP Loader' },
-      class_type: 'DualCLIPLoader',
+    },
+    '5': {
+      _meta: { title: 'Empty SD3 Latent Image' },
+      class_type: 'EmptySD3LatentImage',
       inputs: {
-        clip_name1: encoderConfig.clipL,
-        clip_name2: encoderConfig.clipG,
+        batch_size: WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE,
+        height: height || WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
+        width: width || WORKFLOW_DEFAULTS.IMAGE.WIDTH,
       },
-    };
-    workflow['3'] = {
-      _meta: { title: 'Positive Prompt' },
-      class_type: 'CLIPTextEncode',
+    },
+    '6': {
+      _meta: { title: 'KSampler' },
+      class_type: 'KSampler',
       inputs: {
-        clip: ['2', 0],
-        text: prompt,
+        cfg: cfg || 4.5,
+        denoise: params.denoise || WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
+        latent_image: ['5', 0],
+        model: ['12', 0], // Use ModelSamplingSD3 output
+        negative: negativeConditioningNode,
+        positive: positiveConditioningNode,
+        sampler_name: finalSampler,
+        scheduler: finalScheduler,
+        seed: actualSeed,
+        steps: steps || 28,
       },
-    };
-    workflow['4'] = {
-      _meta: { title: 'Negative Prompt' },
-      class_type: 'CLIPTextEncode',
+    },
+    '7': {
+      _meta: { title: 'VAE Decode' },
+      class_type: 'VAEDecode',
       inputs: {
-        clip: ['2', 0],
-        text: DEFAULT_NEGATIVE_PROMPT,
+        samples: ['6', 0],
+        vae: ['1', 2],
       },
-    };
-    positiveConditioningNode = ['3', 0];
-    negativeConditioningNode = ['4', 0];
-  } else if (encoderConfig && encoderConfig.type === 't5') {
-    // T5 only: Use CLIPLoader with T5
-    workflow['2'] = {
-      _meta: { title: 'Load T5' },
-      class_type: 'CLIPLoader',
+    },
+    '8': {
+      _meta: { title: 'Save Image' },
+      class_type: 'SaveImage',
       inputs: {
-        clip_name: encoderConfig.t5,
-        type: 't5',
+        filename_prefix: 'LobeChat/%year%-%month%-%day%/SD35',
+        images: ['7', 0],
       },
-    };
-    workflow['3'] = {
-      _meta: { title: 'Positive Prompt' },
-      class_type: 'CLIPTextEncode',
+    },
+    '12': {
+      _meta: { title: 'ModelSamplingSD3' },
+      class_type: 'ModelSamplingSD3',
       inputs: {
-        clip: ['2', 0],
-        text: prompt,
+        model: ['1', 0],
+        shift: shift || 3,
       },
-    };
-    workflow['4'] = {
-      _meta: { title: 'Negative Prompt' },
-      class_type: 'CLIPTextEncode',
-      inputs: {
-        clip: ['2', 0],
-        text: DEFAULT_NEGATIVE_PROMPT,
-      },
-    };
-    positiveConditioningNode = ['3', 0];
-    negativeConditioningNode = ['4', 0];
-  }
-
-  // Add the rest of the workflow (same for all configurations)
-  workflow['5'] = {
-    _meta: { title: 'Empty Latent' },
-    class_type: 'EmptyLatentImage',
-    inputs: {
-      batch_size: 1,
-      height,
-      width,
     },
   };
-
-  workflow['6'] = {
-    _meta: { title: 'KSampler' },
-    class_type: 'KSampler',
-    inputs: {
-      cfg: cfg || 4,
-      denoise: 1,
-      latent_image: ['5', 0],
-      model: ['1', 0],
-      negative: negativeConditioningNode,
-      positive: positiveConditioningNode,
-      sampler_name: finalSamplerName,
-      scheduler: finalScheduler,
-      seed: actualSeed,
-      steps,
-    },
-  };
-
-  workflow['7'] = {
-    _meta: { title: 'VAE Decode' },
-    class_type: 'VAEDecode',
-    inputs: {
-      samples: ['6', 0],
-      vae: ['1', 2],
-    },
-  };
-
-  workflow['8'] = {
-    _meta: { title: 'Save Image' },
-    class_type: 'SaveImage',
-    inputs: {
-      filename_prefix: 'SD35',
-      images: ['7', 0],
-    },
-  };
+  /* eslint-enable sort-keys-fix/sort-keys-fix */
 
   // Create PromptBuilder
   const builder = new PromptBuilder(
     workflow,
-    ['prompt', 'width', 'height', 'steps', 'seed', 'cfg', 'samplerName', 'scheduler'],
+    [
+      'prompt',
+      'width',
+      'height',
+      'steps',
+      'seed',
+      'cfg',
+      'sampler',
+      'scheduler',
+      'negativePrompt',
+      'denoise',
+      'shift',
+    ],
     ['images'],
   );
 
@@ -249,13 +246,30 @@ export function buildSD35Workflow(
 
   // Set input node mappings
   builder.setInputNode('prompt', '3.inputs.text');
+  builder.setInputNode('negativePrompt', '4.inputs.text');
   builder.setInputNode('width', '5.inputs.width');
   builder.setInputNode('height', '5.inputs.height');
   builder.setInputNode('steps', '6.inputs.steps');
   builder.setInputNode('seed', '6.inputs.seed');
   builder.setInputNode('cfg', '6.inputs.cfg');
-  builder.setInputNode('samplerName', '6.inputs.sampler_name');
+  builder.setInputNode('sampler', '6.inputs.sampler_name');
   builder.setInputNode('scheduler', '6.inputs.scheduler');
+  builder.setInputNode('denoise', '6.inputs.denoise');
+  builder.setInputNode('shift', '12.inputs.shift');
+
+  // Set input values
+  builder
+    .input('prompt', prompt)
+    .input('negativePrompt', negativePrompt || DEFAULT_NEGATIVE_PROMPT)
+    .input('width', width || WORKFLOW_DEFAULTS.IMAGE.WIDTH)
+    .input('height', height || WORKFLOW_DEFAULTS.IMAGE.HEIGHT)
+    .input('steps', steps || 28)
+    .input('cfg', cfg || 4.5)
+    .input('seed', actualSeed)
+    .input('sampler', finalSampler)
+    .input('scheduler', finalScheduler)
+    .input('denoise', params.denoise || WORKFLOW_DEFAULTS.SAMPLING.DENOISE)
+    .input('shift', shift || 3);
 
   return builder;
 }

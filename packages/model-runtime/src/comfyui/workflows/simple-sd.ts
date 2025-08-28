@@ -13,9 +13,38 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
 import { generateUniqueSeeds } from '../../../../utils/src/number';
-import { DEFAULT_NEGATIVE_PROMPT } from '../constants';
-import { type ComponentConfig, getAllComponentsWithNames } from '../config/systemComponents';
 import { type ModelConfig, getModelConfig } from '../config/modelRegistry';
+import { type ComponentConfig, getAllComponentsWithNames } from '../config/systemComponents';
+import { DEFAULT_NEGATIVE_PROMPT, WORKFLOW_DEFAULTS } from '../constants';
+import type { WorkflowContext } from '../services/workflowBuilder';
+
+/**
+ * Parameters for SimpleSD workflow
+ */
+export interface SimpleSDParams extends Record<string, any> {
+  cfg?: number; // Guidance scale for generation
+  customVAE?: string; // Custom VAE override
+  denoise?: number; // Denoising strength for i2i mode (0.0 - 1.0, default: 0.75)
+  height?: number; // Image height
+  imageUrl?: string; // Frontend parameter: Input image URL for i2i mode
+  imageUrls?: string[]; // Alternative: Array of image URLs (uses first one)
+  inputImage?: string; // Internal parameter: Input image URL/path for i2i mode
+  isCustomSD?: boolean; // Legacy flag for custom SD models
+  mode?: 't2i' | 'i2i'; // Generation mode: text-to-image or image-to-image
+  negativePrompt?: string; // Negative prompt text
+
+  prompt?: string; // Text prompt for generation
+  sampler?: string; // Sampling algorithm (default: 'euler')
+  samplerName?: string; // Alternative name for sampler (backward compatibility)
+  scheduler?: string; // Noise scheduler (default: varies by model type)
+  seed?: number; // Random seed for generation
+  steps?: number; // Number of denoising steps
+  strength?: number; // Frontend parameter: Image modification strength (maps to denoise)
+  width?: number; // Image width
+}
+
+// Export new name for forward compatibility
+export type SDWorkflowParams = SimpleSDParams;
 
 /**
  * Determine if a model should use external VAE
@@ -79,58 +108,43 @@ function getOptimalVAEForModel(modelConfig: ModelConfig | null): string | undefi
 }
 
 /**
- * Parameters for SimpleSD workflow
- */
-export interface SimpleSDParams extends Record<string, any> {
-  cfg?: number;             // Guidance scale for generation
-  denoise?: number;         // Denoising strength for i2i mode (0.0 - 1.0, default: 0.75)
-  height?: number;          // Image height
-  imageUrl?: string;        // Frontend parameter: Input image URL for i2i mode
-  inputImage?: string;      // Internal parameter: Input image URL/path for i2i mode
-  mode?: 't2i' | 'i2i';     // Generation mode: text-to-image or image-to-image
-
-  prompt?: string;          // Text prompt for generation
-  samplerName?: string;     // Sampling algorithm (default: 'euler')
-  scheduler?: string;       // Noise scheduler (default: varies by model type)
-  seed?: number;            // Random seed for generation
-  steps?: number;           // Number of denoising steps
-  strength?: number;        // Frontend parameter: Image modification strength (maps to denoise)
-  width?: number;           // Image width
-}
-
-/**
  * Build Simple SD workflow for models with CheckpointLoaderSimple compatibility
  * Universal workflow supporting SD1.5, SDXL, SD3.5 and other Stable Diffusion variants
  *
  * @param modelFileName - The checkpoint model filename
  * @param params - Generation parameters with optional mode and inputImage
+ * @param context - Workflow context with service layer access
  * @returns PromptBuilder configured for the specified mode
  */
-export function buildSimpleSDWorkflow(
+export async function buildSimpleSDWorkflow(
   modelFileName: string,
   params: SimpleSDParams,
-): PromptBuilder<any, any, any> {
+  context: WorkflowContext,
+): Promise<PromptBuilder<any, any, any>> {
   // Map frontend parameters to workflow parameters
   // Frontend sends imageUrl and strength, we need inputImage and denoise
   const mappedParams = {
     ...params,
     denoise: params.strength ?? params.denoise,
-    inputImage: params.imageUrl || params.inputImage,
+    inputImage: params.imageUrl || params.imageUrls?.[0] || params.inputImage,
   };
 
-  const { 
-    prompt, 
-    width, 
-    height, 
-    steps, 
-    seed, 
-    cfg, 
-    mode, 
-    inputImage, 
+  const {
+    prompt,
+    width,
+    height,
+    steps,
+    seed,
+    cfg,
+    mode,
+    inputImage,
     denoise,
     samplerName,
+    sampler,
     scheduler,
-
+    negativePrompt,
+    isCustomSD,
+    customVAE,
   } = mappedParams;
 
   const actualSeed = seed ?? generateUniqueSeeds(1)[0];
@@ -142,29 +156,48 @@ export function buildSimpleSDWorkflow(
 
   // Get model configuration to determine VAE handling and default parameters
   const modelConfig = getModelConfig(modelFileName) || null;
-  const shouldUseExternalVAE = shouldAttachVAE(modelConfig);
 
   // Set defaults based on model family
-  let defaultSamplerName = 'euler';
-  let defaultScheduler = 'normal';
-  
-  if (modelConfig?.modelFamily === 'SD3') {
-    defaultScheduler = 'sgm_uniform';
-  } else if (modelConfig?.modelFamily === 'SD1' || modelConfig?.modelFamily === 'SDXL') {
-    defaultScheduler = 'normal';
-  }
+  const defaultSamplerName = WORKFLOW_DEFAULTS.SD.SAMPLER;
+  const defaultScheduler =
+    modelConfig?.modelFamily === 'SD3'
+      ? WORKFLOW_DEFAULTS.SD.SCHEDULER.SD3
+      : WORKFLOW_DEFAULTS.SD.SCHEDULER.SD1; // SD1 and SDXL use same scheduler
 
-  const finalSamplerName = samplerName ?? defaultSamplerName;
+  const finalSamplerName = samplerName ?? sampler ?? defaultSamplerName;
   const finalScheduler = scheduler ?? defaultScheduler;
-  const finalNegativePrompt = DEFAULT_NEGATIVE_PROMPT;
+  const finalNegativePrompt = negativePrompt ?? DEFAULT_NEGATIVE_PROMPT;
 
-  // Get optimal VAE if we need one
+  // Get optimal VAE
   let selectedVAE: string | undefined;
-  if (shouldUseExternalVAE) {
-    selectedVAE = getOptimalVAEForModel(modelConfig);
+
+  // Custom SD models: use fixed VAE filename from modelResolverService
+  // The service will check if the fixed VAE file exists and return it
+  if (isCustomSD && context?.modelResolverService) {
+    selectedVAE = await context.modelResolverService.selectVAE({
+      customVAE: customVAE, // Still allow override if needed
+      isCustomSD: true,
+      modelFileName,
+    });
   }
+  // Non-custom models: auto-detect VAE based on model family
+  else if (shouldAttachVAE(modelConfig)) {
+    // Use the static system components approach from original implementation
+    selectedVAE = getOptimalVAEForModel(modelConfig);
+
+    // If static approach didn't find VAE, try service layer as fallback
+    if (!selectedVAE && context?.modelResolverService) {
+      selectedVAE = await context.modelResolverService.selectVAE({
+        customVAE: undefined,
+        isCustomSD: false,
+        modelFileName,
+      });
+    }
+  }
+  // SD3 models or when no VAE found: use built-in VAE (selectedVAE remains undefined)
 
   // Base workflow for models with built-in CLIP/T5 encoders
+  /* eslint-disable sort-keys-fix/sort-keys-fix */
   const workflow: any = {
     '1': {
       _meta: { title: 'Load Checkpoint' },
@@ -194,16 +227,18 @@ export function buildSimpleSDWorkflow(
       class_type: 'EmptyLatentImage',
       inputs: {
         batch_size: 1,
-        height,
-        width,
+        height: height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
+        width: width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH,
       },
     },
     '5': {
       _meta: { title: 'KSampler' },
       class_type: 'KSampler',
       inputs: {
-        cfg: cfg || 4,
-        denoise: isI2IMode ? (denoise ?? 0.75) : 1,
+        cfg: cfg ?? WORKFLOW_DEFAULTS.SAMPLING.CFG,
+        denoise:
+          denoise ??
+          (isI2IMode ? WORKFLOW_DEFAULTS.SD.DENOISE.I2I : WORKFLOW_DEFAULTS.SD.DENOISE.T2I),
         latent_image: isI2IMode ? ['IMG_ENCODE', 0] : ['4', 0], // Dynamic connection based on mode
         model: ['1', 0],
         negative: ['3', 0],
@@ -211,7 +246,7 @@ export function buildSimpleSDWorkflow(
         sampler_name: finalSamplerName,
         scheduler: finalScheduler,
         seed: actualSeed,
-        steps,
+        steps: steps ?? WORKFLOW_DEFAULTS.SAMPLING.STEPS,
       },
     },
     '6': {
@@ -219,7 +254,7 @@ export function buildSimpleSDWorkflow(
       class_type: 'VAEDecode',
       inputs: {
         samples: ['5', 0],
-        vae: shouldUseExternalVAE && selectedVAE ? ['VAE_LOADER', 0] : ['1', 2], // Use external or built-in VAE
+        vae: selectedVAE ? ['VAE_LOADER', 0] : ['1', 2], // Use external or built-in VAE
       },
     },
     '7': {
@@ -231,9 +266,10 @@ export function buildSimpleSDWorkflow(
       },
     },
   };
+  /* eslint-enable sort-keys-fix/sort-keys-fix */
 
   // Add VAE Loader node if using external VAE
-  if (shouldUseExternalVAE && selectedVAE) {
+  if (selectedVAE) {
     workflow['VAE_LOADER'] = {
       _meta: { title: 'VAE Loader' },
       class_type: 'VAELoader',
@@ -259,24 +295,29 @@ export function buildSimpleSDWorkflow(
       class_type: 'VAEEncode',
       inputs: {
         pixels: ['IMG_LOAD', 0],
-        vae: shouldUseExternalVAE && selectedVAE ? ['VAE_LOADER', 0] : ['1', 2], // Use external or built-in VAE
+        vae: selectedVAE ? ['VAE_LOADER', 0] : ['1', 2], // Use external or built-in VAE
       },
     };
   }
   // Text-to-image mode uses the existing EmptyLatentImage node ('4')
 
   // Create dynamic input parameters list
-  const inputParams = ['prompt', 'width', 'height', 'steps', 'seed', 'cfg', 'samplerName', 'scheduler'];
+  const inputParams = [
+    'prompt',
+    'width',
+    'height',
+    'steps',
+    'seed',
+    'cfg',
+    'samplerName',
+    'scheduler',
+  ];
   if (isI2IMode) {
     inputParams.push('inputImage', 'denoise');
   }
 
   // Create PromptBuilder
-  const builder = new PromptBuilder(
-    workflow,
-    inputParams,
-    ['images'],
-  );
+  const builder = new PromptBuilder(workflow, inputParams, ['images']);
 
   // Set output node
   builder.setOutputNode('images', '7');
@@ -295,6 +336,23 @@ export function buildSimpleSDWorkflow(
   if (isI2IMode) {
     builder.setInputNode('inputImage', 'IMG_LOAD.inputs.image');
     builder.setInputNode('denoise', '5.inputs.denoise');
+  }
+
+  // Set input values
+  builder
+    .input('prompt', prompt || '')
+    .input('width', width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH)
+    .input('height', height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT)
+    .input('steps', steps ?? WORKFLOW_DEFAULTS.SAMPLING.STEPS)
+    .input('seed', actualSeed)
+    .input('cfg', cfg ?? WORKFLOW_DEFAULTS.SAMPLING.CFG)
+    .input('samplerName', finalSamplerName)
+    .input('scheduler', finalScheduler);
+
+  // Add i2i-specific input values
+  if (isI2IMode) {
+    builder.input('inputImage', inputImage);
+    builder.input('denoise', denoise ?? WORKFLOW_DEFAULTS.SD.DENOISE.I2I);
   }
 
   return builder;
