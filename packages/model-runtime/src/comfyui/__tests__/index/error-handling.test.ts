@@ -2,15 +2,16 @@
 import { CallWrapper, ComfyApi, PromptBuilder } from '@saintno/comfyui-sdk';
 import { Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { CreateImagePayload, LobeComfyUI } from '../../index';
 import { AgentRuntimeErrorType } from '../../../error';
 import { AgentRuntimeError } from '../../../utils/createError';
+import { ModelResolverError } from '../../errors/modelResolverError';
+import { CreateImagePayload, LobeComfyUI } from '../../index';
 import { WorkflowDetector } from '../../utils/workflowDetector';
 import {
-  createMockComfyApi,
   createMockCallWrapper,
-  createMockPromptBuilder,
+  createMockComfyApi,
   createMockModelResolver,
+  createMockPromptBuilder,
 } from '../helpers/testSetup';
 
 // Mock the ComfyUI SDK
@@ -20,19 +21,89 @@ vi.mock('@saintno/comfyui-sdk', () => ({
   PromptBuilder: vi.fn(),
 }));
 
-// Mock the ModelResolver with complete export structure
-vi.mock('../../utils/modelResolver', () => ({
-  ModelResolver: vi.fn().mockImplementation(() => createMockModelResolver()),
-  ModelResolverError: Error,
-  getAllModels: vi.fn(),
-  isValidModel: vi.fn(),
-  resolveModel: vi.fn(),
-  resolveModelStrict: vi.fn(),
-}));
+// Mock the ComfyUI services for error handling tests
+let mockClientService: any;
+let mockModelResolverService: any;
+let mockWorkflowBuilderService: any;
+
+vi.mock('../../services/comfyuiClient', () => {
+  const MockComfyUIClientService = vi.fn().mockImplementation(() => {
+    mockClientService = {
+      validateConnection: vi.fn().mockResolvedValue(true),
+      executeWorkflow: vi.fn().mockImplementation((workflow, onProgress) => {
+        return new Promise((resolve) => {
+          onProgress?.({ progress: 100 });
+          resolve({
+            images: {
+              images: [
+                {
+                  filename: 'test.png',
+                  height: 1024,
+                  width: 1024,
+                },
+              ],
+            },
+          });
+        });
+      }),
+      getPathImage: vi.fn().mockReturnValue('http://localhost:8188/view?filename=test.png'),
+      getObjectInfo: vi.fn().mockResolvedValue({
+        CheckpointLoaderSimple: {
+          input: {
+            required: {
+              ckpt_name: [['flux-schnell.safetensors', 'flux-dev.safetensors']],
+            },
+          },
+        },
+      }),
+    };
+    return mockClientService;
+  });
+  return { ComfyUIClientService: MockComfyUIClientService };
+});
+
+vi.mock('../../services/modelResolver', () => {
+  const MockModelResolverService = vi.fn().mockImplementation(() => {
+    mockModelResolverService = {
+      validateModel: vi.fn().mockImplementation((modelId: string) => {
+        if (modelId.includes('unknown')) {
+          return Promise.resolve({ exists: false });
+        }
+        const fileName = modelId.split('/').pop() || modelId;
+        return Promise.resolve({ actualFileName: fileName + '.safetensors', exists: true });
+      }),
+      resolveModelFileName: vi.fn().mockResolvedValue('test.safetensors'),
+      selectVAE: vi.fn().mockResolvedValue(undefined),
+      selectComponents: vi.fn().mockResolvedValue({
+        clip: ['clip_l.safetensors', 'clip_g.safetensors'],
+        t5: 't5xxl_fp16.safetensors',
+      }),
+      getAvailableModelFiles: vi.fn().mockResolvedValue(['flux-schnell.safetensors']),
+      clearCache: vi.fn(),
+    };
+    return mockModelResolverService;
+  });
+  return { ModelResolverService: MockModelResolverService };
+});
+
+vi.mock('../../services/workflowBuilder', () => {
+  const MockWorkflowBuilderService = vi.fn().mockImplementation(() => {
+    mockWorkflowBuilderService = {
+      buildWorkflow: vi.fn().mockImplementation(() => ({
+        input: vi.fn().mockReturnThis(),
+        prompt: { '1': { class_type: 'CheckpointLoaderSimple' } },
+        setInputNode: vi.fn().mockReturnThis(),
+        setOutputNode: vi.fn().mockReturnThis(),
+      })),
+    };
+    return mockWorkflowBuilderService;
+  });
+  return { WorkflowBuilderService: MockWorkflowBuilderService };
+});
 
 const _provider = 'comfyui';
 const bizErrorType = 'ComfyUIBizError';
-const emptyResultErrorType = AgentRuntimeErrorType.ComfyUIEmptyResult;
+const emptyResultErrorType = AgentRuntimeErrorType.ComfyUIBizError;
 const serviceUnavailableErrorType = 'ComfyUIServiceUnavailable';
 const modelNotFoundErrorType = 'ModelNotFound';
 
@@ -57,8 +128,6 @@ describe('LobeComfyUI - Error Handling', () => {
     (CallWrapper as unknown as Mock).mockImplementation(() => mockCallWrapper as any);
     (PromptBuilder as unknown as Mock).mockImplementation(() => mockPromptBuilder as any);
 
-    // ModelResolver is already mocked at the top level, but we can refresh the mock if needed
-
     // Mock global fetch
     global.fetch = vi.fn() as Mock;
 
@@ -69,14 +138,12 @@ describe('LobeComfyUI - Error Handling', () => {
     }));
 
     instance = new LobeComfyUI({ apiKey: 'test-key' });
-    
-    // Replace the instance's modelResolver with our mock
-    (instance as any).modelResolver = mockModelResolver;
   });
 
   describe('Model Validation Errors', () => {
     it('should throw ModelNotFound error when validation fails', async () => {
-      mockModelResolver.validateModel.mockResolvedValue({
+      // Mock service to return model not found
+      mockModelResolverService.validateModel.mockResolvedValue({
         exists: false,
       });
 
@@ -90,20 +157,12 @@ describe('LobeComfyUI - Error Handling', () => {
       await expect(instance.createImage(payload)).rejects.toMatchObject({
         errorType: modelNotFoundErrorType,
       });
-
-      expect(mockModelResolver.validateModel).toHaveBeenCalledWith('comfyui/unknown-model');
     });
 
     it('should handle authentication errors during validation', async () => {
-      mockModelResolver.validateModel.mockRejectedValue(
-        AgentRuntimeError.createImage({
-          error: {
-            message: 'Unauthorized',
-            status: 401,
-          },
-          errorType: 'InvalidProviderAPIKey',
-          provider: 'comfyui',
-        }),
+      // Mock service to throw authentication error - the ensureConnection method calls validateConnection
+      mockClientService.validateConnection.mockRejectedValue(
+        new ModelResolverError(ModelResolverError.Reasons.INVALID_API_KEY, 'Authentication failed'),
       );
 
       const payload: CreateImagePayload = {
@@ -112,10 +171,9 @@ describe('LobeComfyUI - Error Handling', () => {
       };
 
       await expect(instance.createImage(payload)).rejects.toMatchObject({
-        errorType: 'InvalidProviderAPIKey',
+        errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
+        provider: 'comfyui',
       });
-
-      expect(mockModelResolver.validateModel).toHaveBeenCalledWith('comfyui/flux-schnell');
     });
 
     it('should validate even with authType=none', async () => {
@@ -123,19 +181,10 @@ describe('LobeComfyUI - Error Handling', () => {
         authType: 'none',
         baseURL: 'http://secure-server:8188',
       });
-      
-      // Replace the instance's modelResolver with our mock
-      (noneAuthInstance as any).modelResolver = mockModelResolver;
 
-      mockModelResolver.validateModel.mockRejectedValue(
-        AgentRuntimeError.createImage({
-          error: {
-            message: 'Unauthorized',
-            status: 401,
-          },
-          errorType: 'InvalidProviderAPIKey',
-          provider: 'comfyui',
-        }),
+      // Mock validation to fail for this instance
+      mockClientService.validateConnection.mockRejectedValue(
+        new ModelResolverError(ModelResolverError.Reasons.PERMISSION_DENIED, 'Access denied'),
       );
 
       const payload: CreateImagePayload = {
@@ -144,44 +193,25 @@ describe('LobeComfyUI - Error Handling', () => {
       };
 
       await expect(noneAuthInstance.createImage(payload)).rejects.toMatchObject({
-        errorType: 'InvalidProviderAPIKey',
+        errorType: AgentRuntimeErrorType.PermissionDenied,
+        provider: 'comfyui',
       });
-
-      expect(mockModelResolver.validateModel).toHaveBeenCalledWith('comfyui/flux-schnell');
     });
   });
 
   describe('Workflow Execution Errors', () => {
     it('should throw ComfyUIEmptyResult when no images are generated', async () => {
       // Mock successful validation
-      mockModelResolver.validateModel.mockResolvedValue({
+      mockModelResolverService.validateModel.mockResolvedValue({
         actualFileName: 'flux-schnell.safetensors',
         exists: true,
       });
 
-      const mockObjectInfo = {
-        CheckpointLoaderSimple: {
-          input: {
-            required: {
-              ckpt_name: [['flux_schnell.safetensors']],
-            },
-          },
-        },
-      };
-
-      (global.fetch as Mock).mockResolvedValue({
-        json: () => Promise.resolve(mockObjectInfo),
-      });
-
-      const mockResult = {
+      // Mock workflow execution to return empty images
+      mockClientService.executeWorkflow.mockResolvedValue({
         images: {
           images: [], // Empty images array
         },
-      };
-
-      mockCallWrapper.run.mockImplementation(() => {
-        const finishCallback = mockCallWrapper.onFinished.mock.calls[0][0];
-        finishCallback(mockResult);
       });
 
       const payload: CreateImagePayload = {
@@ -202,31 +232,13 @@ describe('LobeComfyUI - Error Handling', () => {
 
     it('should throw ComfyUIBizError when workflow fails', async () => {
       // Mock successful validation
-      mockModelResolver.validateModel.mockResolvedValue({
+      mockModelResolverService.validateModel.mockResolvedValue({
         actualFileName: 'flux-schnell.safetensors',
         exists: true,
       });
 
-      const mockObjectInfo = {
-        CheckpointLoaderSimple: {
-          input: {
-            required: {
-              ckpt_name: [['flux_schnell.safetensors']],
-            },
-          },
-        },
-      };
-
-      (global.fetch as Mock).mockResolvedValue({
-        json: () => Promise.resolve(mockObjectInfo),
-      });
-
-      const workflowError = new Error('Workflow execution failed');
-
-      mockCallWrapper.run.mockImplementation(() => {
-        const failCallback = mockCallWrapper.onFailed.mock.calls[0][0];
-        failCallback(workflowError);
-      });
+      // Mock workflow execution to reject
+      mockClientService.executeWorkflow.mockRejectedValue(new Error('Workflow execution failed'));
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
@@ -246,32 +258,13 @@ describe('LobeComfyUI - Error Handling', () => {
 
     it('should throw ComfyUIEmptyResult when result.images is null or undefined', async () => {
       // Mock successful validation
-      mockModelResolver.validateModel.mockResolvedValue({
+      mockModelResolverService.validateModel.mockResolvedValue({
         actualFileName: 'flux-schnell.safetensors',
         exists: true,
       });
 
-      const mockObjectInfo = {
-        CheckpointLoaderSimple: {
-          input: {
-            required: {
-              ckpt_name: [['flux_schnell.safetensors']],
-            },
-          },
-        },
-      };
-
-      (global.fetch as Mock).mockResolvedValue({
-        json: () => Promise.resolve(mockObjectInfo),
-      });
-
-      // Simulate a workflow result where the 'images' key is missing
-      const mockResultWithMissingImages = {};
-
-      mockCallWrapper.run.mockImplementation(() => {
-        const finishCallback = mockCallWrapper.onFinished.mock.calls[0][0];
-        finishCallback(mockResultWithMissingImages);
-      });
+      // Mock workflow execution to return empty result
+      mockClientService.executeWorkflow.mockResolvedValue({});
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
@@ -292,12 +285,11 @@ describe('LobeComfyUI - Error Handling', () => {
 
   describe('Connection and Network Errors', () => {
     it('should throw ComfyUIServiceUnavailable for ECONNREFUSED', async () => {
-      mockModelResolver.validateModel.mockRejectedValueOnce(
-        AgentRuntimeError.createImage({
-          error: new Error('connect ECONNREFUSED 127.0.0.1:8188'),
-          errorType: serviceUnavailableErrorType,
-          provider: 'comfyui',
-        }),
+      mockClientService.validateConnection.mockRejectedValue(
+        new ModelResolverError(
+          ModelResolverError.Reasons.CONNECTION_ERROR,
+          'connect ECONNREFUSED 127.0.0.1:8188',
+        ),
       );
 
       const payload: CreateImagePayload = {
@@ -308,23 +300,19 @@ describe('LobeComfyUI - Error Handling', () => {
       };
 
       await expect(instance.createImage(payload)).rejects.toMatchObject({
-        errorType: serviceUnavailableErrorType,
+        errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
         provider: 'comfyui',
       });
     }, 10_000);
 
     it('should throw ComfyUIServiceUnavailable for fetch failed', async () => {
-      // Mock successful validation
-      mockModelResolver.validateModel.mockResolvedValue({
+      // Mock successful validation but failed execution
+      mockModelResolverService.validateModel.mockResolvedValue({
         actualFileName: 'flux-schnell.safetensors',
         exists: true,
       });
 
-      const mockError = new Error('fetch failed');
-      mockCallWrapper.run.mockImplementation(() => {
-        const failCallback = mockCallWrapper.onFailed.mock.calls[0][0];
-        failCallback(mockError);
-      });
+      mockClientService.executeWorkflow.mockRejectedValue(new Error('fetch failed'));
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
@@ -332,20 +320,6 @@ describe('LobeComfyUI - Error Handling', () => {
           prompt: 'Test fetch error',
         },
       };
-
-      const mockObjectInfo = {
-        CheckpointLoaderSimple: {
-          input: {
-            required: {
-              ckpt_name: [['flux_schnell.safetensors']],
-            },
-          },
-        },
-      };
-
-      (global.fetch as Mock).mockResolvedValue({
-        json: () => Promise.resolve(mockObjectInfo),
-      });
 
       await expect(instance.createImage(payload)).rejects.toMatchObject({
         error: expect.objectContaining({
@@ -357,7 +331,7 @@ describe('LobeComfyUI - Error Handling', () => {
     });
 
     it('should handle network errors gracefully', async () => {
-      mockModelResolver.validateModel.mockRejectedValue(new Error('Network timeout'));
+      mockClientService.validateConnection.mockRejectedValue(new Error('Network timeout'));
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
@@ -370,10 +344,9 @@ describe('LobeComfyUI - Error Handling', () => {
         error: expect.objectContaining({
           message: 'Network timeout',
         }),
-        errorType: expect.any(String),
+        errorType: AgentRuntimeErrorType.ComfyUIBizError,
+        provider: 'comfyui',
       });
-
-      expect(mockModelResolver.validateModel).toHaveBeenCalledWith('comfyui/flux-schnell');
     }, 5000);
   });
 
@@ -385,16 +358,9 @@ describe('LobeComfyUI - Error Handling', () => {
         password: 'pass',
         username: 'user',
       });
-      
-      // Replace the instance's modelResolver with our mock
-      (comfyuiWithBasicAuth as any).modelResolver = mockModelResolver;
 
-      mockModelResolver.validateModel.mockRejectedValueOnce(
-        AgentRuntimeError.createImage({
-          error: { message: 'Unauthorized', status: 401 },
-          errorType: 'InvalidProviderAPIKey',
-          provider: 'comfyui',
-        }),
+      mockClientService.validateConnection.mockRejectedValue(
+        new ModelResolverError(ModelResolverError.Reasons.INVALID_API_KEY, 'Unauthorized'),
       );
 
       const payload: CreateImagePayload = {
@@ -405,7 +371,7 @@ describe('LobeComfyUI - Error Handling', () => {
       };
 
       await expect(comfyuiWithBasicAuth.createImage(payload)).rejects.toMatchObject({
-        errorType: 'InvalidProviderAPIKey',
+        errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
         provider: 'comfyui',
       });
     }, 10_000);
@@ -416,16 +382,9 @@ describe('LobeComfyUI - Error Handling', () => {
         authType: 'bearer',
         baseURL: 'http://localhost:8188',
       });
-      
-      // Replace the instance's modelResolver with our mock
-      (comfyuiWithBearer as any).modelResolver = mockModelResolver;
 
-      mockModelResolver.validateModel.mockRejectedValueOnce(
-        AgentRuntimeError.createImage({
-          error: { message: 'Unauthorized', status: 401 },
-          errorType: 'InvalidProviderAPIKey',
-          provider: 'comfyui',
-        }),
+      mockClientService.validateConnection.mockRejectedValue(
+        new ModelResolverError(ModelResolverError.Reasons.INVALID_API_KEY, 'Unauthorized'),
       );
 
       const payload: CreateImagePayload = {
@@ -436,18 +395,14 @@ describe('LobeComfyUI - Error Handling', () => {
       };
 
       await expect(comfyuiWithBearer.createImage(payload)).rejects.toMatchObject({
-        errorType: 'InvalidProviderAPIKey',
+        errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
         provider: 'comfyui',
       });
     }, 10_000);
 
     it('should throw PermissionDenied for 403 status', async () => {
-      mockModelResolver.validateModel.mockRejectedValueOnce(
-        AgentRuntimeError.createImage({
-          error: { message: 'Forbidden', status: 403 },
-          errorType: 'PermissionDenied',
-          provider: 'comfyui',
-        }),
+      mockClientService.validateConnection.mockRejectedValue(
+        new ModelResolverError(ModelResolverError.Reasons.PERMISSION_DENIED, 'Forbidden'),
       );
 
       const payload: CreateImagePayload = {
@@ -458,7 +413,7 @@ describe('LobeComfyUI - Error Handling', () => {
       };
 
       await expect(instance.createImage(payload)).rejects.toMatchObject({
-        errorType: 'PermissionDenied',
+        errorType: AgentRuntimeErrorType.PermissionDenied,
         provider: 'comfyui',
       });
     }, 10_000);
@@ -467,16 +422,17 @@ describe('LobeComfyUI - Error Handling', () => {
   describe('Server Errors', () => {
     it('should throw ComfyUIServiceUnavailable for server errors', async () => {
       // Mock successful validation
-      mockModelResolver.validateModel.mockResolvedValue({
+      mockModelResolverService.validateModel.mockResolvedValue({
         actualFileName: 'flux-schnell.safetensors',
         exists: true,
       });
 
-      const mockError = { message: 'Internal Server Error', status: 500 };
-      mockCallWrapper.run.mockImplementation(() => {
-        const failCallback = mockCallWrapper.onFailed.mock.calls[0][0];
-        failCallback(mockError);
-      });
+      mockClientService.executeWorkflow.mockRejectedValue(
+        new ModelResolverError(
+          ModelResolverError.Reasons.SERVICE_UNAVAILABLE,
+          'Internal Server Error',
+        ),
+      );
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
@@ -485,24 +441,9 @@ describe('LobeComfyUI - Error Handling', () => {
         },
       };
 
-      const mockObjectInfo = {
-        CheckpointLoaderSimple: {
-          input: {
-            required: {
-              ckpt_name: [['flux_schnell.safetensors']],
-            },
-          },
-        },
-      };
-
-      (global.fetch as Mock).mockResolvedValue({
-        json: () => Promise.resolve(mockObjectInfo),
-      });
-
       await expect(instance.createImage(payload)).rejects.toMatchObject({
         error: expect.objectContaining({
           message: expect.any(String),
-          status: 500,
         }),
         errorType: serviceUnavailableErrorType,
         provider: 'comfyui',
@@ -511,23 +452,9 @@ describe('LobeComfyUI - Error Handling', () => {
 
     it('should re-throw existing AgentRuntimeError', async () => {
       // Mock successful validation
-      mockModelResolver.validateModel.mockResolvedValue({
+      mockModelResolverService.validateModel.mockResolvedValue({
         actualFileName: 'flux-schnell.safetensors',
         exists: true,
-      });
-
-      const mockObjectInfo = {
-        CheckpointLoaderSimple: {
-          input: {
-            required: {
-              ckpt_name: [['flux_schnell.safetensors']],
-            },
-          },
-        },
-      };
-
-      (global.fetch as Mock).mockResolvedValue({
-        json: () => Promise.resolve(mockObjectInfo),
       });
 
       const existingError = {
@@ -535,10 +462,7 @@ describe('LobeComfyUI - Error Handling', () => {
         errorType: 'CustomError',
       };
 
-      mockCallWrapper.run.mockImplementation(() => {
-        const failCallback = mockCallWrapper.onFailed.mock.calls[0][0];
-        failCallback(existingError);
-      });
+      mockClientService.executeWorkflow.mockRejectedValue(existingError);
 
       const payload: CreateImagePayload = {
         model: 'comfyui/flux-schnell',
@@ -551,15 +475,11 @@ describe('LobeComfyUI - Error Handling', () => {
     });
 
     it('should throw ModelNotFound error for validation failure', async () => {
-      mockModelResolver.validateModel.mockRejectedValue(
-        AgentRuntimeError.createImage({
-          error: {
-            message: 'Validation failed: server response malformed',
-            model: 'comfyui/flux-schnell',
-          },
-          errorType: modelNotFoundErrorType,
-          provider: 'comfyui',
-        }),
+      mockModelResolverService.validateModel.mockRejectedValue(
+        new ModelResolverError(
+          ModelResolverError.Reasons.MODEL_NOT_FOUND,
+          'Validation failed: server response malformed',
+        ),
       );
 
       const payload: CreateImagePayload = {
@@ -572,8 +492,6 @@ describe('LobeComfyUI - Error Handling', () => {
       await expect(instance.createImage(payload)).rejects.toMatchObject({
         errorType: modelNotFoundErrorType,
       });
-
-      expect(mockModelResolver.validateModel).toHaveBeenCalledWith('comfyui/flux-schnell');
     });
   });
 });

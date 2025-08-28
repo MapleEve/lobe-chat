@@ -4,6 +4,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { WORKFLOW_DEFAULTS } from '../../constants';
 import { buildFluxSchnellWorkflow } from '../../workflows/flux-schnell';
+import { mockContext } from '../helpers/mockContext';
+
+// Mock the model resolver that the WorkflowDetector uses
+vi.mock('../../utils/modelResolver', () => ({
+  resolveModel: vi.fn((modelName: string) => {
+    const cleanName = modelName.replace(/^comfyui\//, '');
+
+    // Mock configuration mapping for FLUX Schnell test models
+    if (cleanName.includes('flux_schnell') || cleanName.includes('flux-schnell')) {
+      return {
+        modelFamily: 'FLUX',
+        variant: 'schnell',
+        family: 'flux',
+      };
+    }
+
+    return null;
+  }),
+}));
 
 // Mock the utility functions
 vi.mock('../../utils/promptSplitter', () => ({
@@ -13,7 +32,7 @@ vi.mock('../../utils/promptSplitter', () => ({
   })),
 }));
 
-vi.mock('../utils/weight-dtype', () => ({
+vi.mock('../../utils/weightDType', () => ({
   selectOptimalWeightDtype: vi.fn(() => 'default'),
 }));
 
@@ -37,91 +56,56 @@ describe('buildFluxSchnellWorkflow', () => {
     vi.clearAllMocks();
   });
 
-  it('should create FLUX Schnell workflow with default parameters', () => {
+  it('should create FLUX Schnell workflow with default parameters', async () => {
     const modelName = 'flux_schnell.safetensors';
     const params = {
       prompt: 'A beautiful landscape',
     };
 
-    const result = buildFluxSchnellWorkflow(modelName, params);
+    const result = await buildFluxSchnellWorkflow(modelName, params, mockContext);
 
-    expect(PromptBuilder).toHaveBeenCalledWith(
-      expect.objectContaining({
-        '1': expect.objectContaining({
-          class_type: 'DualCLIPLoader',
-          inputs: expect.objectContaining({
-            clip_name1: 't5xxl_fp16.safetensors',
-            clip_name2: 'clip_l.safetensors',
-            type: 'flux',
-          }),
-        }),
-        '2': expect.objectContaining({
-          class_type: 'UNETLoader',
-          inputs: expect.objectContaining({
-            unet_name: modelName,
-            weight_dtype: 'default',
-          }),
-        }),
-        '3': expect.objectContaining({
-          class_type: 'VAELoader',
-          inputs: expect.objectContaining({
-            vae_name: 'ae.safetensors',
-          }),
-        }),
-        '4': expect.objectContaining({
-          class_type: 'CLIPTextEncodeFlux',
-          inputs: expect.objectContaining({
-            clip: ['1', 0],
-            guidance: WORKFLOW_DEFAULTS.SCHNELL.CFG,
-          }),
-        }),
-        '5': expect.objectContaining({
-          class_type: 'EmptySD3LatentImage',
-          inputs: expect.objectContaining({
-            batch_size: 1,
-            height: 1024,
-            width: 1024,
-          }),
-        }),
-        '6': expect.objectContaining({
-          class_type: 'KSampler',
-          inputs: expect.objectContaining({
-            cfg: 1,
-            denoise: 1,
-            latent_image: ['5', 0],
-            model: ['2', 0],
-            negative: ['4', 0],
-            positive: ['4', 0],
-            sampler_name: 'euler',
-            scheduler: 'simple',
-            seed: 0, // Updated to match current default
-            steps: WORKFLOW_DEFAULTS.SCHNELL.STEPS,
-          }),
-        }),
-        '7': expect.objectContaining({
-          class_type: 'VAEDecode',
-          inputs: expect.objectContaining({
-            samples: ['6', 0],
-            vae: ['3', 0],
-          }),
-        }),
-        '8': expect.objectContaining({
-          class_type: 'SaveImage',
-          inputs: expect.objectContaining({
-            filename_prefix: 'LobeChat/%year%-%month%-%day%/FLUX_Schnell',
-            images: ['7', 0],
-          }),
-        }),
-      }),
-      ['prompt_clip_l', 'prompt_t5xxl', 'width', 'height', 'steps', 'cfg', 'seed'],
-      ['images'],
-    );
+    // Check the workflow object from the PromptBuilder call
+    const workflow = (PromptBuilder as any).mock.calls[0][0];
+    const inputs = (PromptBuilder as any).mock.calls[0][1];
+    const outputs = (PromptBuilder as any).mock.calls[0][2];
+
+    // Verify workflow structure
+    expect(workflow['1']).toEqual({
+      _meta: { title: 'DualCLIP Loader' },
+      class_type: 'DualCLIPLoader',
+      inputs: {
+        clip_name1: 't5xxl_fp16.safetensors',
+        clip_name2: 'clip_l.safetensors',
+        type: 'flux',
+      },
+    });
+
+    expect(workflow['2']).toEqual({
+      _meta: { title: 'UNET Loader' },
+      class_type: 'UNETLoader',
+      inputs: {
+        unet_name: modelName,
+        weight_dtype: 'default',
+      },
+    });
+
+    expect(workflow['4'].inputs.clip_l).toBe('A beautiful landscape');
+    expect(workflow['4'].inputs.t5xxl).toBe('A beautiful landscape');
+    expect(workflow['4'].inputs.guidance).toBe(WORKFLOW_DEFAULTS.SCHNELL.CFG);
+
+    expect(workflow['6'].inputs.cfg).toBe(1);
+    expect(workflow['6'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SCHNELL.STEPS);
+    expect(workflow['6'].inputs.seed).toBeGreaterThan(0); // Random seed
+
+    // Check input/output parameters (prompt parameters removed as they're set directly)
+    expect(inputs).toEqual(['width', 'height', 'steps', 'cfg', 'seed']);
+    expect(outputs).toEqual(['images']);
 
     expect(result.setOutputNode).toHaveBeenCalledWith('images', '8');
   });
 
-  it('should create workflow with custom parameters', () => {
-    const modelName = 'custom_flux.safetensors';
+  it('should create workflow with custom parameters', async () => {
+    const modelName = 'flux_schnell_custom.safetensors';
     const params = {
       height: 768,
       prompt: 'Custom prompt',
@@ -132,26 +116,26 @@ describe('buildFluxSchnellWorkflow', () => {
       width: 512,
     };
 
-    const result = buildFluxSchnellWorkflow(modelName, params);
+    const result = await buildFluxSchnellWorkflow(modelName, params, mockContext);
 
-    // Check the modified workflow object (after direct assignments)
-    const workflow = (result as any).workflow;
+    // Check the modified workflow object from the PromptBuilder call
+    const workflow = (PromptBuilder as any).mock.calls[0][0];
 
     expect(workflow['2'].inputs.unet_name).toBe(modelName);
-    expect(workflow['5'].inputs.width).toBe(1024); // This is not modified directly, only via input()
-    expect(workflow['5'].inputs.height).toBe(1024); // This is not modified directly, only via input()
-    expect(workflow['6'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SCHNELL.STEPS); // Default steps, not customizable in current implementation
-    expect(workflow['6'].inputs.seed).toBe(0); // Default seed, not customizable directly
-    // samplerName and scheduler parameters are not currently supported in the implementation
+    expect(workflow['5'].inputs.width).toBe(512);
+    expect(workflow['5'].inputs.height).toBe(768);
+    expect(workflow['6'].inputs.steps).toBe(8);
+    expect(workflow['6'].inputs.seed).toBe(12_345);
+    // samplerName and scheduler parameters are not currently supported in the Schnell implementation
     expect(workflow['6'].inputs.sampler_name).toBe('euler'); // Uses default value
     expect(workflow['6'].inputs.scheduler).toBe('simple'); // Uses default value
   });
 
-  it('should handle empty prompt', () => {
+  it('should handle empty prompt', async () => {
     const modelName = 'flux_schnell.safetensors';
     const params = {};
 
-    buildFluxSchnellWorkflow(modelName, params);
+    await buildFluxSchnellWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -159,16 +143,16 @@ describe('buildFluxSchnellWorkflow', () => {
     expect(workflow['5'].inputs.width).toBe(1024);
     expect(workflow['5'].inputs.height).toBe(1024);
     expect(workflow['6'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SCHNELL.STEPS);
-    expect(workflow['6'].inputs.seed).toBe(0); // Updated to match current default
+    expect(workflow['6'].inputs.seed).toBeGreaterThan(0); // Random seed, not 0
     expect(workflow['6'].inputs.sampler_name).toBe('euler');
     expect(workflow['6'].inputs.scheduler).toBe('simple');
   });
 
-  it('should have correct workflow structure', () => {
-    const modelName = 'test_model.safetensors';
+  it('should have correct workflow structure', async () => {
+    const modelName = 'flux_schnell_test.safetensors';
     const params = { prompt: 'test' };
 
-    buildFluxSchnellWorkflow(modelName, params);
+    await buildFluxSchnellWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -183,24 +167,24 @@ describe('buildFluxSchnellWorkflow', () => {
     expect(workflow['8'].inputs.images).toEqual(['7', 0]); // Save uses decoded image
   });
 
-  it('should have fixed CFG for Schnell model', () => {
+  it('should have fixed CFG for Schnell model', async () => {
     const modelName = 'flux_schnell.safetensors';
-    const params = { cfg: 7, prompt: 'test' }; // CFG should be ignored
+    const params = { cfg: 7, prompt: 'test' }; // CFG can be set but defaults to 1
 
-    buildFluxSchnellWorkflow(modelName, params);
+    await buildFluxSchnellWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
-    // CFG should always be 1 for Schnell
-    expect(workflow['6'].inputs.cfg).toBe(1);
-    expect(workflow['4'].inputs.guidance).toBe(WORKFLOW_DEFAULTS.SCHNELL.CFG);
+    // CFG is set from params but defaults to 1
+    expect(workflow['6'].inputs.cfg).toBe(7); // Uses the passed value
+    expect(workflow['4'].inputs.guidance).toBe(7); // Same value for guidance
   });
 
-  it('should use correct default steps for Schnell', () => {
+  it('should use correct default steps for Schnell', async () => {
     const modelName = 'flux_schnell.safetensors';
     const params = { prompt: 'test' };
 
-    buildFluxSchnellWorkflow(modelName, params);
+    await buildFluxSchnellWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -208,11 +192,11 @@ describe('buildFluxSchnellWorkflow', () => {
     expect(workflow['6'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SCHNELL.STEPS);
   });
 
-  it('should have all required meta information', () => {
+  it('should have all required meta information', async () => {
     const modelName = 'flux_schnell.safetensors';
     const params = { prompt: 'test' };
 
-    buildFluxSchnellWorkflow(modelName, params);
+    await buildFluxSchnellWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 

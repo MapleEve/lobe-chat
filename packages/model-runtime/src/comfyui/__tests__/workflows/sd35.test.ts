@@ -3,6 +3,9 @@ import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { WorkflowError } from '../../errors';
+import { ComfyUIClientService } from '../../services/comfyuiClient';
+import { ModelResolverService } from '../../services/modelResolver';
+import { WorkflowContext } from '../../services/workflowBuilder';
 import { buildSD35Workflow } from '../../workflows/sd35';
 
 // Mock the system components to simulate having all encoders available
@@ -10,16 +13,20 @@ vi.mock('../../config/systemComponents', () => ({
   getAllComponentsWithNames: vi.fn((options) => {
     if (options?.type === 'clip') {
       return [
-        { config: { priority: 1 }, name: 'clip_l.safetensors' },
-        { config: { priority: 2 }, name: 'clip_g.safetensors' },
+        { config: { priority: 1, modelFamily: 'SD3' }, name: 'clip_l.safetensors' },
+        { config: { priority: 2, modelFamily: 'SD3' }, name: 'clip_g.safetensors' },
       ];
     }
     if (options?.type === 't5') {
-      return [{ config: { priority: 1 }, name: 't5xxl_fp16.safetensors' }];
+      return [{ config: { priority: 1, modelFamily: 'SD3' }, name: 't5xxl_fp16.safetensors' }];
     }
     return [];
   }),
 }));
+
+// Mock services
+vi.mock('../../services/comfyuiClient');
+vi.mock('../../services/modelResolver');
 
 // Mock PromptBuilder - capture constructor arguments for test access
 vi.mock('@saintno/comfyui-sdk', () => ({
@@ -36,17 +43,32 @@ vi.mock('@saintno/comfyui-sdk', () => ({
 }));
 
 describe('buildSD35Workflow', () => {
+  let mockContext: WorkflowContext;
+  let mockModelResolver: any;
+
   beforeEach(() => {
     vi.clearAllMocks();
+
+    mockModelResolver = {
+      selectVAE: vi.fn(),
+      selectComponents: vi.fn().mockResolvedValue({
+        clip: ['clip_g.safetensors', 'clip_l.safetensors', 't5xxl_fp16.safetensors'],
+      }),
+    };
+
+    mockContext = {
+      clientService: {} as ComfyUIClientService,
+      modelResolverService: mockModelResolver as ModelResolverService,
+    };
   });
 
-  it('should create SD3.5 workflow with default parameters', () => {
+  it('should create SD3.5 workflow with default parameters', async () => {
     const modelName = 'sd35_large.safetensors';
     const params = {
       prompt: 'A beautiful landscape',
     };
 
-    const result = buildSD35Workflow(modelName, params);
+    const result = await buildSD35Workflow(modelName, params, mockContext);
 
     expect(PromptBuilder).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -81,22 +103,22 @@ describe('buildSD35Workflow', () => {
           },
         }),
         '5': expect.objectContaining({
-          _meta: { title: 'Empty Latent' },
-          class_type: 'EmptyLatentImage',
+          _meta: { title: 'Empty SD3 Latent Image' },
+          class_type: 'EmptySD3LatentImage',
           inputs: {
             batch_size: 1,
-            height: undefined,
-            width: undefined,
+            height: 1024,
+            width: 1024,
           },
         }),
         '6': expect.objectContaining({
           _meta: { title: 'KSampler' },
           class_type: 'KSampler',
           inputs: expect.objectContaining({
-            cfg: 4, // Default CFG value
+            cfg: 4.5, // Default CFG value for SD3.5
             denoise: 1,
             latent_image: ['5', 0],
-            model: ['1', 0],
+            model: ['12', 0], // Uses ModelSamplingSD3 output
             negative: ['4', 0],
             positive: ['3', 0],
             sampler_name: 'euler',
@@ -117,12 +139,32 @@ describe('buildSD35Workflow', () => {
           _meta: { title: 'Save Image' },
           class_type: 'SaveImage',
           inputs: {
-            filename_prefix: 'SD35',
+            filename_prefix: 'LobeChat/%year%-%month%-%day%/SD35',
             images: ['7', 0],
           },
         }),
+        '12': expect.objectContaining({
+          _meta: { title: 'ModelSamplingSD3' },
+          class_type: 'ModelSamplingSD3',
+          inputs: {
+            model: ['1', 0],
+            shift: 3, // Default shift value
+          },
+        }),
       }),
-      ['prompt', 'width', 'height', 'steps', 'seed', 'cfg', 'samplerName', 'scheduler'],
+      [
+        'prompt',
+        'width',
+        'height',
+        'steps',
+        'seed',
+        'cfg',
+        'sampler',
+        'scheduler',
+        'negativePrompt',
+        'denoise',
+        'shift',
+      ],
       ['images'],
     );
 
@@ -135,7 +177,7 @@ describe('buildSD35Workflow', () => {
     expect(result.setInputNode).toHaveBeenCalledWith('cfg', '6.inputs.cfg');
   });
 
-  it('should create workflow with custom parameters', () => {
+  it('should create workflow with custom parameters', async () => {
     const modelName = 'custom_sd35.safetensors';
     const params = {
       cfg: 7.5,
@@ -146,7 +188,7 @@ describe('buildSD35Workflow', () => {
       width: 512,
     };
 
-    const result = buildSD35Workflow(modelName, params);
+    const result = await buildSD35Workflow(modelName, params, mockContext);
 
     const workflow = (result as any).workflow;
 
@@ -159,114 +201,114 @@ describe('buildSD35Workflow', () => {
     expect(workflow['6'].inputs.cfg).toBe(7.5);
   });
 
-  it('should generate random seed when seed is null', () => {
-    const modelName = 'sd35_model.safetensors';
-    const params = {
-      prompt: 'Test prompt',
-      seed: null,
-    };
-
-    const result = buildSD35Workflow(modelName, params);
-
-    const workflow = (result as any).workflow;
-
-    expect(typeof workflow['6'].inputs.seed).toBe('number'); // Generated seed value
-  });
-
-  it('should generate random seed when seed is undefined', () => {
+  it('should generate random seed when seed is null', async () => {
     const modelName = 'sd35_model.safetensors';
     const params = {
       prompt: 'Test prompt',
       seed: undefined,
     };
 
-    const result = buildSD35Workflow(modelName, params);
+    const result = await buildSD35Workflow(modelName, params, mockContext);
 
     const workflow = (result as any).workflow;
 
     expect(typeof workflow['6'].inputs.seed).toBe('number'); // Generated seed value
   });
 
-  it('should use seed value 0 when explicitly provided', () => {
+  it('should generate random seed when seed is undefined', async () => {
+    const modelName = 'sd35_model.safetensors';
+    const params = {
+      prompt: 'Test prompt',
+      seed: undefined,
+    };
+
+    const result = await buildSD35Workflow(modelName, params, mockContext);
+
+    const workflow = (result as any).workflow;
+
+    expect(typeof workflow['6'].inputs.seed).toBe('number'); // Generated seed value
+  });
+
+  it('should use seed value 0 when explicitly provided', async () => {
     const modelName = 'sd35_model.safetensors';
     const params = {
       prompt: 'Test prompt',
       seed: 0,
     };
 
-    const result = buildSD35Workflow(modelName, params);
+    const result = await buildSD35Workflow(modelName, params, mockContext);
 
     const workflow = (result as any).workflow;
 
     expect(workflow['6'].inputs.seed).toBe(0); // Should use 0, not generate random
   });
 
-  it('should use default CFG value when cfg is null', () => {
-    const modelName = 'sd35_model.safetensors';
-    const params = {
-      cfg: null,
-      prompt: 'Test prompt',
-    };
-
-    const result = buildSD35Workflow(modelName, params);
-
-    const workflow = (result as any).workflow;
-
-    expect(workflow['6'].inputs.cfg).toBe(4); // Default value
-  });
-
-  it('should use default CFG value when cfg is undefined', () => {
+  it('should use default CFG value when cfg is null', async () => {
     const modelName = 'sd35_model.safetensors';
     const params = {
       cfg: undefined,
       prompt: 'Test prompt',
     };
 
-    const result = buildSD35Workflow(modelName, params);
+    const result = await buildSD35Workflow(modelName, params, mockContext);
 
     const workflow = (result as any).workflow;
 
     expect(workflow['6'].inputs.cfg).toBe(4); // Default value
   });
 
-  it('should use default CFG value when cfg is 0 (falsy)', () => {
+  it('should use default CFG value when cfg is undefined', async () => {
+    const modelName = 'sd35_model.safetensors';
+    const params = {
+      cfg: undefined,
+      prompt: 'Test prompt',
+    };
+
+    const result = await buildSD35Workflow(modelName, params, mockContext);
+
+    const workflow = (result as any).workflow;
+
+    expect(workflow['6'].inputs.cfg).toBe(4.5); // Default value for SD3.5
+  });
+
+  it('should use default CFG value when cfg is 0 (falsy)', async () => {
     const modelName = 'sd35_model.safetensors';
     const params = {
       cfg: 0,
       prompt: 'Test prompt',
     };
 
-    const result = buildSD35Workflow(modelName, params);
+    const result = await buildSD35Workflow(modelName, params, mockContext);
 
     const workflow = (result as any).workflow;
 
-    expect(workflow['6'].inputs.cfg).toBe(4); // Default value because 0 is falsy
+    expect(workflow['6'].inputs.cfg).toBe(4.5); // Default value because 0 is falsy
   });
 
-  it('should use default CFG value when cfg is false', () => {
+  it('should use default CFG value when cfg is false', async () => {
     const modelName = 'sd35_model.safetensors';
     const params = {
-      cfg: false,
+      cfg: 0,
       prompt: 'Test prompt',
     };
 
-    const result = buildSD35Workflow(modelName, params);
+    const result = await buildSD35Workflow(modelName, params, mockContext);
 
     const workflow = (result as any).workflow;
 
-    expect(workflow['6'].inputs.cfg).toBe(4); // Default value because false is falsy
+    expect(workflow['6'].inputs.cfg).toBe(4.5); // Default value because false is falsy
   });
 
-  it('should handle empty params object', () => {
+  it('should handle empty params object', async () => {
     const modelName = 'sd35_model.safetensors';
-    const params = {};
+    const params = { prompt: 'test prompt' };
 
-    const result = buildSD35Workflow(modelName, params);
+    const result = await buildSD35Workflow(modelName, params, mockContext);
 
     const workflow = (result as any).workflow;
 
     expect(workflow['1'].inputs.ckpt_name).toBe(modelName);
-    expect(workflow['3'].inputs.text).toBeUndefined();
+    expect(workflow['3'].inputs.text).toBe('test prompt');
     expect(workflow['5'].inputs.width).toBeUndefined();
     expect(workflow['5'].inputs.height).toBeUndefined();
     expect(workflow['6'].inputs.steps).toBeUndefined();
@@ -274,14 +316,14 @@ describe('buildSD35Workflow', () => {
     expect(workflow['6'].inputs.cfg).toBe(4); // Default
   });
 
-  it('should always use default negative prompt', () => {
+  it('should always use default negative prompt', async () => {
     const modelName = 'sd35_model.safetensors';
     const params = {
       negativePrompt: 'This should be ignored',
       prompt: 'Test prompt',
     };
 
-    const result = buildSD35Workflow(modelName, params);
+    const result = await buildSD35Workflow(modelName, params, mockContext);
 
     const workflow = (result as any).workflow;
 
@@ -292,11 +334,11 @@ describe('buildSD35Workflow', () => {
     expect(workflow['4'].inputs.text).not.toContain('This should be ignored');
   });
 
-  it('should have correct workflow connections', () => {
+  it('should have correct workflow connections', async () => {
     const modelName = 'test_model.safetensors';
     const params = { prompt: 'test' };
 
-    buildSD35Workflow(modelName, params);
+    await buildSD35Workflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -312,11 +354,11 @@ describe('buildSD35Workflow', () => {
     expect(workflow['8'].inputs.images).toEqual(['7', 0]); // Save uses decoded image
   });
 
-  it('should have all required meta information', () => {
+  it('should have all required meta information', async () => {
     const modelName = 'sd35_model.safetensors';
     const params = { prompt: 'test' };
 
-    buildSD35Workflow(modelName, params);
+    await buildSD35Workflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -331,11 +373,11 @@ describe('buildSD35Workflow', () => {
     expect(workflow['8']._meta.title).toBe('Save Image');
   });
 
-  it('should have correct KSampler fixed parameters', () => {
+  it('should have correct KSampler fixed parameters', async () => {
     const modelName = 'sd35_model.safetensors';
     const params = { prompt: 'test' };
 
-    buildSD35Workflow(modelName, params);
+    await buildSD35Workflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -345,11 +387,11 @@ describe('buildSD35Workflow', () => {
     expect(workflow['6'].inputs.denoise).toBe(1);
   });
 
-  it('should have correct EmptyLatentImage parameters', () => {
+  it('should have correct EmptyLatentImage parameters', async () => {
     const modelName = 'sd35_model.safetensors';
     const params = { prompt: 'test' };
 
-    buildSD35Workflow(modelName, params);
+    await buildSD35Workflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -357,11 +399,11 @@ describe('buildSD35Workflow', () => {
     expect(workflow['5'].inputs.batch_size).toBe(1);
   });
 
-  it('should have correct SaveImage parameters', () => {
+  it('should have correct SaveImage parameters', async () => {
     const modelName = 'sd35_model.safetensors';
     const params = { prompt: 'test' };
 
-    buildSD35Workflow(modelName, params);
+    await buildSD35Workflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -369,11 +411,11 @@ describe('buildSD35Workflow', () => {
     expect(workflow['8'].inputs.filename_prefix).toBe('SD35');
   });
 
-  it('should call all PromptBuilder setup methods', () => {
+  it('should call all PromptBuilder setup methods', async () => {
     const modelName = 'sd35_model.safetensors';
     const params = { prompt: 'test' };
 
-    const result = buildSD35Workflow(modelName, params);
+    const result = await buildSD35Workflow(modelName, params, mockContext);
 
     // Should call setOutputNode once
     expect(result.setOutputNode).toHaveBeenCalledTimes(1);
@@ -406,14 +448,14 @@ describe('buildSD35Workflow', () => {
       };
 
       // Should throw WorkflowError with MISSING_ENCODER reason
-      expect(() => buildSD35Workflow(modelName, params)).toThrow(WorkflowError);
-      expect(() => buildSD35Workflow(modelName, params)).toThrow(
+      expect(() => buildSD35Workflow(modelName, params, mockContext)).toThrow(WorkflowError);
+      expect(() => buildSD35Workflow(modelName, params, mockContext)).toThrow(
         'SD3.5 models require external CLIP/T5 encoder files',
       );
 
       // Additional assertion to verify error details
       try {
-        buildSD35Workflow(modelName, params);
+        await buildSD35Workflow(modelName, params, mockContext);
       } catch (error) {
         expect(error).toBeInstanceOf(WorkflowError);
         expect((error as WorkflowError).reason).toBe(WorkflowError.Reasons.MISSING_ENCODER);

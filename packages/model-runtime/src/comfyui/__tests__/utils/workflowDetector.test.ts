@@ -1,11 +1,11 @@
 import { type Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ModelConfig } from '../../config/modelRegistry';
-import { resolveModel } from '../../utils/modelResolver';
+import { resolveModel } from '../../utils/modelNameResolver';
 import { type SD3Variant, WorkflowDetector } from '../../utils/workflowDetector';
 
-// Mock the modelResolver module
-vi.mock('../../utils/modelResolver', () => ({
+// Mock the modelNameResolver module
+vi.mock('../../utils/modelNameResolver', () => ({
   resolveModel: vi.fn(),
 }));
 
@@ -226,7 +226,7 @@ describe('WorkflowDetector', () => {
           modelFamily: 'SDXL' as any,
           priority: 1,
           recommendedDtype: 'default',
-          variant: 'sd-t2i',
+          variant: 'sdxl-t2i',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -235,7 +235,7 @@ describe('WorkflowDetector', () => {
         expect(result).toEqual({
           architecture: 'SDXL',
           isSupported: true,
-          variant: 'sd-t2i',
+          variant: 'sdxl-t2i',
         });
       });
 
@@ -244,7 +244,7 @@ describe('WorkflowDetector', () => {
           modelFamily: 'SD1' as any,
           priority: 3,
           recommendedDtype: 'default',
-          variant: 'sd-t2i',
+          variant: 'sd15-t2i',
         };
         mockedResolveModel.mockReturnValue(mockConfig);
 
@@ -253,7 +253,7 @@ describe('WorkflowDetector', () => {
         expect(result).toEqual({
           architecture: 'SD1',
           isSupported: true,
-          variant: 'sd-t2i',
+          variant: 'sd15-t2i',
         });
       });
 
@@ -312,7 +312,7 @@ describe('WorkflowDetector', () => {
 
         expect(result.variant).toBe('dev');
         expect(typeof result.variant).toBe('string');
-        
+
         // Test with dev variant (krea uses dev workflow)
         const mockKreaConfig: ModelConfig = {
           modelFamily: 'FLUX',
@@ -321,7 +321,7 @@ describe('WorkflowDetector', () => {
           variant: 'dev',
         };
         mockedResolveModel.mockReturnValue(mockKreaConfig);
-        
+
         const kreaResult = WorkflowDetector.detectModelType('flux-krea-model');
         expect(kreaResult.variant).toBe('dev');
       });

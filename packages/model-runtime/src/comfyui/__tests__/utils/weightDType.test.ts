@@ -1,7 +1,91 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { selectOptimalWeightDtype } from '../../utils/weightDType';
+
+// Mock the modelRegistry module
+vi.mock('../../config/modelRegistry', () => {
+  const models = {
+    'flux1-dev.safetensors': {
+      family: 'flux',
+      variant: 'flux1-dev',
+      recommendedDtype: 'default',
+    },
+    'flux1-dev-fp8-e4m3fn.safetensors': {
+      family: 'flux',
+      variant: 'flux1-dev-fp8-e4m3fn',
+      recommendedDtype: 'fp8_e4m3fn',
+    },
+    'flux1-schnell.safetensors': {
+      family: 'flux',
+      variant: 'flux1-schnell',
+      recommendedDtype: 'default',
+    },
+    'flux1-schnell-fp8-e4m3fn.safetensors': {
+      family: 'flux',
+      variant: 'flux1-schnell-fp8-e4m3fn',
+      recommendedDtype: 'fp8_e4m3fn',
+    },
+    'flux1-kontext-dev.safetensors': {
+      family: 'flux',
+      variant: 'flux1-kontext-dev',
+      recommendedDtype: 'default',
+    },
+    'vision_realistic_flux_dev_fp8_no_clip_v2.safetensors': {
+      family: 'flux',
+      variant: 'vision_realistic_flux_dev_fp8_no_clip_v2',
+      recommendedDtype: 'fp8_e4m3fn',
+    },
+  };
+
+  return {
+    MODEL_REGISTRY: models,
+    getModelsByFamily: vi.fn(() => models),
+    getModelConfig: vi.fn((modelName: string) => {
+      const models = {
+        'flux1-dev.safetensors': {
+          family: 'flux',
+          variant: 'flux1-dev',
+          recommendedDtype: 'default',
+        },
+        'flux1-dev-fp8-e4m3fn.safetensors': {
+          family: 'flux',
+          variant: 'flux1-dev-fp8-e4m3fn',
+          recommendedDtype: 'fp8_e4m3fn',
+        },
+        'flux1-schnell.safetensors': {
+          family: 'flux',
+          variant: 'flux1-schnell',
+          recommendedDtype: 'default',
+        },
+        'flux1-schnell-fp8-e4m3fn.safetensors': {
+          family: 'flux',
+          variant: 'flux1-schnell-fp8-e4m3fn',
+          recommendedDtype: 'fp8_e4m3fn',
+        },
+        'flux1-kontext-dev.safetensors': {
+          family: 'flux',
+          variant: 'flux1-kontext-dev',
+          recommendedDtype: 'default',
+        },
+        'vision_realistic_flux_dev_fp8_no_clip_v2.safetensors': {
+          family: 'flux',
+          variant: 'vision_realistic_flux_dev_fp8_no_clip_v2',
+          recommendedDtype: 'fp8_e4m3fn',
+        },
+      };
+
+      // Case-insensitive lookup
+      const lowerModelName = modelName.toLowerCase();
+      for (const [key, config] of Object.entries(models)) {
+        if (key.toLowerCase() === lowerModelName) {
+          return config;
+        }
+      }
+      return null;
+    }),
+  };
+});
 
 describe('selectOptimalWeightDtype', () => {
   it('should return model recommendedDtype for known FLUX models', () => {

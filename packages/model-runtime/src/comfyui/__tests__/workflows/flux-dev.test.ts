@@ -4,6 +4,30 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { WORKFLOW_DEFAULTS } from '../../constants';
 import { buildFluxDevWorkflow } from '../../workflows/flux-dev';
+// Import mock context from helper
+import { mockContext } from '../helpers/mockContext';
+
+// Mock the model resolver that the WorkflowDetector uses
+vi.mock('../../utils/modelResolver', () => ({
+  resolveModel: vi.fn((modelName: string) => {
+    const cleanName = modelName.replace(/^comfyui\//, '');
+
+    // Mock configuration mapping for FLUX test models
+    if (
+      cleanName.includes('flux_dev') ||
+      cleanName.includes('flux-dev') ||
+      cleanName === 'test_model.safetensors'
+    ) {
+      return {
+        modelFamily: 'FLUX',
+        variant: 'dev',
+        family: 'flux',
+      };
+    }
+
+    return null;
+  }),
+}));
 
 // Mock the utility functions
 vi.mock('../../utils/promptSplitter', () => ({
@@ -32,18 +56,18 @@ vi.mock('@saintno/comfyui-sdk', () => ({
   seed: vi.fn(() => 42),
 }));
 
-describe('buildFluxDevWorkflow', () => {
+describe('buildFluxDevWorkflow', async () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('should create FLUX Dev workflow with default parameters', () => {
+  it('should create FLUX Dev workflow with default parameters', async () => {
     const modelName = 'flux_dev.safetensors';
     const params = {
       prompt: 'A beautiful landscape',
     };
 
-    const result = buildFluxDevWorkflow(modelName, params);
+    const result = await buildFluxDevWorkflow(modelName, params, mockContext);
 
     expect(PromptBuilder).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -66,7 +90,7 @@ describe('buildFluxDevWorkflow', () => {
     expect(result.setOutputNode).toHaveBeenCalledWith('images', '12');
   });
 
-  it('should create workflow with custom parameters', () => {
+  it('should create workflow with custom parameters', async () => {
     const modelName = 'custom_flux_dev.safetensors';
     const params = {
       cfg: 4.5,
@@ -78,7 +102,7 @@ describe('buildFluxDevWorkflow', () => {
       width: 512,
     };
 
-    const result = buildFluxDevWorkflow(modelName, params);
+    const result = await buildFluxDevWorkflow(modelName, params, mockContext);
 
     // Check the modified workflow object (after direct assignments)
     const workflow = (result as any).workflow;
@@ -96,11 +120,11 @@ describe('buildFluxDevWorkflow', () => {
     expect(workflow['9'].inputs.scheduler).toBe('karras'); // Uses custom value
   });
 
-  it('should handle empty prompt', () => {
+  it('should handle empty prompt', async () => {
     const modelName = 'flux_dev.safetensors';
     const params = {};
 
-    buildFluxDevWorkflow(modelName, params);
+    await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -116,11 +140,11 @@ describe('buildFluxDevWorkflow', () => {
     expect(workflow['9'].inputs.scheduler).toBe('simple');
   });
 
-  it('should have correct workflow connections', () => {
+  it('should have correct workflow connections', async () => {
     const modelName = 'test_model.safetensors';
     const params = { prompt: 'test' };
 
-    buildFluxDevWorkflow(modelName, params);
+    await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -141,11 +165,11 @@ describe('buildFluxDevWorkflow', () => {
     expect(workflow['12'].inputs.images).toEqual(['11', 0]); // Save uses decoded image
   });
 
-  it('should use variable CFG for Dev model', () => {
+  it('should use variable CFG for Dev model', async () => {
     const modelName = 'flux_dev.safetensors';
     const params = { cfg: 5, prompt: 'test' };
 
-    const result = buildFluxDevWorkflow(modelName, params);
+    const result = await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (result as any).workflow;
 
@@ -154,11 +178,11 @@ describe('buildFluxDevWorkflow', () => {
     expect(workflow['6'].inputs.guidance).toBe(5); // ✅ 修复: 现在直接设置
   });
 
-  it('should use correct default steps for Dev', () => {
+  it('should use correct default steps for Dev', async () => {
     const modelName = 'flux_dev.safetensors';
     const params = { prompt: 'test' };
 
-    buildFluxDevWorkflow(modelName, params);
+    await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -166,11 +190,11 @@ describe('buildFluxDevWorkflow', () => {
     expect(workflow['9'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SAMPLING.STEPS);
   });
 
-  it('should have model sampling flux configuration', () => {
+  it('should have model sampling flux configuration', async () => {
     const modelName = 'flux_dev.safetensors';
     const params = { height: 512, prompt: 'test', width: 768 };
 
-    buildFluxDevWorkflow(modelName, params);
+    await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -181,11 +205,11 @@ describe('buildFluxDevWorkflow', () => {
     expect(workflow['4'].inputs.height).toBe(512);
   });
 
-  it('should use advanced sampler workflow', () => {
+  it('should use advanced sampler workflow', async () => {
     const modelName = 'flux_dev.safetensors';
     const params = { prompt: 'test' };
 
-    buildFluxDevWorkflow(modelName, params);
+    await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -195,11 +219,11 @@ describe('buildFluxDevWorkflow', () => {
     expect(workflow['9'].class_type).toBe('BasicScheduler');
   });
 
-  it('should have flux guidance node', () => {
+  it('should have flux guidance node', async () => {
     const modelName = 'flux_dev.safetensors';
     const params = { cfg: 4, prompt: 'test' };
 
-    const result = buildFluxDevWorkflow(modelName, params);
+    const result = await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (result as any).workflow;
 
@@ -208,11 +232,11 @@ describe('buildFluxDevWorkflow', () => {
     expect(workflow['6'].inputs.conditioning).toEqual(['5', 0]);
   });
 
-  it('should have all required meta information', () => {
+  it('should have all required meta information', async () => {
     const modelName = 'flux_dev.safetensors';
     const params = { prompt: 'test' };
 
-    buildFluxDevWorkflow(modelName, params);
+    await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -233,26 +257,26 @@ describe('buildFluxDevWorkflow', () => {
     expect(workflow['14']._meta.title).toBe('Basic Guider');
   });
 
-  it('should set denoise to 1 in scheduler', () => {
+  it('should set denoise to 1 in scheduler', async () => {
     const modelName = 'flux_dev.safetensors';
     const params = { prompt: 'test' };
 
-    buildFluxDevWorkflow(modelName, params);
+    await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
     expect(workflow['9'].inputs.denoise).toBe(1);
   });
 
-  it('should support custom sampler configuration', () => {
+  it('should support custom sampler configuration', async () => {
     const modelName = 'flux_dev.safetensors';
-    const params = { 
+    const params = {
       prompt: 'test',
       samplerName: 'dpmpp_2m_sde',
-      scheduler: 'karras'
+      scheduler: 'karras',
     };
 
-    buildFluxDevWorkflow(modelName, params);
+    await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -260,11 +284,11 @@ describe('buildFluxDevWorkflow', () => {
     expect(workflow['9'].inputs.scheduler).toBe('karras');
   });
 
-  it('should use default sampler configuration when not provided', () => {
+  it('should use default sampler configuration when not provided', async () => {
     const modelName = 'flux_dev.safetensors';
     const params = { prompt: 'test' };
 
-    buildFluxDevWorkflow(modelName, params);
+    await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -272,17 +296,17 @@ describe('buildFluxDevWorkflow', () => {
     expect(workflow['9'].inputs.scheduler).toBe(WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER);
   });
 
-  it('should handle Krea-style parameters via parameterized Dev template', () => {
+  it('should handle Krea-style parameters via parameterized Dev template', async () => {
     const modelName = 'flux_krea_dev.safetensors';
-    const params = { 
+    const params = {
       cfg: 3.5,
       prompt: 'photographic portrait',
       samplerName: 'dpmpp_2m_sde',
       scheduler: 'karras',
-      steps: 15
+      steps: 15,
     };
 
-    buildFluxDevWorkflow(modelName, params);
+    await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 

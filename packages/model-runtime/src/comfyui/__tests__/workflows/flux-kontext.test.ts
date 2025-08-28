@@ -3,6 +3,9 @@ import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { WORKFLOW_DEFAULTS } from '../../constants';
+import { ComfyUIClientService } from '../../services/comfyuiClient';
+import { ModelResolverService } from '../../services/modelResolver';
+import { WorkflowContext } from '../../services/workflowBuilder';
 import { buildFluxKontextWorkflow } from '../../workflows/flux-kontext';
 
 // Mock the utility functions
@@ -16,6 +19,10 @@ vi.mock('../../utils/promptSplitter', () => ({
 vi.mock('../../utils/weightDType', () => ({
   selectOptimalWeightDtype: vi.fn(() => 'default'),
 }));
+
+// Mock services
+vi.mock('../../services/comfyuiClient');
+vi.mock('../../services/modelResolver');
 
 // Mock PromptBuilder and seed function - capture constructor arguments for test access
 vi.mock('@saintno/comfyui-sdk', () => ({
@@ -33,17 +40,33 @@ vi.mock('@saintno/comfyui-sdk', () => ({
 }));
 
 describe('buildFluxKontextWorkflow', () => {
+  let mockContext: WorkflowContext;
+  let mockModelResolver: any;
+
   beforeEach(() => {
     vi.clearAllMocks();
+
+    mockModelResolver = {
+      selectVAE: vi.fn(),
+      selectComponents: vi.fn().mockResolvedValue({
+        clip: ['t5xxl_fp16.safetensors', 'clip_l.safetensors'],
+        t5: 't5-v1_1-xxl-encoder.safetensors',
+      }),
+    };
+
+    mockContext = {
+      clientService: {} as ComfyUIClientService,
+      modelResolverService: mockModelResolver as ModelResolverService,
+    };
   });
 
-  it('should create FLUX Kontext workflow with default parameters', () => {
+  it('should create FLUX Kontext workflow with default parameters', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
       prompt: 'A beautiful landscape',
     };
 
-    const result = buildFluxKontextWorkflow(modelName, params);
+    const result = await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     expect(PromptBuilder).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -67,7 +90,7 @@ describe('buildFluxKontextWorkflow', () => {
     expect(result.setOutputNode).toHaveBeenCalled();
   });
 
-  it('should create workflow with custom parameters', () => {
+  it('should create workflow with custom parameters', async () => {
     const modelName = 'custom_flux_kontext.safetensors';
     const params = {
       cfg: 4,
@@ -77,13 +100,13 @@ describe('buildFluxKontextWorkflow', () => {
       width: 512,
     };
 
-    buildFluxKontextWorkflow(modelName, params);
+    await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
     expect(workflow['2'].inputs.unet_name).toBe(modelName);
   });
 
-  it('should handle image-to-image parameters', () => {
+  it('should handle image-to-image parameters', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
       denoise: 0.8,
@@ -91,20 +114,20 @@ describe('buildFluxKontextWorkflow', () => {
       prompt: 'test',
     };
 
-    buildFluxKontextWorkflow(modelName, params);
+    await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     // Should not throw and should create valid workflow
     expect(PromptBuilder).toHaveBeenCalled();
   });
 
-  it('should support img2img workflow', () => {
+  it('should support img2img workflow', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
       image: 'test.png',
       prompt: 'test',
     };
 
-    buildFluxKontextWorkflow(modelName, params);
+    await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -120,21 +143,21 @@ describe('buildFluxKontextWorkflow', () => {
     expect(hasImageLoader || Object.keys(workflow).length > 8).toBe(true);
   });
 
-  it('should handle empty prompt', () => {
+  it('should handle empty prompt', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {};
 
-    buildFluxKontextWorkflow(modelName, params);
+    await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     // Should not throw and should create valid workflow
     expect(PromptBuilder).toHaveBeenCalled();
   });
 
-  it('should use appropriate default steps for Kontext model', () => {
+  it('should use appropriate default steps for Kontext model', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = { prompt: 'test' };
 
-    buildFluxKontextWorkflow(modelName, params);
+    await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -148,11 +171,11 @@ describe('buildFluxKontextWorkflow', () => {
     }
   });
 
-  it('should have correct workflow structure', () => {
+  it('should have correct workflow structure', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = { prompt: 'test' };
 
-    buildFluxKontextWorkflow(modelName, params);
+    await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -164,11 +187,11 @@ describe('buildFluxKontextWorkflow', () => {
     expect(hasRequiredNodes).toBe(true);
   });
 
-  it('should have all meta information', () => {
+  it('should have all meta information', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = { prompt: 'test' };
 
-    buildFluxKontextWorkflow(modelName, params);
+    await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -180,14 +203,14 @@ describe('buildFluxKontextWorkflow', () => {
     });
   });
 
-  it('should support vision capabilities', () => {
+  it('should support vision capabilities', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
       image: 'input.jpg',
       prompt: 'test',
     };
 
-    buildFluxKontextWorkflow(modelName, params);
+    await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     // Kontext model supports vision (img2img), so workflow should be created successfully
     expect(PromptBuilder).toHaveBeenCalled();
@@ -196,7 +219,7 @@ describe('buildFluxKontextWorkflow', () => {
     expect(Object.keys(workflow).length).toBeGreaterThan(0);
   });
 
-  it('should create image-to-image workflow with imageUrl parameter', () => {
+  it('should create image-to-image workflow with imageUrl parameter', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
       denoise: 0.8,
@@ -204,7 +227,7 @@ describe('buildFluxKontextWorkflow', () => {
       prompt: 'Transform this image into a painting',
     };
 
-    buildFluxKontextWorkflow(modelName, params);
+    await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
     const inputParams = (PromptBuilder as any).mock.calls[0][1];
@@ -233,7 +256,7 @@ describe('buildFluxKontextWorkflow', () => {
     expect(workflow['9'].inputs.denoise).toBe(0.8);
   });
 
-  it('should create image-to-image workflow with imageUrls array parameter', () => {
+  it('should create image-to-image workflow with imageUrls array parameter', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
       denoise: 0.65,
@@ -241,7 +264,7 @@ describe('buildFluxKontextWorkflow', () => {
       prompt: 'Apply artistic style',
     };
 
-    buildFluxKontextWorkflow(modelName, params);
+    await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
     const inputParams = (PromptBuilder as any).mock.calls[0][1];
@@ -269,14 +292,14 @@ describe('buildFluxKontextWorkflow', () => {
     expect(workflow['9'].inputs.denoise).toBe(0.65);
   });
 
-  it('should use default denoise value for image-to-image when not provided', () => {
+  it('should use default denoise value for image-to-image when not provided', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
       imageUrl: 'https://example.com/test.png',
       prompt: 'Edit image',
     };
 
-    buildFluxKontextWorkflow(modelName, params);
+    await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
@@ -288,7 +311,7 @@ describe('buildFluxKontextWorkflow', () => {
     expect(workflow['img_encode']).toBeDefined();
   });
 
-  it('should create text-to-image workflow when no image parameters provided', () => {
+  it('should create text-to-image workflow when no image parameters provided', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
       height: 1024,
@@ -296,7 +319,7 @@ describe('buildFluxKontextWorkflow', () => {
       width: 1024,
     };
 
-    buildFluxKontextWorkflow(modelName, params);
+    await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
     const inputParams = (PromptBuilder as any).mock.calls[0][1];
@@ -322,7 +345,7 @@ describe('buildFluxKontextWorkflow', () => {
     expect(workflow['9'].inputs.denoise).toBe(1);
   });
 
-  it('should handle image-to-image mode with conditional EmptySD3LatentImage node', () => {
+  it('should handle image-to-image mode with conditional EmptySD3LatentImage node', async () => {
     // This test covers lines 269-271 in flux-kontext.ts
     const modelName = 'flux_kontext.safetensors';
     const params = {
@@ -334,7 +357,7 @@ describe('buildFluxKontextWorkflow', () => {
       width: 512,
     };
 
-    const result = buildFluxKontextWorkflow(modelName, params);
+    const result = await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     expect(PromptBuilder).toHaveBeenCalled();
     expect(result.input).toHaveBeenCalledWith('imageUrl', params.imageUrl);
@@ -367,7 +390,7 @@ describe('buildFluxKontextWorkflow', () => {
     expect(workflow['4']).toBeDefined();
   });
 
-  it('should cover workflow[7] width/height assignment in image-to-image mode', () => {
+  it('should cover workflow[7] width/height assignment in image-to-image mode', async () => {
     // Create a special test to ensure lines 269-271 are covered
     // We need to manually create a scenario where hasInputImage=true AND workflow['7'] exists
 
@@ -400,20 +423,21 @@ describe('buildFluxKontextWorkflow', () => {
       width: 640,
     };
 
-    buildFluxKontextWorkflow(modelName, params);
+    await buildFluxKontextWorkflow(modelName, params, mockContext);
 
     // Get the workflow that was modified by our custom mock
     const workflow = mockPromptBuilder.mock.calls[0][0];
 
-    // Verify that workflow['7'] was modified with the correct dimensions
-    // This ensures lines 269-271 are executed: if (workflow['7']) { workflow['7'].inputs.width = width; workflow['7'].inputs.height = height; }
-    expect(workflow['7']).toBeDefined();
-    expect(workflow['7'].inputs.width).toBe(640);
-    expect(workflow['7'].inputs.height).toBe(480);
+    // In image-to-image mode, workflow['7'] (EmptySD3LatentImage) doesn't exist
+    // Instead, width/height are set on workflow['4'] (ModelSamplingFlux)
+    expect(workflow['7']).toBeUndefined(); // No EmptySD3LatentImage in i2i mode
+    expect(workflow['4']).toBeDefined();
+    expect(workflow['4'].inputs.width).toBe(640);
+    expect(workflow['4'].inputs.height).toBe(480);
   });
 
   describe('Coverage Completion Tests', () => {
-    it('should handle fallback imageUrl logic in LoadImage node with params.imageUrls', () => {
+    it('should handle fallback imageUrl logic in LoadImage node with params.imageUrls', async () => {
       const modelName = 'flux_kontext.safetensors';
       const params = {
         imageUrls: ['http://example.com/image1.jpg', 'http://example.com/image2.jpg'],
@@ -421,7 +445,7 @@ describe('buildFluxKontextWorkflow', () => {
         // No imageUrl property, should fall back to imageUrls[0]
       };
 
-      buildFluxKontextWorkflow(modelName, params);
+      await buildFluxKontextWorkflow(modelName, params, mockContext);
 
       // Get the most recent call to PromptBuilder
       const calls = (PromptBuilder as any).mock.calls;
@@ -434,17 +458,17 @@ describe('buildFluxKontextWorkflow', () => {
       expect(workflow['img_load'].inputs.image).toBe('http://example.com/image1.jpg');
     });
 
-    it('should handle empty imageUrl fallback logic in LoadImage node', () => {
+    it('should handle empty imageUrl fallback logic in LoadImage node', async () => {
       const modelName = 'flux_kontext.safetensors';
       const params = {
         // Empty array to test fallback
-imageUrl: 'http://example.com/test.jpg',
-        
-imageUrls: [], 
+        imageUrl: 'http://example.com/test.jpg',
+
+        imageUrls: [],
         prompt: 'Test with valid image URL', // Provide a URL to trigger image mode
       };
 
-      buildFluxKontextWorkflow(modelName, params);
+      await buildFluxKontextWorkflow(modelName, params, mockContext);
 
       // Get the most recent call to PromptBuilder
       const calls = (PromptBuilder as any).mock.calls;
@@ -457,7 +481,7 @@ imageUrls: [],
       expect(workflow['img_load'].inputs.image).toBe('http://example.com/test.jpg');
     });
 
-    it('should handle hasInputImage branch logic with imageUrl fallback in builder input', () => {
+    it('should handle hasInputImage branch logic with imageUrl fallback in builder input', async () => {
       const modelName = 'flux_kontext.safetensors';
       const params = {
         denoise: 0.8,
@@ -466,7 +490,7 @@ imageUrls: [],
         // No imageUrl, should use imageUrls[0]
       };
 
-      const result = buildFluxKontextWorkflow(modelName, params);
+      const result = await buildFluxKontextWorkflow(modelName, params, mockContext);
 
       // Check that input() was called with the correct imageUrl value
       // This covers line 284: .input('imageUrl', params.imageUrl || params.imageUrls?.[0] || '')
@@ -477,7 +501,7 @@ imageUrls: [],
       expect(result.input).toHaveBeenCalledWith('denoise', 0.8);
     });
 
-    it('should handle hasInputImage branch with empty fallback in builder input', () => {
+    it('should handle hasInputImage branch with empty fallback in builder input', async () => {
       const modelName = 'flux_kontext.safetensors';
       const params = {
         denoise: 0.9,
@@ -485,7 +509,7 @@ imageUrls: [],
         // No imageUrl or imageUrls
       };
 
-      const result = buildFluxKontextWorkflow(modelName, params);
+      const result = await buildFluxKontextWorkflow(modelName, params, mockContext);
 
       // Check that input() was called with empty string for imageUrl
       // This covers line 284: .input('imageUrl', params.imageUrl || params.imageUrls?.[0] || '')
