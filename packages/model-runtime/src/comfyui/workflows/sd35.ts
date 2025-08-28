@@ -183,7 +183,7 @@ export async function buildSD35Workflow(
       _meta: { title: 'KSampler' },
       class_type: 'KSampler',
       inputs: {
-        cfg: cfg || 4.5,
+        cfg: cfg || WORKFLOW_DEFAULTS.SD35.CFG,
         denoise: params.denoise || WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
         latent_image: ['5', 0],
         model: ['12', 0], // Use ModelSamplingSD3 output
@@ -192,7 +192,7 @@ export async function buildSD35Workflow(
         sampler_name: finalSampler,
         scheduler: finalScheduler,
         seed: actualSeed,
-        steps: steps || 28,
+        steps: steps || WORKFLOW_DEFAULTS.SD35.STEPS,
       },
     },
     '7': {
@@ -263,8 +263,8 @@ export async function buildSD35Workflow(
     .input('negativePrompt', negativePrompt || DEFAULT_NEGATIVE_PROMPT)
     .input('width', width || WORKFLOW_DEFAULTS.IMAGE.WIDTH)
     .input('height', height || WORKFLOW_DEFAULTS.IMAGE.HEIGHT)
-    .input('steps', steps || 28)
-    .input('cfg', cfg || 4.5)
+    .input('steps', steps || WORKFLOW_DEFAULTS.SD35.STEPS)
+    .input('cfg', cfg || WORKFLOW_DEFAULTS.SD35.CFG)
     .input('seed', actualSeed)
     .input('sampler', finalSampler)
     .input('scheduler', finalScheduler)

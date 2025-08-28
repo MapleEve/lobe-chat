@@ -12,7 +12,7 @@ import { selectOptimalWeightDtype } from '../utils/weightDType';
  * @description 构建4步快速生成工作流，针对速度优化
  * Builds 4-step fast generation workflow optimized for speed
  *
- * @param {string} modelName - 模型文件名 / Model filename
+ * @param {string} modelFileName - 模型文件名 / Model filename
  * @param {Record<string, any>} params - 生成参数 / Generation parameters
  * @param {WorkflowContext} context - 工作流上下文 / Workflow context
  * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow

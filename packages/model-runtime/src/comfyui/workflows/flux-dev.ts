@@ -12,8 +12,9 @@ import { selectOptimalWeightDtype } from '../utils/weightDType';
  * @description 构建20步高质量生成工作流，使用FluxGuidance和SamplerCustomAdvanced
  * Builds 20-step high-quality generation workflow with FluxGuidance and SamplerCustomAdvanced
  *
- * @param {string} modelName - 模型文件名 / Model filename
+ * @param {string} modelFileName - 模型文件名 / Model filename
  * @param {Record<string, any>} params - 生成参数 / Generation parameters
+ * @param {WorkflowContext} context - 工作流上下文 / Workflow context
  * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow
  */
 export async function buildFluxDevWorkflow(
@@ -210,7 +211,7 @@ export async function buildFluxDevWorkflow(
   workflow['9'].inputs.scheduler = scheduler; // BasicScheduler needs scheduler
   workflow['13'].inputs.noise_seed = seed; // RandomNoise needs seed
 
-  // 创建 PromptBuilder - 移除prompt相关的输入参数，因为已直接设置
+  // 创建 PromptBuilder
   const builder = new PromptBuilder(
     workflow,
     ['width', 'height', 'steps', 'cfg', 'seed', 'samplerName', 'scheduler'], // 添加新的参数

@@ -43,9 +43,6 @@ export interface SimpleSDParams extends Record<string, any> {
   width?: number; // Image width
 }
 
-// Export new name for forward compatibility
-export type SDWorkflowParams = SimpleSDParams;
-
 /**
  * Determine if a model should use external VAE
  * SD3.5 variants (sd35, custom-sd) should not use external VAE

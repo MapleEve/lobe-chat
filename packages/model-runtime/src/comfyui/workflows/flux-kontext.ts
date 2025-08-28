@@ -12,7 +12,7 @@ import { selectOptimalWeightDtype } from '../utils/weightDType';
  * @description 构建28步图像编辑生成工作流，支持文生图和图生图
  * Builds 28-step image editing workflow supporting text-to-image and image-to-image
  *
- * @param {string} modelName - 模型文件名 / Model filename
+ * @param {string} modelFileName - 模型文件名 / Model filename
  * @param {Record<string, any>} params - 生成参数 / Generation parameters
  * @param {WorkflowContext} context - 工作流上下文 / Workflow context
  * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow
