@@ -14,22 +14,22 @@ export interface ParsedError {
 }
 
 /**
- * 清理ComfyUI错误消息，移除格式化字符和多余的空格
- * @param message - 原始错误消息
- * @returns 清理后的错误消息
+ * Clean ComfyUI error message by removing formatting characters and extra spaces
+ * @param message - Original error message
+ * @returns Cleaned error message
  */
 export function cleanComfyUIErrorMessage(message: string): string {
   return message
-    .replaceAll(/^\*\s*/g, '') // 移除开头的星号和空格
-    .replaceAll('\\n', '\n') // 转换转义的换行符
-    .replaceAll(/\n+/g, ' ') // 将多个换行符替换为单个空格
-    .trim(); // 去除首尾空格
+    .replaceAll(/^\*\s*/g, '') // Remove leading asterisks and spaces
+    .replaceAll('\\n', '\n') // Convert escaped newlines
+    .replaceAll(/\n+/g, ' ') // Replace multiple newlines with single space
+    .trim(); // Remove leading and trailing spaces
 }
 
 /**
- * 检查是否为网络连接错误
- * @param error - 错误对象
- * @returns 是否为网络连接错误
+ * Check if the error is a network connection error
+ * @param error - Error object
+ * @returns Whether it's a network connection error
  */
 function isNetworkError(error: any): boolean {
   const message = error?.message || String(error);
@@ -51,9 +51,9 @@ function isNetworkError(error: any): boolean {
 }
 
 /**
- * 检查是否为模型相关错误
- * @param error - 错误对象
- * @returns 是否为模型错误
+ * Check if the error is model-related
+ * @param error - Error object
+ * @returns Whether it's a model error
  */
 function isModelError(error: any): boolean {
   const message = error?.message || String(error);
@@ -71,9 +71,9 @@ function isModelError(error: any): boolean {
 }
 
 /**
- * 检查是否为ComfyUI工作流错误
- * @param error - 错误对象
- * @returns 是否为工作流错误
+ * Check if the error is a ComfyUI workflow error
+ * @param error - Error object
+ * @returns Whether it's a workflow error
  */
 function isWorkflowError(error: any): boolean {
   const message = error?.message || String(error);
@@ -92,19 +92,19 @@ function isWorkflowError(error: any): boolean {
 }
 
 /**
- * 从错误对象中提取结构化信息
- * @param error - 原始错误对象
- * @returns 结构化的ComfyUI错误信息
+ * Extract structured information from error object
+ * @param error - Original error object
+ * @returns Structured ComfyUI error information
  */
 function extractComfyUIErrorInfo(error: any): ComfyUIError {
-  // 处理字符串错误
+  // Handle string errors
   if (typeof error === 'string') {
     return {
       message: cleanComfyUIErrorMessage(error),
     };
   }
 
-  // 处理Error对象（优先级高于通用对象检查）
+  // Handle Error objects (higher priority than generic object check)
   if (error instanceof Error) {
     return {
       code: (error as any).code,
@@ -114,7 +114,7 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
     };
   }
 
-  // 如果error已经是结构化的ComfyUIError（但不是嵌套的error对象）
+  // If error is already a structured ComfyUIError (but not a nested error object)
   if (error && typeof error === 'object' && error.message && !error.error) {
     return {
       code: error.code,
@@ -125,26 +125,26 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
     };
   }
 
-  // 处理其他对象类型 - 恢复更全面的状态码提取
+  // Handle other object types - restore more comprehensive status code extraction
   if (error && typeof error === 'object') {
-    // Enhanced message extraction from various possible sources (恢复原版逻辑)
+    // Enhanced message extraction from various possible sources (restore original logic)
     const possibleMessage = [
       error.message,
       error.error?.message,
-      error.error?.error, // 添加深层嵌套的error.error.error路径
-      error.details, // 恢复：原版有这个路径
+      error.error?.error, // Add deeply nested error.error.error path
+      error.details, // Restore: original version had this path
       error.data?.message,
       error.body?.message,
       error.response?.data?.message,
       error.response?.data?.error?.message,
       error.response?.text,
       error.response?.body,
-      error.statusText, // 恢复：原版有这个路径
+      error.statusText, // Restore: original version had this path
     ].find(Boolean);
 
     const message = possibleMessage || String(error);
 
-    // 恢复更全面的状态码提取逻辑
+    // Restore more comprehensive status code extraction logic
     const possibleStatus = [
       error.status,
       error.statusCode,
@@ -167,21 +167,21 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
     };
   }
 
-  // 兜底处理
+  // Fallback handling
   return {
     message: cleanComfyUIErrorMessage(String(error)),
   };
 }
 
 /**
- * 解析ComfyUI错误消息并返回结构化错误信息
- * @param error - 原始错误对象
- * @returns 解析后的错误对象和错误类型
+ * Parse ComfyUI error message and return structured error information
+ * @param error - Original error object
+ * @returns Parsed error object and error type
  */
 export function parseComfyUIErrorMessage(error: any): ParsedError {
   const comfyError = extractComfyUIErrorInfo(error);
 
-  // 1. HTTP状态码错误（优先检查）
+  // 1. HTTP status code errors (priority check)
   const status = comfyError.status;
   if (status) {
     if (status === 401) {
@@ -198,7 +198,7 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
       };
     }
 
-    // 404 表示服务端点不存在，说明 ComfyUI 服务不可用或地址错误
+    // 404 indicates service endpoint does not exist, meaning ComfyUI service is unavailable or address is incorrect
     if (status === 404) {
       return {
         error: comfyError,
@@ -214,7 +214,7 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
     }
   }
 
-  // 2. 网络连接错误（只在没有HTTP状态码时检查）
+  // 2. Network connection errors (only check when no HTTP status code)
   if (!status && isNetworkError(error)) {
     return {
       error: comfyError,
@@ -222,7 +222,7 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
     };
   }
 
-  // 2.5. 从错误消息中检查HTTP状态码（当status字段不存在时）
+  // 2.5. Check HTTP status code from error message (when status field doesn't exist)
   const message = comfyError.message;
   if (!status && message) {
     if (message.includes('HTTP 401') || message.includes('401')) {
@@ -245,7 +245,7 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
     }
   }
 
-  // 3. 模型相关错误
+  // 3. Model-related errors
   if (isModelError(error)) {
     return {
       error: comfyError,
@@ -253,7 +253,7 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
     };
   }
 
-  // 4. 工作流错误
+  // 4. Workflow errors
   if (isWorkflowError(error)) {
     return {
       error: comfyError,
@@ -261,7 +261,7 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
     };
   }
 
-  // 5. 其他ComfyUI业务错误（默认）
+  // 5. Other ComfyUI business errors (default)
   return {
     error: comfyError,
     errorType: AgentRuntimeErrorType.ComfyUIBizError,

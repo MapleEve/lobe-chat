@@ -25,6 +25,17 @@ export const ModelParamsMetaSchema = z.object({
     })
     .optional(),
 
+  denoise: z
+    .object({
+      default: z.number().optional().default(0.75),
+      description: z.string().optional(),
+      max: z.number().optional().default(1),
+      min: z.number().optional().default(0),
+      step: z.number().optional().default(0.05),
+      type: z.literal('number').optional(),
+    })
+    .optional(),
+
   height: z
     .object({
       default: z.number(),
@@ -76,7 +87,7 @@ export const ModelParamsMetaSchema = z.object({
     .object({
       default: z.string().optional().default('euler'),
       description: z.string().optional(),
-      enum: z.array(z.string()),
+      enum: z.array(z.string()).optional(),
       type: z.literal('string').optional(),
     })
     .optional(),
@@ -85,7 +96,7 @@ export const ModelParamsMetaSchema = z.object({
     .object({
       default: z.string().optional().default('simple'),
       description: z.string().optional(),
-      enum: z.array(z.string()),
+      enum: z.array(z.string()).optional(),
       type: z.literal('string').optional(),
     })
     .optional(),
