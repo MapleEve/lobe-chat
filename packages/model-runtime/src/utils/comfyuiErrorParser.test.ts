@@ -84,6 +84,14 @@ describe('ComfyUIErrorParser', () => {
         expect(result.error.status).toBe(403);
       });
 
+      it('should identify 404 not found errors', () => {
+        const error = { message: 'Not Found', status: 404 };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.status).toBe(404);
+      });
+
       it('should identify 500+ server errors', () => {
         const error = { message: 'Internal Server Error', status: 500 };
         const result = parseComfyUIErrorMessage(error);
@@ -98,6 +106,55 @@ describe('ComfyUIErrorParser', () => {
 
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
         expect(result.error.status).toBe(503);
+      });
+
+      // Tests for HTTP status in message without status field
+      it('should identify HTTP 401 in message without status field', () => {
+        const error = { message: 'Request failed with HTTP 401 Unauthorized' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.InvalidProviderAPIKey);
+        expect(result.error.message).toBe('Request failed with HTTP 401 Unauthorized');
+      });
+
+      it('should identify HTTP 403 in message without status field', () => {
+        const error = { message: 'Error: HTTP 403 Forbidden - Access denied' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.PermissionDenied);
+        expect(result.error.message).toBe('Error: HTTP 403 Forbidden - Access denied');
+      });
+
+      it('should identify HTTP 404 in message without status field', () => {
+        const error = { message: 'HTTP 404 Not Found - Resource missing' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('HTTP 404 Not Found - Resource missing');
+      });
+
+      it('should identify plain 401 in message without status field', () => {
+        const error = { message: 'Error code 401: Authentication required' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.InvalidProviderAPIKey);
+        expect(result.error.message).toBe('Error code 401: Authentication required');
+      });
+
+      it('should identify plain 403 in message without status field', () => {
+        const error = { message: 'Failed with 403: Permission denied' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.PermissionDenied);
+        expect(result.error.message).toBe('Failed with 403: Permission denied');
+      });
+
+      it('should identify plain 404 in message without status field', () => {
+        const error = { message: 'Got 404 response from server' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('Got 404 response from server');
       });
     });
 
