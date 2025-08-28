@@ -1,8 +1,8 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
 import { generateUniqueSeeds } from '../../../../utils/src/number';
-import { getOptimalComponent } from '../config/systemComponents';
 import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
+import type { WorkflowContext } from '../services/workflowBuilder';
 import { splitPromptForDualCLIP } from '../utils/promptSplitter';
 import { selectOptimalWeightDtype } from '../utils/weightDType';
 
@@ -14,17 +14,23 @@ import { selectOptimalWeightDtype } from '../utils/weightDType';
  *
  * @param {string} modelName - 模型文件名 / Model filename
  * @param {Record<string, any>} params - 生成参数 / Generation parameters
+ * @param {WorkflowContext} context - 工作流上下文 / Workflow context
  * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow
  */
-export function buildFluxSchnellWorkflow(
-  modelName: string,
+export async function buildFluxSchnellWorkflow(
+  modelFileName: string,
   params: Record<string, any>,
-): PromptBuilder<any, any, any> {
-  // 获取最优组件
-  const selectedT5Model = getOptimalComponent('t5', 'FLUX');
-  const selectedVAE = getOptimalComponent('vae', 'FLUX');
-  const selectedCLIP = getOptimalComponent('clip', 'FLUX');
+  context: WorkflowContext,
+): Promise<PromptBuilder<any, any, any>> {
+  // Get required components - will throw if not available (workflow cannot run without them)
+  const selectedT5Model = await context.modelResolverService.getOptimalComponent('t5', 'FLUX');
+  const selectedVAE = await context.modelResolverService.getOptimalComponent('vae', 'FLUX');
+  const selectedCLIP = await context.modelResolverService.getOptimalComponent('clip', 'FLUX');
 
+  // 处理prompt分离 - 在工作流构建早期进行
+  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
+
+  /* eslint-disable sort-keys-fix/sort-keys-fix */
   const workflow = {
     '1': {
       _meta: {
@@ -43,8 +49,8 @@ export function buildFluxSchnellWorkflow(
       },
       class_type: 'UNETLoader',
       inputs: {
-        unet_name: modelName,
-        weight_dtype: selectOptimalWeightDtype(modelName),
+        unet_name: modelFileName,
+        weight_dtype: selectOptimalWeightDtype(modelFileName),
       },
     },
     '3': {
@@ -63,9 +69,9 @@ export function buildFluxSchnellWorkflow(
       class_type: 'CLIPTextEncodeFlux',
       inputs: {
         clip: ['1', 0],
-        clip_l: '',
+        clip_l: clipLPrompt,
         guidance: WORKFLOW_DEFAULTS.SCHNELL.CFG,
-        t5xxl: '', // Schnell 使用 CFG 1
+        t5xxl: t5xxlPrompt, // Schnell 使用 CFG 1
       },
     },
     '5': {
@@ -118,38 +124,51 @@ export function buildFluxSchnellWorkflow(
       },
     },
   };
+  /* eslint-enable sort-keys-fix/sort-keys-fix */
 
-  // 创建 PromptBuilder
+  // 直接设置prompt值到工作流节点，而不依赖PromptBuilder的输入映射
+  workflow['4'].inputs.clip_l = clipLPrompt;
+  workflow['4'].inputs.t5xxl = t5xxlPrompt;
+
+  // Apply input values to workflow
+  const width = params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH;
+  const height = params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT;
+  const cfg = params.cfg ?? WORKFLOW_DEFAULTS.SCHNELL.CFG;
+  const steps = params.steps ?? WORKFLOW_DEFAULTS.SCHNELL.STEPS;
+  const seed = params.seed ?? generateUniqueSeeds(1)[0];
+
+  // Set shared values directly to avoid conflicts
+  workflow['5'].inputs.width = width; // EmptySD3LatentImage needs width/height
+  workflow['5'].inputs.height = height;
+  workflow['4'].inputs.guidance = cfg; // CLIPTextEncodeFlux needs guidance
+  workflow['6'].inputs.cfg = cfg; // KSampler needs cfg
+  workflow['6'].inputs.steps = steps; // KSampler needs steps
+  workflow['6'].inputs.seed = seed; // KSampler needs seed
+
+  // 创建 PromptBuilder - 移除prompt相关的输入参数，因为已直接设置
   const builder = new PromptBuilder(
     workflow,
-    ['prompt_clip_l', 'prompt_t5xxl', 'width', 'height', 'steps', 'cfg', 'seed'],
+    ['width', 'height', 'steps', 'cfg', 'seed'], // 移除prompt相关参数
     ['images'],
   );
 
   // 设置输出节点
   builder.setOutputNode('images', '8');
 
-  // 添加setInputNode映射 - 修复SDK链式调用bug，改为分开调用
+  // 设置输入节点映射
   builder.setInputNode('seed', '6.inputs.seed');
   builder.setInputNode('width', '5.inputs.width');
   builder.setInputNode('height', '5.inputs.height');
   builder.setInputNode('steps', '6.inputs.steps');
   builder.setInputNode('cfg', '6.inputs.cfg');
-  builder.setInputNode('prompt_clip_l', '4.inputs.clip_l');
-  builder.setInputNode('prompt_t5xxl', '4.inputs.t5xxl');
 
-  // 处理prompt分离
-  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
-
-  // 设置输入值
+  // 设置输入值（不包括prompt，已直接设置到工作流）
   builder
-    .input('prompt_clip_l', clipLPrompt)
-    .input('prompt_t5xxl', t5xxlPrompt)
-    .input('width', params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH)
-    .input('height', params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT)
-    .input('steps', params.steps ?? WORKFLOW_DEFAULTS.SCHNELL.STEPS)
-    .input('cfg', params.cfg ?? WORKFLOW_DEFAULTS.SCHNELL.CFG)
-    .input('seed', params.seed ?? generateUniqueSeeds(1)[0]);
+    .input('width', width)
+    .input('height', height)
+    .input('steps', steps)
+    .input('cfg', cfg)
+    .input('seed', seed);
 
   return builder;
 }

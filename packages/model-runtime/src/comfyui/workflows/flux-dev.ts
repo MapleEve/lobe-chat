@@ -1,8 +1,8 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
 import { generateUniqueSeeds } from '../../../../utils/src/number';
-import { getOptimalComponent } from '../config/systemComponents';
 import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
+import type { WorkflowContext } from '../services/workflowBuilder';
 import { splitPromptForDualCLIP } from '../utils/promptSplitter';
 import { selectOptimalWeightDtype } from '../utils/weightDType';
 
@@ -16,15 +16,20 @@ import { selectOptimalWeightDtype } from '../utils/weightDType';
  * @param {Record<string, any>} params - 生成参数 / Generation parameters
  * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow
  */
-export function buildFluxDevWorkflow(
-  modelName: string,
+export async function buildFluxDevWorkflow(
+  modelFileName: string,
   params: Record<string, any>,
-): PromptBuilder<any, any, any> {
-  // 获取最优组件
-  const selectedT5Model = getOptimalComponent('t5', 'FLUX');
-  const selectedVAE = getOptimalComponent('vae', 'FLUX');
-  const selectedCLIP = getOptimalComponent('clip', 'FLUX');
+  context: WorkflowContext,
+): Promise<PromptBuilder<any, any, any>> {
+  // Get required components - will throw if not available (workflow cannot run without them)
+  const selectedT5Model = await context.modelResolverService.getOptimalComponent('t5', 'FLUX');
+  const selectedVAE = await context.modelResolverService.getOptimalComponent('vae', 'FLUX');
+  const selectedCLIP = await context.modelResolverService.getOptimalComponent('clip', 'FLUX');
 
+  // 处理prompt分离 - 在工作流构建早期进行
+  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
+
+  /* eslint-disable sort-keys-fix/sort-keys-fix */
   const workflow = {
     '1': {
       _meta: {
@@ -95,8 +100,8 @@ export function buildFluxDevWorkflow(
       },
       class_type: 'UNETLoader',
       inputs: {
-        unet_name: modelName,
-        weight_dtype: selectOptimalWeightDtype(modelName),
+        unet_name: modelFileName,
+        weight_dtype: selectOptimalWeightDtype(modelFileName),
       },
     },
     '3': {
@@ -178,8 +183,7 @@ export function buildFluxDevWorkflow(
     },
   };
 
-  // 处理prompt分离 - 在工作流构建早期进行
-  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
+  /* eslint-enable sort-keys-fix/sort-keys-fix */
 
   // 直接设置prompt值到工作流节点，而不依赖PromptBuilder的输入映射
   workflow['5'].inputs.clip_l = clipLPrompt;
@@ -216,7 +220,7 @@ export function buildFluxDevWorkflow(
   // 设置输出节点
   builder.setOutputNode('images', '12');
 
-  // 保留其他参数的输入映射（不包括prompt相关）
+  // 设置输入节点映射
   builder.setInputNode('seed', '13.inputs.noise_seed');
   builder.setInputNode('width', '7.inputs.width');
   builder.setInputNode('height', '7.inputs.height');

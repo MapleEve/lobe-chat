@@ -1,8 +1,8 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
 import { generateUniqueSeeds } from '../../../../utils/src/number';
-import { getOptimalComponent } from '../config/systemComponents';
 import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
+import type { WorkflowContext } from '../services/workflowBuilder';
 import { splitPromptForDualCLIP } from '../utils/promptSplitter';
 import { selectOptimalWeightDtype } from '../utils/weightDType';
 
@@ -14,20 +14,23 @@ import { selectOptimalWeightDtype } from '../utils/weightDType';
  *
  * @param {string} modelName - 模型文件名 / Model filename
  * @param {Record<string, any>} params - 生成参数 / Generation parameters
+ * @param {WorkflowContext} context - 工作流上下文 / Workflow context
  * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow
  */
-export function buildFluxKontextWorkflow(
-  modelName: string,
+export async function buildFluxKontextWorkflow(
+  modelFileName: string,
   params: Record<string, any>,
-): PromptBuilder<any, any, any> {
-  // 获取最优组件
-  const selectedT5Model = getOptimalComponent('t5', 'FLUX');
-  const selectedVAE = getOptimalComponent('vae', 'FLUX');
-  const selectedCLIP = getOptimalComponent('clip', 'FLUX');
+  context: WorkflowContext,
+): Promise<PromptBuilder<any, any, any>> {
+  // Get required components - will throw if not available (workflow cannot run without them)
+  const selectedT5Model = await context.modelResolverService.getOptimalComponent('t5', 'FLUX');
+  const selectedVAE = await context.modelResolverService.getOptimalComponent('vae', 'FLUX');
+  const selectedCLIP = await context.modelResolverService.getOptimalComponent('clip', 'FLUX');
 
   // 检查是否有输入图像
   const hasInputImage = Boolean(params.imageUrl || params.imageUrls?.[0]);
 
+  /* eslint-disable sort-keys-fix/sort-keys-fix */
   const workflow: any = {
     '1': {
       _meta: {
@@ -40,66 +43,14 @@ export function buildFluxKontextWorkflow(
         type: 'flux',
       },
     },
-    '10': {
-      _meta: {
-        title: 'Sampler Custom Advanced',
-      },
-      class_type: 'SamplerCustomAdvanced',
-      inputs: {
-        guider: ['14', 0], // ✅ BasicGuider provides GUIDER type (handles model/conditioning)
-        latent_image: hasInputImage ? ['img_encode', 0] : ['7', 0], // 根据是否有输入图像选择latent来源
-        noise: ['13', 0], // Random noise for initialization
-        sampler: ['8', 0], // Sampling algorithm
-        sigmas: ['9', 0], // Noise schedule from BasicScheduler
-      },
-    },
-    '11': {
-      _meta: {
-        title: 'VAE Decode',
-      },
-      class_type: 'VAEDecode',
-      inputs: {
-        samples: ['10', 0],
-        vae: ['3', 0],
-      },
-    },
-    '12': {
-      _meta: {
-        title: 'Save Image',
-      },
-      class_type: 'SaveImage',
-      inputs: {
-        filename_prefix: FLUX_MODEL_CONFIG.FILENAME_PREFIXES.KONTEXT,
-        images: ['11', 0],
-      },
-    },
-    '13': {
-      _meta: {
-        title: 'Random Noise',
-      },
-      class_type: 'RandomNoise',
-      inputs: {
-        noise_seed: WORKFLOW_DEFAULTS.NOISE.SEED,
-      },
-    },
-    '14': {
-      _meta: {
-        title: 'Basic Guider',
-      },
-      class_type: 'BasicGuider',
-      inputs: {
-        conditioning: ['6', 0], // FluxGuidance conditioning output
-        model: ['4', 0], // ModelSamplingFlux model
-      },
-    },
     '2': {
       _meta: {
         title: 'UNET Loader',
       },
       class_type: 'UNETLoader',
       inputs: {
-        unet_name: modelName,
-        weight_dtype: selectOptimalWeightDtype(modelName),
+        unet_name: modelFileName,
+        weight_dtype: selectOptimalWeightDtype(modelFileName),
       },
     },
     '3': {
@@ -168,7 +119,60 @@ export function buildFluxKontextWorkflow(
         steps: WORKFLOW_DEFAULTS.KONTEXT.STEPS,
       },
     },
+    '10': {
+      _meta: {
+        title: 'Sampler Custom Advanced',
+      },
+      class_type: 'SamplerCustomAdvanced',
+      inputs: {
+        guider: ['14', 0], // ✅ BasicGuider provides GUIDER type (handles model/conditioning)
+        latent_image: hasInputImage ? ['img_encode', 0] : ['7', 0], // 根据是否有输入图像选择latent来源
+        noise: ['13', 0], // Random noise for initialization
+        sampler: ['8', 0], // Sampling algorithm
+        sigmas: ['9', 0], // Noise schedule from BasicScheduler
+      },
+    },
+    '11': {
+      _meta: {
+        title: 'VAE Decode',
+      },
+      class_type: 'VAEDecode',
+      inputs: {
+        samples: ['10', 0],
+        vae: ['3', 0],
+      },
+    },
+    '12': {
+      _meta: {
+        title: 'Save Image',
+      },
+      class_type: 'SaveImage',
+      inputs: {
+        filename_prefix: FLUX_MODEL_CONFIG.FILENAME_PREFIXES.KONTEXT,
+        images: ['11', 0],
+      },
+    },
+    '13': {
+      _meta: {
+        title: 'Random Noise',
+      },
+      class_type: 'RandomNoise',
+      inputs: {
+        noise_seed: WORKFLOW_DEFAULTS.NOISE.SEED,
+      },
+    },
+    '14': {
+      _meta: {
+        title: 'Basic Guider',
+      },
+      class_type: 'BasicGuider',
+      inputs: {
+        conditioning: ['6', 0], // FluxGuidance conditioning output
+        model: ['4', 0], // ModelSamplingFlux model
+      },
+    },
   };
+  /* eslint-enable sort-keys-fix/sort-keys-fix */
 
   // 如果有输入图像，添加图像加载和编码节点
   if (hasInputImage) {
@@ -214,6 +218,30 @@ export function buildFluxKontextWorkflow(
   workflow['5'].inputs.clip_l = clipLPrompt;
   workflow['5'].inputs.t5xxl = t5xxlPrompt;
 
+  // Apply input values to workflow
+  const width = params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH;
+  const height = params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT;
+  const cfg = params.cfg ?? WORKFLOW_DEFAULTS.KONTEXT.CFG;
+  const seed = params.seed ?? generateUniqueSeeds(1)[0];
+
+  // Manually set values for nodes that need the same parameters (since setInputNode can only map one-to-one)
+  workflow['5'].inputs.guidance = cfg; // CLIPTextEncodeFlux needs guidance
+  workflow['6'].inputs.guidance = cfg; // FluxGuidance needs guidance
+  workflow['9'].inputs.steps = params.steps ?? WORKFLOW_DEFAULTS.KONTEXT.STEPS; // BasicScheduler needs steps
+  workflow['13'].inputs.noise_seed = seed; // RandomNoise needs seed
+
+  if (!hasInputImage) {
+    // Text-to-image mode: ModelSamplingFlux needs width/height (EmptySD3LatentImage will get it via setInputNode)
+    workflow['4'].inputs.width = width;
+    workflow['4'].inputs.height = height;
+    workflow['7'].inputs.width = width;
+    workflow['7'].inputs.height = height;
+  } else {
+    // Image-to-image mode: ModelSamplingFlux still needs width/height for proper sampling
+    workflow['4'].inputs.width = width;
+    workflow['4'].inputs.height = height;
+  }
+
   // 创建 PromptBuilder - 移除prompt相关的输入参数，因为已直接设置
   const inputParams = ['width', 'height', 'steps', 'cfg', 'seed']; // 移除 'prompt_clip_l', 'prompt_t5xxl'
   if (hasInputImage) {
@@ -250,33 +278,13 @@ export function buildFluxKontextWorkflow(
     builder.setInputNode('denoise', '9.inputs.denoise');
   }
 
-  // Apply input values to workflow
-  const width = params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH;
-  const height = params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT;
-  const cfg = params.cfg ?? WORKFLOW_DEFAULTS.KONTEXT.CFG;
-
-  // Manually set values for nodes that need the same parameters (since setInputNode can only map one-to-one)
-  workflow['5'].inputs.guidance = cfg; // CLIPTextEncodeFlux needs guidance
-
-  if (!hasInputImage) {
-    // Text-to-image mode: ModelSamplingFlux needs width/height (EmptySD3LatentImage will get it via setInputNode)
-    workflow['4'].inputs.width = width;
-    workflow['4'].inputs.height = height;
-  } else {
-    // Image-to-image mode: EmptySD3LatentImage needs width/height (ModelSamplingFlux will get it via setInputNode)
-    if (workflow['7']) {
-      workflow['7'].inputs.width = width;
-      workflow['7'].inputs.height = height;
-    }
-  }
-
   // 设置输入值（不包括prompt，已直接设置到工作流）
   builder
     .input('width', width)
     .input('height', height)
     .input('steps', params.steps ?? WORKFLOW_DEFAULTS.KONTEXT.STEPS)
     .input('cfg', cfg)
-    .input('seed', params.seed ?? generateUniqueSeeds(1)[0]);
+    .input('seed', seed);
 
   if (hasInputImage) {
     builder
