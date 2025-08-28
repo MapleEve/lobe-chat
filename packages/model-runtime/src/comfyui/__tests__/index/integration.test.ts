@@ -6,6 +6,7 @@ import { LobeComfyUI } from '../../index';
 import { ComfyUIClientService } from '../../services/comfyuiClient';
 import { ModelResolverService } from '../../services/modelResolver';
 import { WorkflowBuilderService } from '../../services/workflowBuilder';
+import { TEST_FLUX_MODELS } from '../constants/testModels';
 
 // Mock services
 vi.mock('../../services/comfyuiClient');
@@ -89,7 +90,7 @@ describe('LobeComfyUI - Integration Tests', () => {
         }),
       ).rejects.toMatchObject({
         error: expect.objectContaining({
-          message: expect.stringContaining('ModelNotFound'),
+          message: expect.stringContaining('Model not found'),
         }),
         errorType: AgentRuntimeErrorType.ModelNotFound,
       });
@@ -98,7 +99,7 @@ describe('LobeComfyUI - Integration Tests', () => {
     it('should validate model existence using service', async () => {
       mockModelResolverService.validateModel.mockResolvedValue({
         exists: true,
-        actualFileName: 'flux1-dev.safetensors',
+        actualFileName: TEST_FLUX_MODELS.DEV,
       });
 
       mockClientService.executeWorkflow.mockResolvedValue({
@@ -116,13 +117,13 @@ describe('LobeComfyUI - Integration Tests', () => {
       mockClientService.getPathImage = vi.fn().mockReturnValue('http://localhost:8188/image.png');
 
       const result = await instance.createImage({
-        model: 'flux-1-dev',
+        model: TEST_FLUX_MODELS.DEV,
         params: {
           prompt: 'test prompt',
         },
       });
 
-      expect(mockModelResolverService.validateModel).toHaveBeenCalledWith('flux-1-dev');
+      expect(mockModelResolverService.validateModel).toHaveBeenCalledWith(TEST_FLUX_MODELS.DEV);
       expect(result).toHaveProperty('imageUrl');
     });
   });
@@ -131,7 +132,7 @@ describe('LobeComfyUI - Integration Tests', () => {
     beforeEach(() => {
       mockModelResolverService.validateModel.mockResolvedValue({
         exists: true,
-        actualFileName: 'flux1-dev.safetensors',
+        actualFileName: TEST_FLUX_MODELS.DEV,
       });
     });
 
@@ -139,7 +140,7 @@ describe('LobeComfyUI - Integration Tests', () => {
       mockClientService.getPathImage = vi.fn().mockReturnValue('http://localhost:8188/image.png');
 
       const result = await instance.createImage({
-        model: 'flux-1-dev',
+        model: TEST_FLUX_MODELS.DEV,
         params: {
           prompt: 'A beautiful landscape',
           width: 1024,
@@ -164,7 +165,7 @@ describe('LobeComfyUI - Integration Tests', () => {
 
       await expect(
         instance.createImage({
-          model: 'flux-1-dev',
+          model: TEST_FLUX_MODELS.DEV,
           params: {
             prompt: 'test',
           },
@@ -181,7 +182,7 @@ describe('LobeComfyUI - Integration Tests', () => {
 
       await expect(
         instance.createImage({
-          model: 'flux-1-dev',
+          model: TEST_FLUX_MODELS.DEV,
           params: {
             prompt: 'test',
           },
@@ -209,20 +210,20 @@ describe('LobeComfyUI - Integration Tests', () => {
     it('should pass workflow context to builder service', async () => {
       mockModelResolverService.validateModel.mockResolvedValue({
         exists: true,
-        actualFileName: 'test.safetensors',
+        actualFileName: 'flux1-schnell.safetensors',
       });
 
       mockClientService.getPathImage = vi.fn().mockReturnValue('http://localhost:8188/image.png');
 
       await instance.createImage({
-        model: 'test-model',
+        model: TEST_FLUX_MODELS.SCHNELL,
         params: { prompt: 'test' },
       });
 
       expect(mockWorkflowBuilderService.buildWorkflow).toHaveBeenCalledWith(
-        'test-model',
+        TEST_FLUX_MODELS.SCHNELL,
         expect.objectContaining({ modelType: 'flux', isSupported: true }),
-        'test.safetensors',
+        'flux1-schnell.safetensors',
         expect.objectContaining({ prompt: 'test' }),
       );
     });
@@ -234,12 +235,12 @@ describe('LobeComfyUI - Integration Tests', () => {
 
       mockModelResolverService.validateModel.mockResolvedValue({
         exists: true,
-        actualFileName: 'test.safetensors',
+        actualFileName: 'flux1-schnell.safetensors',
       });
 
       await expect(
         instance.createImage({
-          model: 'test-model',
+          model: TEST_FLUX_MODELS.SCHNELL,
           params: { prompt: 'test' },
         }),
       ).rejects.toThrow();
@@ -248,7 +249,7 @@ describe('LobeComfyUI - Integration Tests', () => {
     it('should handle workflow builder errors', async () => {
       mockModelResolverService.validateModel.mockResolvedValue({
         exists: true,
-        actualFileName: 'test.safetensors',
+        actualFileName: 'flux1-schnell.safetensors',
       });
 
       mockWorkflowBuilderService.buildWorkflow.mockRejectedValue(
@@ -257,7 +258,7 @@ describe('LobeComfyUI - Integration Tests', () => {
 
       await expect(
         instance.createImage({
-          model: 'test-model',
+          model: TEST_FLUX_MODELS.SCHNELL,
           params: { prompt: 'test' },
         }),
       ).rejects.toThrow();

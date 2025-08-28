@@ -1,6 +1,7 @@
 import { vi } from 'vitest';
 
 import type { WorkflowContext } from '../../services/workflowBuilder';
+import { TEST_FLUX_MODELS, TEST_COMPONENTS } from '../constants/testModels';
 
 /**
  * Create a mock WorkflowContext for testing
@@ -11,7 +12,7 @@ export function createMockContext(): WorkflowContext {
     clientService: {
       executeWorkflow: vi.fn().mockResolvedValue({ images: { images: [] } }),
       // New SDK wrapper methods
-      getCheckpoints: vi.fn().mockResolvedValue(['test_model.safetensors', 'flux_dev.safetensors']),
+      getCheckpoints: vi.fn().mockResolvedValue([TEST_FLUX_MODELS.DEV, TEST_FLUX_MODELS.SCHNELL]),
       getLoras: vi.fn().mockResolvedValue(['lora1.safetensors', 'lora2.safetensors']),
       getNodeDefs: vi.fn().mockResolvedValue({
         CLIPLoader: {
@@ -55,32 +56,32 @@ export function createMockContext(): WorkflowContext {
       getOptimalComponent: vi.fn().mockImplementation((type: string, modelFamily: string) => {
         // 根据不同的组件类型和模型家族返回相应的默认值
         if (type === 't5') {
-          return Promise.resolve('t5xxl_fp16.safetensors');
+          return Promise.resolve(TEST_COMPONENTS.FLUX.T5);
         }
         if (type === 'vae') {
           if (modelFamily === 'FLUX') {
-            return Promise.resolve('ae.safetensors');
+            return Promise.resolve(TEST_COMPONENTS.FLUX.VAE);
           }
-          return Promise.resolve('vae-ft-mse-840000-ema-pruned.safetensors');
+          return Promise.resolve(TEST_COMPONENTS.SD.VAE);
         }
         if (type === 'clip') {
           if (modelFamily === 'FLUX') {
-            return Promise.resolve('clip_l.safetensors');
+            return Promise.resolve(TEST_COMPONENTS.FLUX.CLIP_L);
           }
-          return Promise.resolve('clip_g.safetensors');
+          return Promise.resolve(TEST_COMPONENTS.SD.CLIP_G);
         }
         return Promise.resolve(null);
       }),
 
       // 保留旧方法以兼容
       selectComponents: vi.fn().mockResolvedValue({
-        clip: ['t5xxl_fp16.safetensors', 'clip_l.safetensors'],
-        t5: 't5xxl_fp16.safetensors',
-        vae: 'ae.safetensors',
+        clip: [TEST_COMPONENTS.FLUX.T5, TEST_COMPONENTS.FLUX.CLIP_L],
+        t5: TEST_COMPONENTS.FLUX.T5,
+        vae: TEST_COMPONENTS.FLUX.VAE,
       }),
 
       validateModel: vi.fn().mockResolvedValue({
-        actualFileName: 'test_model.safetensors',
+        actualFileName: TEST_FLUX_MODELS.DEV,
         exists: true,
       }),
     } as any,
