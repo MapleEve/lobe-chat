@@ -170,6 +170,44 @@ describe('WorkflowDetector', () => {
       });
     });
 
+    describe('Custom SD Model Detection', () => {
+      it('should detect custom SD model', () => {
+        const result = WorkflowDetector.detectModelType('stable-diffusion-custom');
+
+        // Custom SD models are hardcoded and don't use resolveModel
+        expect(mockedResolveModel).not.toHaveBeenCalled();
+        expect(result).toEqual({
+          architecture: 'SD1',
+          isSupported: true,
+          variant: 'custom-sd',
+        });
+      });
+
+      it('should detect custom SD refiner model', () => {
+        const result = WorkflowDetector.detectModelType('stable-diffusion-custom-refiner');
+
+        // Custom SD models are hardcoded and don't use resolveModel
+        expect(mockedResolveModel).not.toHaveBeenCalled();
+        expect(result).toEqual({
+          architecture: 'SD1',
+          isSupported: true,
+          variant: 'custom-sd',
+        });
+      });
+
+      it('should handle custom SD with comfyui prefix', () => {
+        const result = WorkflowDetector.detectModelType('comfyui/stable-diffusion-custom');
+
+        // Custom SD models are hardcoded and don't use resolveModel
+        expect(mockedResolveModel).not.toHaveBeenCalled();
+        expect(result).toEqual({
+          architecture: 'SD1',
+          isSupported: true,
+          variant: 'custom-sd',
+        });
+      });
+    });
+
     describe('SD3 Model Detection', () => {
       it('should detect SD3 sd35 variant', () => {
         const mockConfig: ModelConfig = {

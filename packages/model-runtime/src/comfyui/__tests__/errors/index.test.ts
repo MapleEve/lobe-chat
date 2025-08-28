@@ -77,14 +77,14 @@ describe('ComfyUI Internal Error System', () => {
         {
           actualFormat: '.ckpt',
           expectedFormat: '.safetensors',
-          modelName: 'test-model',
+          modelName: 'flux1-dev.safetensors',
         },
       );
 
       expect(error.details).toEqual({
         actualFormat: '.ckpt',
         expectedFormat: '.safetensors',
-        modelName: 'test-model',
+        modelName: 'flux1-dev.safetensors',
       });
     });
 
