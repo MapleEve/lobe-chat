@@ -30,7 +30,7 @@ packages/model-runtime/src/comfyui/
 │   ├── flux-krea.ts          # FLUX Krea workflow
 │   └── sd35.ts               # SD3.5 workflow
 └── utils/                     # Utilities
-    ├── modelResolver.ts       # Model resolver
+    ├── modelResolverError.ts       # Model resolver
     ├── workflowRouter.ts      # Workflow router
     ├── workflowDetector.ts    # Workflow detector
     └── promptSplitter.ts      # Prompt splitter
@@ -134,7 +134,7 @@ export interface ComponentWithName {
 export abstract class ComfyUIInternalError extends Error {
   public readonly reason: string;
   public readonly details?: Record<string, any>;
-  
+
   constructor(message: string, reason: string, details?: Record<string, any>);
 }
 
@@ -144,7 +144,7 @@ export abstract class ComfyUIInternalError extends Error {
 export const ConfigErrorReasons = {
   INVALID_CONFIG: 'INVALID_CONFIG',
   MISSING_CONFIG: 'MISSING_CONFIG',
-  CONFIG_PARSE_ERROR: 'CONFIG_PARSE_ERROR', 
+  CONFIG_PARSE_ERROR: 'CONFIG_PARSE_ERROR',
   REGISTRY_ERROR: 'REGISTRY_ERROR',
 } as const;
 
@@ -155,7 +155,7 @@ export const WorkflowErrorReasons = {
   INVALID_CONFIG: 'INVALID_CONFIG',
   MISSING_COMPONENT: 'MISSING_COMPONENT',
   MISSING_ENCODER: 'MISSING_ENCODER',
-  UNSUPPORTED_MODEL: 'UNSUPPORTED_MODEL', 
+  UNSUPPORTED_MODEL: 'UNSUPPORTED_MODEL',
   INVALID_PARAMS: 'INVALID_PARAMS',
 } as const;
 
@@ -172,11 +172,11 @@ export const UtilsErrorReasons = {
 } as const;
 
 /**
- * Model resolver error reasons  
+ * Model resolver error reasons
  */
 export const ModelResolverErrorReasons = {
   CONNECTION_ERROR: 'CONNECTION_ERROR',
-  INVALID_API_KEY: 'INVALID_API_KEY', 
+  INVALID_API_KEY: 'INVALID_API_KEY',
   MODEL_NOT_FOUND: 'MODEL_NOT_FOUND',
   PERMISSION_DENIED: 'PERMISSION_DENIED',
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
@@ -203,22 +203,22 @@ export interface ModelRegistryAPI {
    * Get model configuration by filename
    */
   getModelConfig(modelName: string): ModelConfig | undefined;
-  
+
   /**
    * Get all registered model names
    */
   getAllModelNames(): string[];
-  
+
   /**
    * Get models by variant (dev, schnell, etc.)
    */
   getModelsByVariant(variant: string): Array<{ name: string; config: ModelConfig }>;
-  
+
   /**
    * Get models by priority level
    */
   getModelsByPriority(priority: number): Array<{ name: string; config: ModelConfig }>;
-  
+
   /**
    * Check if model exists in registry
    */
@@ -233,17 +233,17 @@ export interface SystemComponentsAPI {
    * Get all components of specific type
    */
   getAllComponentsWithNames(options: { type?: string }): ComponentWithName[];
-  
+
   /**
    * Get component configuration
    */
   getComponentConfig(componentName: string): SystemComponentConfig | undefined;
-  
+
   /**
    * Check component availability
    */
   hasComponent(componentName: string): boolean;
-  
+
   /**
    * Get components by priority
    */
@@ -276,12 +276,12 @@ export interface WorkflowRouterAPI {
     modelFileName: string,
     params: Record<string, any>
   ): PromptBuilder<any, any, any>;
-  
+
   /**
    * Get available workflow variants
    */
   getAvailableWorkflows(): string[];
-  
+
   /**
    * Check if variant is supported
    */
@@ -296,17 +296,17 @@ export interface ModelResolverAPI {
    * Get available model files from ComfyUI server
    */
   getAvailableModelFiles(): Promise<string[]>;
-  
+
   /**
    * Find best model match for request
    */
   findBestModel(modelRequest: string, options?: RegistryQueryOptions): Promise<string>;
-  
+
   /**
    * Validate model exists on server
    */
   validateModel(modelFileName: string): Promise<boolean>;
-  
+
   /**
    * Get model recommendations
    */
@@ -323,7 +323,7 @@ Add new models to `config/modelRegistry.ts`:
 ```typescript
 export const MODEL_REGISTRY: Record<string, ModelConfig> = {
   // Existing models...
-  
+
   // Add new model
   'your-new-model.safetensors': {
     priority: 2, // 1=Official, 2=Enterprise, 3=Community
@@ -331,7 +331,7 @@ export const MODEL_REGISTRY: Record<string, ModelConfig> = {
     modelFamily: 'FLUX', // 'FLUX' | 'SD3'
     recommendedDtype: 'default', // 'default' | 'fp8_e4m3fn' | 'fp8_e5m2'
   },
-  
+
   // Quantized versions
   'your-new-model-fp8.safetensors': {
     priority: 2,
@@ -366,7 +366,7 @@ describe('New Model Registration', () => {
     expect(config?.variant).toBe('dev');
     expect(config?.modelFamily).toBe('FLUX');
   });
-  
+
   test('should support priority-based queries', () => {
     const priority1Models = getAllModelNames().filter(name => {
       const config = getModelConfig(name);
@@ -487,14 +487,14 @@ export class WorkflowRouter {
     modelFileName: string,
     params: Record<string, any>
   ): PromptBuilder<any, any, any> {
-    
+
     // Existing routing logic...
-    
+
     // Add new workflow routing
     if (detectionResult.variant === 'your_variant') {
       return buildYourWorkflow(model, modelFileName, params);
     }
-    
+
     // Default handling...
   }
 }
@@ -545,7 +545,7 @@ SD3.5 supports three encoder configurations with automatic fallback:
  */
 interface EncoderDetectionResult {
   clipL?: string;    // CLIP L encoder filename
-  clipG?: string;    // CLIP G encoder filename  
+  clipG?: string;    // CLIP G encoder filename
   t5?: string;       // T5XXL encoder filename
   type: 'triple' | 'dual_clip' | 't5';
 }
@@ -562,7 +562,7 @@ function detectAvailableEncoder(): EncoderDetectionResult | null {
   // Find specific encoder files
   const clipL = clipComponents.find(c => c.name === 'clip_l.safetensors');
   const clipG = clipComponents.find(c => c.name === 'clip_g.safetensors');
-  
+
   // Find T5XXL with priority-based selection (fp16 > fp8)
   const t5 = t5Components.sort((a, b) => a.config.priority - b.config.priority)[0];
 
@@ -570,7 +570,7 @@ function detectAvailableEncoder(): EncoderDetectionResult | null {
   if (clipL && clipG && t5) {
     return {
       clipL: clipL.name,
-      clipG: clipG.name, 
+      clipG: clipG.name,
       t5: t5.name,
       type: 'triple'
     };
@@ -651,7 +651,7 @@ export function buildSD35Workflow(
 
   // 2. Build encoder nodes based on detected configuration
   let conditioning: any;
-  
+
   switch (encoderConfig.type) {
     case 'triple': {
       // Triple encoder: CLIP L + CLIP G + T5
@@ -770,7 +770,7 @@ export function buildSD35Workflow(
   // Add common nodes
   workflow
     .addNode(modelLoader)
-    .addNode(noiseGenerator) 
+    .addNode(noiseGenerator)
     .addNode(sampler)
     .addNode(decoder)
     .addNode(saveImage);
@@ -793,11 +793,11 @@ export const SYSTEM_COMPONENTS: Record<string, SystemComponentConfig> = {
     description: 'CLIP L text encoder for SD3 models',
   },
   'clip_g.safetensors': {
-    type: 'clip', 
+    type: 'clip',
     priority: 1,
     description: 'CLIP G text encoder for SD3 models',
   },
-  
+
   // T5 components (priority-based selection)
   't5xxl_fp16.safetensors': {
     type: 't5',
@@ -845,7 +845,7 @@ try {
   const workflow = buildSD35Workflow(model, modelFile, params);
   return workflow;
 } catch (error) {
-  if (error instanceof WorkflowError && 
+  if (error instanceof WorkflowError &&
       error.reason === WorkflowError.Reasons.MISSING_ENCODER) {
     console.error('SD3.5 encoder requirements not met:', error.details);
     // Suggest encoder installation or fallback to different model
@@ -863,7 +863,7 @@ Add new LoRA to `config/loraRegistry.ts`:
 ```typescript
 export const LORA_REGISTRY: Record<string, LoRAConfig> = {
   // Existing LoRAs...
-  
+
   'your-custom-lora.safetensors': {
     compatibleVariants: ['dev', 'schnell'], // Compatible model variants
     modelFamily: 'FLUX',
@@ -900,7 +900,7 @@ Add new ControlNet model to `config/controlnetRegistry.ts`:
 ```typescript
 export const CONTROLNET_REGISTRY: Record<string, ControlNetConfig> = {
   // Existing models...
-  
+
   'flux-controlnet-pose-v1.safetensors': {
     compatibleVariants: ['dev'],
     modelFamily: 'FLUX',
@@ -981,19 +981,19 @@ The error system consists of four distinct layers:
 All ComfyUI internal layers use these error classes instead of framework errors to maintain proper architectural boundaries:
 
 ```typescript
-import { 
-  ConfigError, 
-  WorkflowError, 
-  UtilsError, 
+import {
+  ConfigError,
+  WorkflowError,
+  UtilsError,
   ModelResolverError,
-  isComfyUIInternalError 
+  isComfyUIInternalError
 } from '../errors';
 
 // Base internal error interface
 abstract class ComfyUIInternalError extends Error {
   public readonly reason: string;
   public readonly details?: Record<string, any>;
-  
+
   constructor(message: string, reason: string, details?: Record<string, any>) {
     super(message);
     this.reason = reason;
@@ -1010,7 +1010,7 @@ Used for configuration validation and registry issues:
 export class ConfigError extends ComfyUIInternalError {
   static readonly Reasons = {
     INVALID_CONFIG: 'INVALID_CONFIG',
-    MISSING_CONFIG: 'MISSING_CONFIG', 
+    MISSING_CONFIG: 'MISSING_CONFIG',
     CONFIG_PARSE_ERROR: 'CONFIG_PARSE_ERROR',
     REGISTRY_ERROR: 'REGISTRY_ERROR',
   } as const;
@@ -1041,7 +1041,7 @@ export class WorkflowError extends ComfyUIInternalError {
   static readonly Reasons = {
     INVALID_CONFIG: 'INVALID_CONFIG',
     MISSING_COMPONENT: 'MISSING_COMPONENT',
-    MISSING_ENCODER: 'MISSING_ENCODER', 
+    MISSING_ENCODER: 'MISSING_ENCODER',
     UNSUPPORTED_MODEL: 'UNSUPPORTED_MODEL',
     INVALID_PARAMS: 'INVALID_PARAMS',
   } as const;
@@ -1058,7 +1058,7 @@ function buildFluxWorkflow(model: string, params: any) {
         { component: 'flux_vae', model }
       );
     }
-    
+
     // Build workflow...
     return workflow;
   } catch (error) {
@@ -1076,7 +1076,7 @@ Used for utility function failures:
 export class UtilsError extends ComfyUIInternalError {
   static readonly Reasons = {
     CONNECTION_ERROR: 'CONNECTION_ERROR',
-    DETECTION_FAILED: 'DETECTION_FAILED', 
+    DETECTION_FAILED: 'DETECTION_FAILED',
     INVALID_API_KEY: 'INVALID_API_KEY',
     INVALID_MODEL_FORMAT: 'INVALID_MODEL_FORMAT',
     ROUTING_FAILED: 'ROUTING_FAILED',
@@ -1093,11 +1093,11 @@ Specialized error for model resolution operations:
 export class ModelResolverError extends Error {
   public readonly reason: string;
   public readonly details?: Record<string, any>;
-  
+
   static readonly Reasons = {
     CONNECTION_ERROR: 'CONNECTION_ERROR',
     INVALID_API_KEY: 'INVALID_API_KEY',
-    MODEL_NOT_FOUND: 'MODEL_NOT_FOUND', 
+    MODEL_NOT_FOUND: 'MODEL_NOT_FOUND',
     PERMISSION_DENIED: 'PERMISSION_DENIED',
     SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
   } as const;
@@ -1109,9 +1109,9 @@ export class ModelResolverError extends Error {
 Use type guards for safe error checking:
 
 ```typescript
-import { 
+import {
   isComfyUIInternalError,
-  isConfigError, 
+  isConfigError,
   isWorkflowError,
   isUtilsError
 } from '../errors';
@@ -1119,7 +1119,7 @@ import {
 function handleComfyUIError(error: unknown) {
   if (isComfyUIInternalError(error)) {
     console.log(`Internal error: ${error.reason}`, error.details);
-    
+
     if (isConfigError(error)) {
       // Handle configuration-specific logic
       console.log('Configuration issue:', error.reason);
@@ -1144,7 +1144,7 @@ try {
   // Handle ComfyUI internal errors with proper mapping
   if (isComfyUIInternalError(error)) {
     let errorType: string;
-    
+
     // Map internal error reasons to framework error types
     if (error instanceof ConfigError) {
       const mapping: Record<string, string> = {
@@ -1154,7 +1154,7 @@ try {
         [ConfigError.Reasons.REGISTRY_ERROR]: AgentRuntimeErrorType.ComfyUIBizError,
       };
       errorType = mapping[error.reason] || AgentRuntimeErrorType.ComfyUIBizError;
-      
+
     } else if (error instanceof WorkflowError) {
       const mapping: Record<string, string> = {
         [WorkflowError.Reasons.INVALID_CONFIG]: AgentRuntimeErrorType.ComfyUIWorkflowError,
@@ -1164,7 +1164,7 @@ try {
         [WorkflowError.Reasons.INVALID_PARAMS]: AgentRuntimeErrorType.ComfyUIWorkflowError,
       };
       errorType = mapping[error.reason] || AgentRuntimeErrorType.ComfyUIWorkflowError;
-      
+
     } else if (error instanceof UtilsError || error instanceof ModelResolverError) {
       const mapping: Record<string, string> = {
         CONNECTION_ERROR: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
@@ -1221,7 +1221,7 @@ function buildWorkflow(model: string) {
   return createWorkflowNodes();
 }
 
-// ❌ Bad: Catching and re-throwing breaks the mapping system  
+// ❌ Bad: Catching and re-throwing breaks the mapping system
 function buildWorkflow(model: string) {
   try {
     validateModel(model);
