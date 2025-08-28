@@ -2,6 +2,8 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { TEST_FLUX_MODELS } from '../constants/testModels';
+
 import { WORKFLOW_DEFAULTS } from '../../constants';
 import { buildFluxDevWorkflow } from '../../workflows/flux-dev';
 // Import mock context from helper
@@ -16,7 +18,7 @@ vi.mock('../../utils/modelResolver', () => ({
     if (
       cleanName.includes('flux_dev') ||
       cleanName.includes('flux-dev') ||
-      cleanName === 'test_model.safetensors'
+      cleanName === TEST_FLUX_MODELS.DEV
     ) {
       return {
         modelFamily: 'FLUX',
@@ -137,11 +139,11 @@ describe('buildFluxDevWorkflow', async () => {
     expect(workflow['5'].inputs.guidance).toBe(WORKFLOW_DEFAULTS.SAMPLING.CFG);
     expect(workflow['6'].inputs.guidance).toBe(WORKFLOW_DEFAULTS.SAMPLING.CFG);
     expect(workflow['8'].inputs.sampler_name).toBe('euler');
-    expect(workflow['9'].inputs.scheduler).toBe('simple');
+    expect(workflow['9'].inputs.scheduler).toBe(WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER);
   });
 
   it('should have correct workflow connections', async () => {
-    const modelName = 'test_model.safetensors';
+    const modelName = TEST_FLUX_MODELS.DEV;
     const params = { prompt: 'test' };
 
     await buildFluxDevWorkflow(modelName, params, mockContext);

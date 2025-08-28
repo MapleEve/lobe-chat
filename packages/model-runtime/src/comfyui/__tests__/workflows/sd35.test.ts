@@ -2,6 +2,8 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { WORKFLOW_DEFAULTS } from '../../constants';
+import { TEST_SD35_MODELS } from '../constants/testModels';
 import { WorkflowError } from '../../errors';
 import { ComfyUIClientService } from '../../services/comfyuiClient';
 import { ModelResolverService } from '../../services/modelResolver';
@@ -70,39 +72,45 @@ describe('buildSD35Workflow', () => {
 
     const result = await buildSD35Workflow(modelName, params, mockContext);
 
-    expect(PromptBuilder).toHaveBeenCalledWith(
-      expect.objectContaining({
-        '1': expect.objectContaining({
-          _meta: { title: 'Load Checkpoint' },
-          class_type: 'CheckpointLoaderSimple',
-          inputs: { ckpt_name: modelName },
-        }),
-        '2': expect.objectContaining({
-          _meta: { title: 'Triple CLIP Loader' },
-          class_type: 'TripleCLIPLoader',
-          inputs: {
-            clip_name1: 'clip_l.safetensors',
-            clip_name2: 'clip_g.safetensors',
-            clip_name3: 't5xxl_fp16.safetensors',
-          },
-        }),
-        '3': expect.objectContaining({
-          _meta: { title: 'Positive Prompt' },
-          class_type: 'CLIPTextEncode',
-          inputs: {
-            clip: ['2', 0],
-            text: 'A beautiful landscape',
-          },
-        }),
-        '4': expect.objectContaining({
-          _meta: { title: 'Negative Prompt' },
-          class_type: 'CLIPTextEncode',
-          inputs: {
-            clip: ['2', 0],
-            text: expect.stringContaining('worst quality'),
-          },
-        }),
-        '5': expect.objectContaining({
+    // Get the actual workflow object passed to PromptBuilder
+    const workflowArg = (PromptBuilder as any).mock.calls[0][0];
+    
+    // Test individual nodes
+    expect(workflowArg['1']).toMatchObject({
+      _meta: { title: 'Load Checkpoint' },
+      class_type: 'CheckpointLoaderSimple',
+      inputs: { ckpt_name: modelName },
+    });
+    
+    expect(workflowArg['2']).toMatchObject({
+      _meta: { title: 'Triple CLIP Loader' },
+      class_type: 'TripleCLIPLoader',
+      inputs: {
+        clip_name1: 'clip_l.safetensors',
+        clip_name2: 'clip_g.safetensors',
+        clip_name3: 't5xxl_fp16.safetensors',
+      },
+    });
+    
+    expect(workflowArg['3']).toMatchObject({
+      _meta: { title: 'Positive Prompt' },
+      class_type: 'CLIPTextEncode',
+      inputs: {
+        clip: ['2', 0],
+        text: 'A beautiful landscape',
+      },
+    });
+    
+    expect(workflowArg['4']).toMatchObject({
+      _meta: { title: 'Negative Prompt' },
+      class_type: 'CLIPTextEncode',
+      inputs: {
+        clip: ['2', 0],
+        text: expect.stringContaining('worst quality'),
+      },
+    });
+    
+    expect(workflowArg['5']).toMatchObject({
           _meta: { title: 'Empty SD3 Latent Image' },
           class_type: 'EmptySD3LatentImage',
           inputs: {
@@ -110,49 +118,54 @@ describe('buildSD35Workflow', () => {
             height: 1024,
             width: 1024,
           },
-        }),
-        '6': expect.objectContaining({
-          _meta: { title: 'KSampler' },
-          class_type: 'KSampler',
-          inputs: expect.objectContaining({
-            cfg: 4.5, // Default CFG value for SD3.5
-            denoise: 1,
-            latent_image: ['5', 0],
-            model: ['12', 0], // Uses ModelSamplingSD3 output
-            negative: ['4', 0],
-            positive: ['3', 0],
-            sampler_name: 'euler',
-            scheduler: 'sgm_uniform',
-            seed: expect.any(Number), // Generated seed value
-            steps: undefined,
-          }),
-        }),
-        '7': expect.objectContaining({
+    });
+    
+    // Test KSampler node inputs individually
+    expect(workflowArg['6']._meta.title).toBe('KSampler');
+    expect(workflowArg['6'].class_type).toBe('KSampler');
+    expect(workflowArg['6'].inputs.cfg).toBe(WORKFLOW_DEFAULTS.SD35.CFG);
+    expect(workflowArg['6'].inputs.denoise).toBe(1);
+    expect(workflowArg['6'].inputs.latent_image).toEqual(['5', 0]);
+    expect(workflowArg['6'].inputs.model).toEqual(['12', 0]);
+    expect(workflowArg['6'].inputs.negative).toEqual(['4', 0]);
+    expect(workflowArg['6'].inputs.positive).toEqual(['3', 0]);
+    expect(workflowArg['6'].inputs.sampler_name).toBe('euler');
+    expect(workflowArg['6'].inputs.scheduler).toBe(WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER); // Using actual default from WORKFLOW_DEFAULTS
+    expect(typeof workflowArg['6'].inputs.seed).toBe('number');
+    expect(workflowArg['6'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SD35.STEPS);
+    
+    expect(workflowArg['7']).toMatchObject({
           _meta: { title: 'VAE Decode' },
           class_type: 'VAEDecode',
           inputs: {
             samples: ['6', 0],
             vae: ['1', 2],
           },
-        }),
-        '8': expect.objectContaining({
+    });
+    
+    expect(workflowArg['8']).toMatchObject({
           _meta: { title: 'Save Image' },
           class_type: 'SaveImage',
           inputs: {
             filename_prefix: 'LobeChat/%year%-%month%-%day%/SD35',
             images: ['7', 0],
           },
-        }),
-        '12': expect.objectContaining({
+    });
+    
+    expect(workflowArg['12']).toMatchObject({
           _meta: { title: 'ModelSamplingSD3' },
           class_type: 'ModelSamplingSD3',
           inputs: {
             model: ['1', 0],
             shift: 3, // Default shift value
           },
-        }),
-      }),
-      [
+    });
+    
+    // Check that PromptBuilder was called with correct inputs/outputs
+    const inputsArg = (PromptBuilder as any).mock.calls[0][1];
+    const outputsArg = (PromptBuilder as any).mock.calls[0][2];
+    
+    expect(inputsArg).toEqual([
         'prompt',
         'width',
         'height',
@@ -164,9 +177,9 @@ describe('buildSD35Workflow', () => {
         'negativePrompt',
         'denoise',
         'shift',
-      ],
-      ['images'],
-    );
+      ]);
+      
+    expect(outputsArg).toEqual(['images']);
 
     expect(result.setOutputNode).toHaveBeenCalledWith('images', '8');
     expect(result.setInputNode).toHaveBeenCalledWith('prompt', '3.inputs.text');
@@ -201,21 +214,7 @@ describe('buildSD35Workflow', () => {
     expect(workflow['6'].inputs.cfg).toBe(7.5);
   });
 
-  it('should generate random seed when seed is null', async () => {
-    const modelName = 'sd35_model.safetensors';
-    const params = {
-      prompt: 'Test prompt',
-      seed: undefined,
-    };
-
-    const result = await buildSD35Workflow(modelName, params, mockContext);
-
-    const workflow = (result as any).workflow;
-
-    expect(typeof workflow['6'].inputs.seed).toBe('number'); // Generated seed value
-  });
-
-  it('should generate random seed when seed is undefined', async () => {
+  it('should generate random seed when seed is not provided', async () => {
     const modelName = 'sd35_model.safetensors';
     const params = {
       prompt: 'Test prompt',
@@ -243,7 +242,7 @@ describe('buildSD35Workflow', () => {
     expect(workflow['6'].inputs.seed).toBe(0); // Should use 0, not generate random
   });
 
-  it('should use default CFG value when cfg is null', async () => {
+  it('should use default CFG value when cfg is not provided', async () => {
     const modelName = 'sd35_model.safetensors';
     const params = {
       cfg: undefined,
@@ -254,21 +253,7 @@ describe('buildSD35Workflow', () => {
 
     const workflow = (result as any).workflow;
 
-    expect(workflow['6'].inputs.cfg).toBe(4); // Default value
-  });
-
-  it('should use default CFG value when cfg is undefined', async () => {
-    const modelName = 'sd35_model.safetensors';
-    const params = {
-      cfg: undefined,
-      prompt: 'Test prompt',
-    };
-
-    const result = await buildSD35Workflow(modelName, params, mockContext);
-
-    const workflow = (result as any).workflow;
-
-    expect(workflow['6'].inputs.cfg).toBe(4.5); // Default value for SD3.5
+    expect(workflow['6'].inputs.cfg).toBe(WORKFLOW_DEFAULTS.SD35.CFG); // Default value for SD3.5
   });
 
   it('should use default CFG value when cfg is 0 (falsy)', async () => {
@@ -282,22 +267,10 @@ describe('buildSD35Workflow', () => {
 
     const workflow = (result as any).workflow;
 
-    expect(workflow['6'].inputs.cfg).toBe(4.5); // Default value because 0 is falsy
+    expect(workflow['6'].inputs.cfg).toBe(WORKFLOW_DEFAULTS.SD35.CFG); // Default value because 0 is falsy
   });
 
-  it('should use default CFG value when cfg is false', async () => {
-    const modelName = 'sd35_model.safetensors';
-    const params = {
-      cfg: 0,
-      prompt: 'Test prompt',
-    };
-
-    const result = await buildSD35Workflow(modelName, params, mockContext);
-
-    const workflow = (result as any).workflow;
-
-    expect(workflow['6'].inputs.cfg).toBe(4.5); // Default value because false is falsy
-  });
+  // Removed duplicate test - already covered by 'cfg is 0' test
 
   it('should handle empty params object', async () => {
     const modelName = 'sd35_model.safetensors';
@@ -309,17 +282,18 @@ describe('buildSD35Workflow', () => {
 
     expect(workflow['1'].inputs.ckpt_name).toBe(modelName);
     expect(workflow['3'].inputs.text).toBe('test prompt');
-    expect(workflow['5'].inputs.width).toBeUndefined();
-    expect(workflow['5'].inputs.height).toBeUndefined();
-    expect(workflow['6'].inputs.steps).toBeUndefined();
+    expect(workflow['5'].inputs.width).toBe(WORKFLOW_DEFAULTS.IMAGE.WIDTH); // Default width from WORKFLOW_DEFAULTS
+    expect(workflow['5'].inputs.height).toBe(WORKFLOW_DEFAULTS.IMAGE.HEIGHT); // Default height from WORKFLOW_DEFAULTS
+    expect(workflow['6'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SD35.STEPS); // Default steps for SD3.5
     expect(typeof workflow['6'].inputs.seed).toBe('number'); // Generated seed value
-    expect(workflow['6'].inputs.cfg).toBe(4); // Default
+    expect(workflow['6'].inputs.cfg).toBe(WORKFLOW_DEFAULTS.SD35.CFG); // Default CFG for SD3.5
+    expect(workflow['6'].inputs.denoise).toBe(1); // Default denoise from WORKFLOW_DEFAULTS
   });
 
-  it('should always use default negative prompt', async () => {
+  it('should use custom negative prompt when provided', async () => {
     const modelName = 'sd35_model.safetensors';
     const params = {
-      negativePrompt: 'This should be ignored',
+      negativePrompt: 'Custom negative prompt',
       prompt: 'Test prompt',
     };
 
@@ -327,15 +301,28 @@ describe('buildSD35Workflow', () => {
 
     const workflow = (result as any).workflow;
 
-    // Should always use the hardcoded DEFAULT_NEGATIVE_PROMPT
+    // Should use the provided negative prompt
+    expect(workflow['4'].inputs.text).toBe('Custom negative prompt');
+  });
+
+  it('should use default negative prompt when not provided', async () => {
+    const modelName = 'sd35_model.safetensors';
+    const params = {
+      prompt: 'Test prompt',
+    };
+
+    const result = await buildSD35Workflow(modelName, params, mockContext);
+
+    const workflow = (result as any).workflow;
+
+    // Should use DEFAULT_NEGATIVE_PROMPT when not provided
     expect(workflow['4'].inputs.text).toContain('worst quality');
     expect(workflow['4'].inputs.text).toContain('low quality');
     expect(workflow['4'].inputs.text).toContain('blurry');
-    expect(workflow['4'].inputs.text).not.toContain('This should be ignored');
   });
 
   it('should have correct workflow connections', async () => {
-    const modelName = 'test_model.safetensors';
+    const modelName = TEST_SD35_MODELS.LARGE;
     const params = { prompt: 'test' };
 
     await buildSD35Workflow(modelName, params, mockContext);
@@ -345,7 +332,7 @@ describe('buildSD35Workflow', () => {
     // Check key workflow connections
     expect(workflow['3'].inputs.clip).toEqual(['2', 0]); // Positive CLIP uses Triple CLIP Loader
     expect(workflow['4'].inputs.clip).toEqual(['2', 0]); // Negative CLIP uses Triple CLIP Loader
-    expect(workflow['6'].inputs.model).toEqual(['1', 0]); // KSampler uses checkpoint model
+    expect(workflow['6'].inputs.model).toEqual(['12', 0]); // KSampler uses ModelSamplingSD3 output
     expect(workflow['6'].inputs.positive).toEqual(['3', 0]); // KSampler uses positive conditioning
     expect(workflow['6'].inputs.negative).toEqual(['4', 0]); // KSampler uses negative conditioning
     expect(workflow['6'].inputs.latent_image).toEqual(['5', 0]); // KSampler uses empty latent
@@ -367,7 +354,7 @@ describe('buildSD35Workflow', () => {
     expect(workflow['2']._meta.title).toBe('Triple CLIP Loader');
     expect(workflow['3']._meta.title).toBe('Positive Prompt');
     expect(workflow['4']._meta.title).toBe('Negative Prompt');
-    expect(workflow['5']._meta.title).toBe('Empty Latent');
+    expect(workflow['5']._meta.title).toBe('Empty SD3 Latent Image');
     expect(workflow['6']._meta.title).toBe('KSampler');
     expect(workflow['7']._meta.title).toBe('VAE Decode');
     expect(workflow['8']._meta.title).toBe('Save Image');
@@ -383,7 +370,7 @@ describe('buildSD35Workflow', () => {
 
     // Check fixed KSampler parameters
     expect(workflow['6'].inputs.sampler_name).toBe('euler');
-    expect(workflow['6'].inputs.scheduler).toBe('sgm_uniform');
+    expect(workflow['6'].inputs.scheduler).toBe(WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER);
     expect(workflow['6'].inputs.denoise).toBe(1);
   });
 
@@ -408,7 +395,7 @@ describe('buildSD35Workflow', () => {
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
     // Check SaveImage parameters
-    expect(workflow['8'].inputs.filename_prefix).toBe('SD35');
+    expect(workflow['8'].inputs.filename_prefix).toBe('LobeChat/%year%-%month%-%day%/SD35');
   });
 
   it('should call all PromptBuilder setup methods', async () => {
@@ -421,16 +408,19 @@ describe('buildSD35Workflow', () => {
     expect(result.setOutputNode).toHaveBeenCalledTimes(1);
     expect(result.setOutputNode).toHaveBeenCalledWith('images', '8');
 
-    // Should call setInputNode 8 times for all input mappings
-    expect(result.setInputNode).toHaveBeenCalledTimes(8);
+    // Should call setInputNode 11 times for all input mappings (includes negativePrompt, denoise, shift)
+    expect(result.setInputNode).toHaveBeenCalledTimes(11);
     expect(result.setInputNode).toHaveBeenCalledWith('prompt', '3.inputs.text');
+    expect(result.setInputNode).toHaveBeenCalledWith('negativePrompt', '4.inputs.text');
     expect(result.setInputNode).toHaveBeenCalledWith('width', '5.inputs.width');
     expect(result.setInputNode).toHaveBeenCalledWith('height', '5.inputs.height');
     expect(result.setInputNode).toHaveBeenCalledWith('steps', '6.inputs.steps');
     expect(result.setInputNode).toHaveBeenCalledWith('seed', '6.inputs.seed');
     expect(result.setInputNode).toHaveBeenCalledWith('cfg', '6.inputs.cfg');
-    expect(result.setInputNode).toHaveBeenCalledWith('samplerName', '6.inputs.sampler_name');
+    expect(result.setInputNode).toHaveBeenCalledWith('sampler', '6.inputs.sampler_name');
     expect(result.setInputNode).toHaveBeenCalledWith('scheduler', '6.inputs.scheduler');
+    expect(result.setInputNode).toHaveBeenCalledWith('denoise', '6.inputs.denoise');
+    expect(result.setInputNode).toHaveBeenCalledWith('shift', '12.inputs.shift');
   });
 
   describe('Error Handling', () => {
@@ -448,8 +438,8 @@ describe('buildSD35Workflow', () => {
       };
 
       // Should throw WorkflowError with MISSING_ENCODER reason
-      expect(() => buildSD35Workflow(modelName, params, mockContext)).toThrow(WorkflowError);
-      expect(() => buildSD35Workflow(modelName, params, mockContext)).toThrow(
+      await expect(buildSD35Workflow(modelName, params, mockContext)).rejects.toThrow(WorkflowError);
+      await expect(buildSD35Workflow(modelName, params, mockContext)).rejects.toThrow(
         'SD3.5 models require external CLIP/T5 encoder files',
       );
 

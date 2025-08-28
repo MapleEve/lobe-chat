@@ -128,7 +128,7 @@ describe('buildFluxSchnellWorkflow', () => {
     expect(workflow['6'].inputs.seed).toBe(12_345);
     // samplerName and scheduler parameters are not currently supported in the Schnell implementation
     expect(workflow['6'].inputs.sampler_name).toBe('euler'); // Uses default value
-    expect(workflow['6'].inputs.scheduler).toBe('simple'); // Uses default value
+    expect(workflow['6'].inputs.scheduler).toBe(WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER); // Uses default value
   });
 
   it('should handle empty prompt', async () => {
@@ -140,12 +140,12 @@ describe('buildFluxSchnellWorkflow', () => {
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
     // Should use default values
-    expect(workflow['5'].inputs.width).toBe(1024);
-    expect(workflow['5'].inputs.height).toBe(1024);
+    expect(workflow['5'].inputs.width).toBe(WORKFLOW_DEFAULTS.IMAGE.WIDTH);
+    expect(workflow['5'].inputs.height).toBe(WORKFLOW_DEFAULTS.IMAGE.HEIGHT);
     expect(workflow['6'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SCHNELL.STEPS);
     expect(workflow['6'].inputs.seed).toBeGreaterThan(0); // Random seed, not 0
     expect(workflow['6'].inputs.sampler_name).toBe('euler');
-    expect(workflow['6'].inputs.scheduler).toBe('simple');
+    expect(workflow['6'].inputs.scheduler).toBe(WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER);
   });
 
   it('should have correct workflow structure', async () => {

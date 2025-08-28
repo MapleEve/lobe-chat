@@ -47,10 +47,18 @@ describe('buildFluxKontextWorkflow', () => {
     vi.clearAllMocks();
 
     mockModelResolver = {
-      selectVAE: vi.fn(),
-      selectComponents: vi.fn().mockResolvedValue({
-        clip: ['t5xxl_fp16.safetensors', 'clip_l.safetensors'],
-        t5: 't5-v1_1-xxl-encoder.safetensors',
+      getOptimalComponent: vi.fn().mockImplementation((type: string) => {
+        // Return real component names based on type
+        switch (type) {
+          case 't5':
+            return Promise.resolve('t5xxl_fp16.safetensors');
+          case 'vae':
+            return Promise.resolve('ae.safetensors');
+          case 'clip':
+            return Promise.resolve('clip_l.safetensors');
+          default:
+            return Promise.reject(new Error(`Unknown component type: ${type}`));
+        }
       }),
     };
 
@@ -327,8 +335,8 @@ describe('buildFluxKontextWorkflow', () => {
     // Should have EmptySD3LatentImage node for text-to-image
     expect(workflow['7']).toBeDefined();
     expect(workflow['7'].class_type).toBe('EmptySD3LatentImage');
-    expect(workflow['7'].inputs.width).toBe(1024);
-    expect(workflow['7'].inputs.height).toBe(1024);
+    expect(workflow['7'].inputs.width).toBe(WORKFLOW_DEFAULTS.IMAGE.WIDTH);
+    expect(workflow['7'].inputs.height).toBe(WORKFLOW_DEFAULTS.IMAGE.HEIGHT);
 
     // Should not have image loading/encoding nodes
     expect(workflow['img_load']).toBeUndefined();
@@ -390,30 +398,9 @@ describe('buildFluxKontextWorkflow', () => {
     expect(workflow['4']).toBeDefined();
   });
 
-  it('should cover workflow[7] width/height assignment in image-to-image mode', async () => {
-    // Create a special test to ensure lines 269-271 are covered
-    // We need to manually create a scenario where hasInputImage=true AND workflow['7'] exists
-
-    // Override PromptBuilder to capture and modify the workflow
-    const mockPromptBuilder = vi.fn().mockImplementation((workflow, _inputs, _outputs) => {
-      // For this test, manually add an EmptySD3LatentImage node to simulate the condition
-      // where workflow['7'] exists even in image-to-image mode
-      workflow['7'] = {
-        _meta: { title: 'Test EmptySD3LatentImage' },
-        class_type: 'EmptySD3LatentImage',
-        inputs: { height: 1024, width: 1024 },
-      };
-
-      return {
-        input: vi.fn().mockReturnThis(),
-        setInputNode: vi.fn().mockReturnThis(),
-        setOutputNode: vi.fn().mockReturnThis(),
-        workflow,
-      };
-    });
-
-    // Temporarily override the mock
-    (PromptBuilder as any).mockImplementationOnce(mockPromptBuilder);
+  it('should not create EmptySD3LatentImage in image-to-image mode', async () => {
+    // Test that in image-to-image mode, workflow['7'] (EmptySD3LatentImage) is not created
+    // and width/height are only set on workflow['4'] (ModelSamplingFlux)
 
     const modelName = 'flux_kontext.safetensors';
     const params = {
@@ -423,12 +410,14 @@ describe('buildFluxKontextWorkflow', () => {
       width: 640,
     };
 
-    await buildFluxKontextWorkflow(modelName, params, mockContext);
+    const result = await buildFluxKontextWorkflow(modelName, params, mockContext);
 
-    // Get the workflow that was modified by our custom mock
-    const workflow = mockPromptBuilder.mock.calls[0][0];
+    // Get the workflow from the PromptBuilder mock
+    const workflow = (PromptBuilder as any).mock.calls[
+      (PromptBuilder as any).mock.calls.length - 1
+    ][0];
 
-    // In image-to-image mode, workflow['7'] (EmptySD3LatentImage) doesn't exist
+    // In image-to-image mode, workflow['7'] (EmptySD3LatentImage) should not exist
     // Instead, width/height are set on workflow['4'] (ModelSamplingFlux)
     expect(workflow['7']).toBeUndefined(); // No EmptySD3LatentImage in i2i mode
     expect(workflow['4']).toBeDefined();
