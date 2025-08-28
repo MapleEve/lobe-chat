@@ -10,11 +10,10 @@ import { ModelResolverService } from './services/modelResolver';
 import { WorkflowBuilderService, WorkflowContext } from './services/workflowBuilder';
 
 const log = debug('lobe-image:comfyui');
-// Removed unused debugVerbose variable
 
 /**
- * ComfyUI Runtime implementation / ComfyUI Runtime 实现
- * Supports text-to-image and image editing for FLUX series models / 支持 FLUX 系列模型的文生图和图像编辑
+ * ComfyUI Runtime implementation
+ * Supports text-to-image and image editing
  */
 // Export ComfyUI utilities and types
 export type { CreateImagePayload, CreateImageResponse } from '../types/image';

@@ -53,8 +53,9 @@ export class ModelResolverService {
     // Clean model ID (remove prefix)
     const cleanId = modelId.replace(/^comfyui\//, '');
 
-    // Special handling for custom SD models - force fixed filenames
+    // Special handling for custom SD models - force fixed filename
     if (cleanId === 'stable-diffusion-custom' || cleanId === 'stable-diffusion-custom-refiner') {
+      // Both custom models use the same filename
       const fixedFileName = CUSTOM_SD_CONFIG.MODEL_FILENAME;
 
       // Verify the custom model file exists on server
@@ -79,7 +80,7 @@ export class ModelResolverService {
       return cleanId;
     }
 
-    // 2. If it's a model file format, verify it exists on server
+    // 2. If it's already a model file format, check if it exists on server
     if (isModelFile(cleanId)) {
       const serverModels = await this.getAvailableModelFiles();
       if (serverModels.includes(cleanId)) {
@@ -87,9 +88,10 @@ export class ModelResolverService {
         log('Found on server:', cleanId);
         return cleanId;
       }
+      // Don't throw error yet, try other methods
     }
 
-    // 3. Not found - throw error, don't guess
+    // 3. Not found - throw error
     throw new ModelResolverError(
       ModelResolverError.Reasons.MODEL_NOT_FOUND,
       `Model not found: ${modelId}`,
@@ -229,7 +231,7 @@ export class ModelResolverService {
       log(`Custom VAE ${customVAE} not found`);
     }
 
-    // 2. For custom SD models, try to find the configured VAE file
+    // 2. For custom SD models, try to find the configured VAE file (optional)
     if (isCustomSD) {
       const fixedVAEFileName = CUSTOM_SD_CONFIG.VAE_FILENAME;
       const serverVAEs = await this.getAvailableVAEFiles();
@@ -239,12 +241,28 @@ export class ModelResolverService {
         return fixedVAEFileName;
       }
 
-      // VAE file not available - let caller decide what to do
-      log('Configured VAE for custom SD not found');
+      // VAE file not available - fall back to built-in VAE
+      log('Configured VAE for custom SD not found, using built-in VAE');
       return undefined;
     }
 
-    // 3. Try to find VAE based on model family
+    // 3. Special handling for SDXL models - they often need external VAE
+    if (modelFileName.toLowerCase().includes('sdxl')) {
+      const availableVAEs = await this.getAvailableVAEFiles();
+      
+      // Look for SDXL-specific VAE
+      const sdxlVAE = availableVAEs.find(vae => 
+        vae.toLowerCase().includes('sdxl') && 
+        (vae.includes('vae') || vae.includes('VAE'))
+      );
+      
+      if (sdxlVAE) {
+        log('Found SDXL VAE:', sdxlVAE);
+        return sdxlVAE;
+      }
+    }
+
+    // 4. Try to find VAE based on model family
     const modelConfig = getModelConfig(modelFileName);
     if (!modelConfig) {
       return undefined;
@@ -262,6 +280,15 @@ export class ModelResolverService {
   /**
    * Validate if a model exists
    */
+  /**
+   * Clear all caches
+   */
+  clearCaches(): void {
+    this.modelCache.clear();
+    this.vaeCache = null;
+    this.componentCache.clear();
+  }
+
   async validateModel(modelId: string): Promise<ModelValidationResult> {
     try {
       const fileName = await this.resolveModelFileName(modelId);

@@ -1,7 +1,6 @@
 /**
- * ComfyUI framework constants configuration (simplified) / ComfyUI 框架常量配置（简化版）
+ * ComfyUI framework constants configuration
  * Unified management of hardcoded values with environment variable overrides / 统一管理硬编码值，支持环境变量覆盖
- * Architectural honesty: removed over-engineered dynamic selection and false component declarations / 架构诚实化：移除过度工程化的动态选择和虚假组件声明
  */
 
 /**
@@ -84,6 +83,12 @@ export const WORKFLOW_DEFAULTS = {
       SD3: 'sgm_uniform',
       SDXL: 'normal',
     },
+  },
+
+  // SD3.5 specific configuration / SD3.5 特定配置
+  SD35: {
+    CFG: 4.5, // Optimal CFG scale for SD3.5 model balance between prompt adherence and quality / SD3.5 模型最佳 CFG 比例，平衡提示词遵循度和质量
+    STEPS: 28, // Recommended steps for SD3.5 to achieve high quality results / SD3.5 推荐步数以获得高质量结果
   },
 } as const;
 
@@ -214,8 +219,8 @@ export const isModelFile = (filename: string): boolean => {
  * Fixed model and VAE filenames for custom SD models
  */
 export const CUSTOM_SD_CONFIG = {
-  MODEL_FILENAME: 'custom_sd_lobe.safetensors',
-  VAE_FILENAME: 'custom_sd_vae_lobe.safetensors',
+  MODEL_FILENAME: 'custom_sd_lobe.safetensors',  // Both custom models use same file
+  VAE_FILENAME: 'custom_sd_vae_lobe.safetensors',  // Optional VAE file
 } as const;
 
 /**
@@ -227,5 +232,4 @@ export const COMPONENT_NODE_MAPPINGS: Record<string, { field: string; node: stri
   t5: { field: 'clip_name', node: 'CLIPLoader' }, // T5 is also CLIP type
   vae: { field: 'vae_name', node: 'VAELoader' },
   // Main models (UNET) are fetched via getCheckpoints(), not here
-  // Can easily add new types in the future
 } as const;
