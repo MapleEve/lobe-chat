@@ -71,6 +71,73 @@ function isModelError(error: any): boolean {
 }
 
 /**
+ * Check if the error is a ComfyUI SDK custom error
+ * @param error - Error object
+ * @returns Whether it's a SDK custom error
+ */
+function isSDKCustomError(error: any): boolean {
+  if (!error) return false;
+
+  // Check for SDK error class names
+  const errorName = error?.name || error?.constructor?.name || '';
+  const sdkErrorTypes = [
+    'CallWrapperError',
+    'ExecutionInterruptedError', 
+    'MissingNodeError',
+    'InvalidModelError',
+    'WorkflowValidationError',
+    'ComfyUIConnectionError',
+    'ComfyUITimeoutError',
+    'ComfyUIRuntimeError',
+    'ComfyUIConfigError'
+  ];
+
+  if (sdkErrorTypes.includes(errorName)) {
+    return true;
+  }
+
+  // Check for SDK error messages patterns
+  const message = error?.message || String(error);
+  const lowerMessage = message.toLowerCase();
+
+  return (
+    lowerMessage.includes('sdk error:') ||
+    lowerMessage.includes('call wrapper') ||
+    lowerMessage.includes('execution interrupted') ||
+    lowerMessage.includes('missing node type') ||
+    lowerMessage.includes('invalid model configuration') ||
+    lowerMessage.includes('workflow validation failed') ||
+    lowerMessage.includes('sdk timeout') ||
+    lowerMessage.includes('sdk configuration error')
+  );
+}
+
+/**
+ * Check if the error is a WebSocket lifecycle error
+ * @param error - Error object
+ * @returns Whether it's a WebSocket lifecycle error
+ */
+function isWebSocketLifecycleError(error: any): boolean {
+  const message = error?.message || String(error);
+  const lowerMessage = message.toLowerCase();
+
+  return (
+    lowerMessage.includes('websocket initialization failed') ||
+    lowerMessage.includes('maximum reconnection attempts') ||
+    lowerMessage.includes('websocket connection lost') ||
+    lowerMessage.includes('websocket handshake failed') ||
+    lowerMessage.includes('websocket timeout') ||
+    lowerMessage.includes('websocket disconnected') ||
+    lowerMessage.includes('websocket error:') ||
+    lowerMessage.includes('ws connection') ||
+    lowerMessage.includes('websocket closed unexpectedly') ||
+    error?.code === 'WS_CONNECTION_FAILED' ||
+    error?.code === 'WS_TIMEOUT' ||
+    error?.code === 'WS_HANDSHAKE_FAILED'
+  );
+}
+
+/**
  * Check if the error is a ComfyUI workflow error
  * @param error - Error object
  * @returns Whether it's a workflow error
@@ -78,6 +145,13 @@ function isModelError(error: any): boolean {
 function isWorkflowError(error: any): boolean {
   const message = error?.message || String(error);
   const lowerMessage = message.toLowerCase();
+
+  // Check for structured workflow error fields
+  if (error && typeof error === 'object') {
+    if (error.node_id || error.nodeId || error.node_type || error.nodeType) {
+      return true;
+    }
+  }
 
   return (
     lowerMessage.includes('node') ||
@@ -87,6 +161,8 @@ function isWorkflowError(error: any): boolean {
     lowerMessage.includes('queue') ||
     lowerMessage.includes('invalid input') ||
     lowerMessage.includes('missing required') ||
+    lowerMessage.includes('node execution failed') ||
+    lowerMessage.includes('workflow validation') ||
     error?.type === 'workflow_error'
   );
 }
@@ -127,11 +203,13 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
 
   // Handle other object types - restore more comprehensive status code extraction
   if (error && typeof error === 'object') {
-    // Enhanced message extraction from various possible sources (restore original logic)
+    // Enhanced message extraction from various possible sources including ComfyUI specific formats
     const possibleMessage = [
       error.message,
       error.error?.message,
       error.error?.error, // Add deeply nested error.error.error path
+      error.exception_message, // ComfyUI specific field
+      error.error?.exception_message, // Nested ComfyUI exception message
       error.details, // Restore: original version had this path
       error.data?.message,
       error.body?.message,
@@ -156,7 +234,17 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
 
     const code = error.code || error.error?.code || error.response?.data?.code;
 
-    const details = error.response?.data || error.error || undefined;
+    // Enhanced details extraction including ComfyUI specific fields
+    let details = error.response?.data || error.error || undefined;
+    
+    // Include ComfyUI specific fields in details
+    if (error.node_id || error.node_type || error.nodeId || error.nodeType) {
+      details = {
+        ...details,
+        node_id: error.node_id || error.nodeId,
+        node_type: error.node_type || error.nodeType,
+      };
+    }
 
     return {
       code,
@@ -214,7 +302,23 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
     }
   }
 
-  // 2. Network connection errors (only check when no HTTP status code)
+  // 2. SDK custom errors (high priority)
+  if (isSDKCustomError(error)) {
+    return {
+      error: comfyError,
+      errorType: AgentRuntimeErrorType.ComfyUIBizError,
+    };
+  }
+
+  // 3. WebSocket lifecycle errors (check before general network errors)
+  if (isWebSocketLifecycleError(error)) {
+    return {
+      error: comfyError,
+      errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
+    };
+  }
+
+  // 4. Network connection errors (only check when no HTTP status code)
   if (!status && isNetworkError(error)) {
     return {
       error: comfyError,
@@ -222,7 +326,7 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
     };
   }
 
-  // 2.5. Check HTTP status code from error message (when status field doesn't exist)
+  // 5. Check HTTP status code from error message (when status field doesn't exist)
   const message = comfyError.message;
   if (!status && message) {
     if (message.includes('HTTP 401') || message.includes('401')) {
@@ -245,7 +349,7 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
     }
   }
 
-  // 3. Model-related errors
+  // 6. Model-related errors
   if (isModelError(error)) {
     return {
       error: comfyError,
@@ -253,15 +357,15 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
     };
   }
 
-  // 4. Workflow errors
+  // 7. Workflow errors (enhanced with node-specific detection)
   if (isWorkflowError(error)) {
     return {
       error: comfyError,
-      errorType: AgentRuntimeErrorType.ComfyUIBizError,
+      errorType: AgentRuntimeErrorType.ComfyUIWorkflowError,
     };
   }
 
-  // 5. Other ComfyUI business errors (default)
+  // 8. Other ComfyUI business errors (default)
   return {
     error: comfyError,
     errorType: AgentRuntimeErrorType.ComfyUIBizError,

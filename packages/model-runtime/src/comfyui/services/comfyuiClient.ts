@@ -48,7 +48,11 @@ export class ComfyUIClientService {
   private connectionValidated: boolean = false;
   private nodeDefsCache: any = null;
   private nodeDefsCacheTime: number = 0;
-  private readonly NODE_DEFS_CACHE_TTL = 60 * 1000; // 1 minute
+  private checkpointsCache: string[] | null = null;
+  private checkpointsCacheTime: number = 0;
+  private lorasCache: string[] | null = null;
+  private lorasCacheTime: number = 0;
+  private readonly CACHE_TTL = 60 * 1000; // 1 minute (unified TTL)
   private errorHandler: ErrorHandlerService;
 
   constructor(options: ComfyUIKeyVault = {}) {
@@ -171,19 +175,23 @@ export class ComfyUIClientService {
   // - getSamplerInfo() for samplers
 
   /**
-   * Get object info (nodes, inputs, etc.)
-   */
-  // Removed: Use getNodeDefs() instead
-  // This method was violating the architecture principle of using SDK methods
-  // getNodeDefs() provides the same information through the SDK
-
   /**
    * Get available checkpoints from ComfyUI
    * Wraps SDK method to avoid Law of Demeter violation
+   * Includes 1-minute TTL cache for performance optimization
    */
   async getCheckpoints(): Promise<string[]> {
     try {
-      return await this.client.getCheckpoints();
+      const now = Date.now();
+
+      // Refresh cache if expired or doesn't exist
+      if (!this.checkpointsCache || now - this.checkpointsCacheTime > this.CACHE_TTL) {
+        this.checkpointsCache = await this.client.getCheckpoints();
+        this.checkpointsCacheTime = now;
+        log('Checkpoints cache refreshed');
+      }
+
+      return this.checkpointsCache;
     } catch (error) {
       log('Failed to get checkpoints:', error);
       throw this.handleApiError(error);
@@ -193,10 +201,20 @@ export class ComfyUIClientService {
   /**
    * Get available LoRAs from ComfyUI
    * Wraps SDK method to avoid Law of Demeter violation
+   * Includes 1-minute TTL cache for performance optimization
    */
   async getLoras(): Promise<string[]> {
     try {
-      return await this.client.getLoras();
+      const now = Date.now();
+
+      // Refresh cache if expired or doesn't exist
+      if (!this.lorasCache || now - this.lorasCacheTime > this.CACHE_TTL) {
+        this.lorasCache = await this.client.getLoras();
+        this.lorasCacheTime = now;
+        log('LoRAs cache refreshed');
+      }
+
+      return this.lorasCache;
     } catch (error) {
       log('Failed to get LoRAs:', error);
       throw this.handleApiError(error);
@@ -214,7 +232,7 @@ export class ComfyUIClientService {
       const now = Date.now();
 
       // Refresh cache if expired or doesn't exist
-      if (!this.nodeDefsCache || now - this.nodeDefsCacheTime > this.NODE_DEFS_CACHE_TTL) {
+      if (!this.nodeDefsCache || now - this.nodeDefsCacheTime > this.CACHE_TTL) {
         this.nodeDefsCache = await this.client.getNodeDefs();
         this.nodeDefsCacheTime = now;
         log('NodeDefs cache refreshed');

@@ -7,6 +7,8 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import debug from 'debug';
 
+import { nanoid } from '@lobechat/utils';
+
 import type { CreateImagePayload, CreateImageResponse } from '../../types/image';
 import { ServicesError } from '../errors';
 import { WorkflowDetector } from '../utils/workflowDetector';
@@ -151,8 +153,8 @@ export class ImageService {
 
       log('Image fetched successfully, size:', buffer.length);
 
-      // Upload to ComfyUI
-      const fileName = `LobeChat_img2img_${Date.now()}.png`;
+      // Upload to ComfyUI - use timestamp + 4-char random ID to prevent conflicts
+      const fileName = `LobeChat_img2img_${Date.now()}_${nanoid(4)}.png`;
       const uploadedFileName = await this.clientService.uploadImage(buffer, fileName);
 
       log('Uploaded to ComfyUI as:', uploadedFileName);

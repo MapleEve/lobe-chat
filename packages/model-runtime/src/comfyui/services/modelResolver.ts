@@ -6,7 +6,7 @@
  */
 import debug from 'debug';
 
-import { MODEL_REGISTRY, getModelConfig } from '../config/modelRegistry';
+import { MODEL_REGISTRY } from '../config/modelRegistry';
 import { SYSTEM_COMPONENTS } from '../config/systemComponents';
 import { COMPONENT_NODE_MAPPINGS, CUSTOM_SD_CONFIG, SUPPORTED_MODEL_FORMATS } from '../constants';
 import { ModelResolverError } from '../errors/modelResolverError';
@@ -44,9 +44,10 @@ export interface ModelValidationResult {
  */
 export class ModelResolverService {
   private clientService: ComfyUIClientService;
-  private modelCache: Map<string, string> = new Map();
-  private vaeCache: string[] | null = null;
-  private componentCache: Map<string, string[]> = new Map();
+  private modelCache: Map<string, { timestamp: number, value: string; }> = new Map();
+  private vaeCache: { timestamp: number, value: string[]; } | null = null;
+  private componentCache: Map<string, { timestamp: number, value: string[]; }> = new Map();
+  private readonly CACHE_TTL = 60 * 1000; // 1 minute
 
   constructor(clientService: ComfyUIClientService) {
     this.clientService = clientService;
@@ -59,11 +60,17 @@ export class ModelResolverService {
   async resolveModelFileName(modelId: string): Promise<string | undefined> {
     log('Resolving model:', modelId);
 
-    // Check cache first
+    // Check cache first with TTL
+    const now = Date.now();
     if (this.modelCache.has(modelId)) {
       const cached = this.modelCache.get(modelId)!;
-      log('Found in cache:', cached);
-      return cached;
+      if (now - cached.timestamp < this.CACHE_TTL) {
+        log('Found in cache:', cached.value);
+        return cached.value;
+      } else {
+        // Cache expired, remove it
+        this.modelCache.delete(modelId);
+      }
     }
 
     // Clean model ID (remove prefix)
@@ -80,14 +87,14 @@ export class ModelResolverService {
         return undefined;
       }
 
-      this.modelCache.set(modelId, fixedFileName);
+      this.modelCache.set(modelId, { timestamp: now, value: fixedFileName });
       log('Resolved custom SD model to fixed filename:', fixedFileName);
       return fixedFileName;
     }
 
     // 1. Direct registry lookup (filename is the registry key)
     if (MODEL_REGISTRY[cleanId]) {
-      this.modelCache.set(modelId, cleanId);
+      this.modelCache.set(modelId, { timestamp: now, value: cleanId });
       log('Found in registry:', cleanId);
       return cleanId;
     }
@@ -96,7 +103,7 @@ export class ModelResolverService {
     if (isModelFile(cleanId)) {
       const serverModels = await this.getAvailableModelFiles();
       if (serverModels.includes(cleanId)) {
-        this.modelCache.set(modelId, cleanId);
+        this.modelCache.set(modelId, { timestamp: now, value: cleanId });
         log('Found on server:', cleanId);
         return cleanId;
       }
@@ -119,26 +126,27 @@ export class ModelResolverService {
    * Get available VAE files from server
    */
   async getAvailableVAEFiles(): Promise<string[]> {
-    // Use cache if available
-    if (this.vaeCache) {
-      return this.vaeCache;
+    // Use cache if available and not expired
+    const now = Date.now();
+    if (this.vaeCache && (now - this.vaeCache.timestamp < this.CACHE_TTL)) {
+      return this.vaeCache.value;
     }
 
     // Use SDK's getNodeDefs method
     const nodeDefs = await this.clientService.getNodeDefs('VAELoader');
 
     if (!nodeDefs?.VAELoader?.input?.required?.vae_name?.[0]) {
-      this.vaeCache = [];
+      this.vaeCache = { timestamp: now, value: [] };
       return [];
     }
 
     const vaeList = nodeDefs.VAELoader.input.required.vae_name[0];
     if (!Array.isArray(vaeList)) {
-      this.vaeCache = [];
+      this.vaeCache = { timestamp: now, value: [] };
       return [];
     }
 
-    this.vaeCache = vaeList;
+    this.vaeCache = { timestamp: now, value: vaeList };
     return vaeList;
   }
 
@@ -150,9 +158,16 @@ export class ModelResolverService {
    */
   async getAvailableComponentFiles(loaderNode: string, inputKey: string): Promise<string[]> {
     const cacheKey = `${loaderNode}:${inputKey}`;
+    const now = Date.now();
 
     if (this.componentCache.has(cacheKey)) {
-      return this.componentCache.get(cacheKey)!;
+      const cached = this.componentCache.get(cacheKey)!;
+      if (now - cached.timestamp < this.CACHE_TTL) {
+        return cached.value;
+      } else {
+        // Cache expired, remove it
+        this.componentCache.delete(cacheKey);
+      }
     }
 
     // Use SDK's getNodeDefs method
@@ -161,17 +176,17 @@ export class ModelResolverService {
 
     if (!loader?.input?.required?.[inputKey]?.[0]) {
       // Node doesn't exist or no files available - normal case
-      this.componentCache.set(cacheKey, []);
+      this.componentCache.set(cacheKey, { timestamp: now, value: [] });
       return [];
     }
 
     const componentList = loader.input.required[inputKey][0];
     if (!Array.isArray(componentList)) {
-      this.componentCache.set(cacheKey, []);
+      this.componentCache.set(cacheKey, { timestamp: now, value: [] });
       return [];
     }
 
-    this.componentCache.set(cacheKey, componentList);
+    this.componentCache.set(cacheKey, { timestamp: now, value: componentList });
     return componentList;
   }
 
@@ -206,56 +221,6 @@ export class ModelResolverService {
 
     // No matching component found
     return undefined;
-  }
-
-  /**
-   * Select appropriate VAE for a model
-   */
-  async selectVAE(options: {
-    customVAE?: string;
-    isCustomSD?: boolean;
-    modelFileName: string;
-  }): Promise<string | undefined> {
-    const { customVAE, isCustomSD, modelFileName } = options;
-
-    // 1. Custom VAE takes priority (verify it exists)
-    if (customVAE) {
-      const availableVAEs = await this.getAvailableVAEFiles();
-      if (availableVAEs.includes(customVAE)) {
-        log(`Using custom VAE: ${customVAE}`);
-        return customVAE;
-      }
-      log(`Custom VAE ${customVAE} not found`);
-    }
-
-    // 2. For custom SD models, try to find the configured VAE file (optional)
-    if (isCustomSD) {
-      const fixedVAEFileName = CUSTOM_SD_CONFIG.VAE_FILENAME;
-      const serverVAEs = await this.getAvailableVAEFiles();
-
-      if (serverVAEs.includes(fixedVAEFileName)) {
-        log('Found configured VAE for custom SD:', fixedVAEFileName);
-        return fixedVAEFileName;
-      }
-
-      // VAE file not available - fall back to built-in VAE
-      log('Configured VAE for custom SD not found, using built-in VAE');
-      return undefined;
-    }
-
-    // 3. Try to find VAE based on model family
-    const modelConfig = getModelConfig(modelFileName);
-    if (!modelConfig) {
-      return undefined;
-    }
-
-    try {
-      // Query for optimal VAE - service only provides lookup
-      return await this.getOptimalComponent('vae', modelConfig.modelFamily);
-    } catch {
-      // No VAE available for this model family
-      return undefined;
-    }
   }
 
   /**

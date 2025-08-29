@@ -197,7 +197,7 @@ describe('ComfyUIErrorParser', () => {
         const error = new Error('Node execution failed: KSampler');
         const result = parseComfyUIErrorMessage(error);
 
-        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
         expect(result.error.message).toBe('Node execution failed: KSampler');
       });
 
@@ -213,7 +213,7 @@ describe('ComfyUIErrorParser', () => {
         const error = new Error('Prompt execution error in queue');
         const result = parseComfyUIErrorMessage(error);
 
-        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
         expect(result.error.message).toBe('Prompt execution error in queue');
       });
 
@@ -221,8 +221,386 @@ describe('ComfyUIErrorParser', () => {
         const error = new Error('Missing required parameter: width');
         const result = parseComfyUIErrorMessage(error);
 
-        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
         expect(result.error.message).toBe('Missing required parameter: width');
+      });
+    });
+
+    describe('SDK custom errors', () => {
+      it('should identify CallWrapperError', () => {
+        const error = { name: 'CallWrapperError', message: 'Call wrapper failed' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.error.message).toBe('Call wrapper failed');
+      });
+
+      it('should identify ExecutionInterruptedError', () => {
+        const error = { name: 'ExecutionInterruptedError', message: 'Execution was interrupted' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.error.message).toBe('Execution was interrupted');
+      });
+
+      it('should identify MissingNodeError', () => {
+        const error = { name: 'MissingNodeError', message: 'Missing node in workflow' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.error.message).toBe('Missing node in workflow');
+      });
+
+      it('should identify InvalidModelError', () => {
+        const error = { name: 'InvalidModelError', message: 'Model configuration is invalid' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.error.message).toBe('Model configuration is invalid');
+      });
+
+      it('should identify WorkflowValidationError', () => {
+        const error = { name: 'WorkflowValidationError', message: 'Workflow validation failed' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.error.message).toBe('Workflow validation failed');
+      });
+
+      it('should identify ComfyUIConnectionError', () => {
+        const error = { name: 'ComfyUIConnectionError', message: 'Connection to ComfyUI failed' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.error.message).toBe('Connection to ComfyUI failed');
+      });
+
+      it('should identify ComfyUITimeoutError', () => {
+        const error = { name: 'ComfyUITimeoutError', message: 'ComfyUI operation timed out' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.error.message).toBe('ComfyUI operation timed out');
+      });
+
+      it('should identify ComfyUIRuntimeError', () => {
+        const error = { name: 'ComfyUIRuntimeError', message: 'Runtime error occurred' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.error.message).toBe('Runtime error occurred');
+      });
+
+      it('should identify ComfyUIConfigError', () => {
+        const error = { name: 'ComfyUIConfigError', message: 'Configuration error detected' };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.error.message).toBe('Configuration error detected');
+      });
+
+      it('should identify SDK errors by message patterns', () => {
+        const testCases = [
+          { message: 'SDK error: operation failed', expected: AgentRuntimeErrorType.ComfyUIBizError },
+          { message: 'Call wrapper timeout occurred', expected: AgentRuntimeErrorType.ComfyUIBizError },
+          { message: 'Execution interrupted by user', expected: AgentRuntimeErrorType.ComfyUIBizError },
+          { message: 'Missing node type in workflow', expected: AgentRuntimeErrorType.ComfyUIBizError },
+          { message: 'Invalid model configuration detected', expected: AgentRuntimeErrorType.ComfyUIBizError },
+          { message: 'SDK timeout after 30 seconds', expected: AgentRuntimeErrorType.ComfyUIBizError },
+          { message: 'SDK configuration error in settings', expected: AgentRuntimeErrorType.ComfyUIBizError },
+        ];
+
+        testCases.forEach(({ message, expected }) => {
+          const error = { message };
+          const result = parseComfyUIErrorMessage(error);
+          expect(result.errorType).toBe(expected);
+          expect(result.error.message).toBe(message);
+        });
+      });
+
+      it('should identify errors with SDK-specific names from actual SDK', () => {
+        // Test errors that are NOT in the SDK list should fall back to other categorization
+        class WentMissingError extends Error {
+          constructor(message: string) {
+            super(message);
+            this.name = 'WentMissingError';
+          }
+        }
+        
+        class FailedCacheError extends Error {
+          constructor(message: string) {
+            super(message);
+            this.name = 'FailedCacheError';
+          }
+        }
+        
+        const wentMissingError = new WentMissingError('Resource went missing');
+        Object.defineProperty(wentMissingError, 'name', { value: 'WentMissingError' });
+        const wentMissingResult = parseComfyUIErrorMessage(wentMissingError);
+        // Should fallback to workflow error due to generic error handling
+        expect(wentMissingResult.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+
+        const failedCacheError = new FailedCacheError('Cache operation failed');
+        Object.defineProperty(failedCacheError, 'name', { value: 'FailedCacheError' });
+        const failedCacheResult = parseComfyUIErrorMessage(failedCacheError);
+        // Should fallback to default bizError
+        expect(failedCacheResult.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+      });
+    });
+
+    describe('WebSocket lifecycle errors', () => {
+      it('should identify WebSocket initialization failed', () => {
+        const error = new Error('WebSocket initialization failed');
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('WebSocket initialization failed');
+      });
+
+      it('should identify maximum reconnection attempts exceeded', () => {
+        const error = new Error('Maximum reconnection attempts exceeded');
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('Maximum reconnection attempts exceeded');
+      });
+
+      it('should identify WebSocket is not open or available', () => {
+        const error = new Error('WebSocket is not open or available');
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('WebSocket is not open or available');
+      });
+
+      it('should identify Socket closed reconnecting pattern', () => {
+        // The WebSocket detection looks for "websocket" in the message, but "Socket closed" does not contain it
+        // So this should fall back to general error handling, not WebSocket lifecycle error
+        const error = new Error('Socket closed. Reconnecting in 5 seconds...');
+        const result = parseComfyUIErrorMessage(error);
+
+        // This would be categorized as a general business error since it doesn't match WebSocket patterns
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.error.message).toBe('Socket closed. Reconnecting in 5 seconds...');
+      });
+
+      it('should identify Connection lost to ComfyUI server', () => {
+        const error = new Error('Connection lost to ComfyUI server');
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('Connection lost to ComfyUI server');
+      });
+
+      it('should identify WebSocket connection interrupted', () => {
+        const error = new Error('WebSocket connection interrupted');
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('WebSocket connection interrupted');
+      });
+
+      it('should identify Failed to establish WebSocket connection', () => {
+        const error = new Error('Failed to establish WebSocket connection');
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('Failed to establish WebSocket connection');
+      });
+
+      it('should identify WebSocket connection lost', () => {
+        const error = new Error('WebSocket connection lost');
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('WebSocket connection lost');
+      });
+
+      it('should identify WebSocket handshake failed', () => {
+        const error = new Error('WebSocket handshake failed');
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('WebSocket handshake failed');
+      });
+
+      it('should identify WebSocket timeout', () => {
+        const error = new Error('WebSocket timeout after 30 seconds');
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('WebSocket timeout after 30 seconds');
+      });
+
+      it('should identify WebSocket disconnected', () => {
+        const error = new Error('WebSocket disconnected unexpectedly');
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('WebSocket disconnected unexpectedly');
+      });
+
+      it('should identify WebSocket closed unexpectedly', () => {
+        const error = new Error('WebSocket closed unexpectedly');
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('WebSocket closed unexpectedly');
+      });
+
+      it('should identify WebSocket errors by code', () => {
+        const testCases = [
+          { code: 'WS_CONNECTION_FAILED', message: 'WebSocket connection failed', expected: AgentRuntimeErrorType.ComfyUIServiceUnavailable },
+          { code: 'WS_TIMEOUT', message: 'WebSocket timeout occurred', expected: AgentRuntimeErrorType.ComfyUIServiceUnavailable },
+          { code: 'WS_HANDSHAKE_FAILED', message: 'WebSocket handshake failed', expected: AgentRuntimeErrorType.ComfyUIServiceUnavailable },
+        ];
+
+        testCases.forEach(({ code, message, expected }) => {
+          const error = { message, code };
+          const result = parseComfyUIErrorMessage(error);
+          expect(result.errorType).toBe(expected);
+          expect(result.error.message).toBe(message);
+          expect(result.error.code).toBe(code);
+        });
+      });
+
+      it('should identify ws connection patterns', () => {
+        const error = new Error('ws connection to server failed');
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('ws connection to server failed');
+      });
+
+      it('should identify WebSocket error patterns', () => {
+        const error = new Error('WebSocket error: Connection refused');
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        expect(result.error.message).toBe('WebSocket error: Connection refused');
+      });
+    });
+
+    describe('enhanced workflow errors', () => {
+      it('should identify workflow errors by node_id field', () => {
+        const error = {
+          message: 'Node execution failed',
+          node_id: '5',
+          details: { nodeType: 'KSampler' }
+        };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
+        expect(result.error.message).toBe('Node execution failed');
+        expect(result.error.details?.node_id).toBe('5');
+      });
+
+      it('should identify workflow errors by nodeId field', () => {
+        const error = {
+          message: 'Node processing failed',
+          nodeId: '3',
+          nodeType: 'TextEncode'
+        };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
+        expect(result.error.message).toBe('Node processing failed');
+        expect(result.error.details?.node_id).toBe('3');
+        expect(result.error.details?.node_type).toBe('TextEncode');
+      });
+
+      it('should identify workflow errors by node_type field', () => {
+        const error = {
+          message: 'Invalid node type',
+          node_type: 'UnknownNode'
+        };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
+        expect(result.error.message).toBe('Invalid node type');
+        expect(result.error.details?.node_type).toBe('UnknownNode');
+      });
+
+      it('should identify workflow errors by nodeType field', () => {
+        const error = {
+          message: 'Node type not supported',
+          nodeType: 'CustomNode'
+        };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
+        expect(result.error.message).toBe('Node type not supported');
+        expect(result.error.details?.node_type).toBe('CustomNode');
+      });
+
+      it('should extract exception_message from root level', () => {
+        const error = {
+          message: 'General error occurred',
+          exception_message: 'Detailed exception information'
+        };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.error.message).toBe('Detailed exception information');
+      });
+
+      it('should extract exception_message from nested error', () => {
+        const error = {
+          message: 'General error occurred',
+          error: {
+            exception_message: 'Nested exception details'
+          }
+        };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.error.message).toBe('Nested exception details');
+      });
+
+      it('should handle deeply nested error.error.error', () => {
+        const error = {
+          message: 'Top level message',
+          error: {
+            error: 'Deeply nested error message'
+          }
+        };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.error.message).toBe('Deeply nested error message');
+      });
+
+      it('should handle combined node fields and exception_message', () => {
+        const error = {
+          message: 'General error',
+          node_id: '7',
+          nodeType: 'VAEDecode',
+          exception_message: 'VAE decoding failed: invalid tensor shape'
+        };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
+        expect(result.error.message).toBe('VAE decoding failed: invalid tensor shape');
+        expect(result.error.details?.node_id).toBe('7');
+        expect(result.error.details?.node_type).toBe('VAEDecode');
+      });
+
+      it('should preserve existing details when adding node fields', () => {
+        const error = {
+          message: 'Error in workflow',
+          node_id: '2',
+          node_type: 'CheckpointLoaderSimple',
+          response: {
+            data: {
+              existingField: 'should be preserved',
+              timestamp: '2023-01-01'
+            }
+          }
+        };
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
+        expect(result.error.details?.existingField).toBe('should be preserved');
+        expect(result.error.details?.timestamp).toBe('2023-01-01');
+        expect(result.error.details?.node_id).toBe('2');
+        expect(result.error.details?.node_type).toBe('CheckpointLoaderSimple');
       });
     });
 
@@ -237,7 +615,7 @@ describe('ComfyUIErrorParser', () => {
         };
         const result = parseComfyUIErrorMessage(error);
 
-        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
         expect(result.error.message).toBe('Structured error message');
         expect(result.error.code).toBe('WORKFLOW_ERROR');
         expect(result.error.status).toBe(400);
@@ -334,6 +712,7 @@ describe('ComfyUIErrorParser', () => {
         };
         const result = parseComfyUIErrorMessage(error);
         expect(result.error.status).toBe(503);
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
       });
 
       it('should extract status from error.error.statusCode', () => {
