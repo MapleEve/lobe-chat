@@ -1,6 +1,8 @@
-import { PRESET_ASPECT_RATIOS } from '@lobechat/const/image';
+import { PRESET_ASPECT_RATIOS } from '@lobechat/const';
+
+import { AIImageModelCard } from '@/types/aiModel';
+
 import { ModelParamsSchema } from '../standard-parameters';
-import { AIImageModelCard } from '@lobechat/types/aiModel';
 
 /**
  * Aspect ratios supported by FLUX models
