@@ -82,7 +82,7 @@ function isSDKCustomError(error: any): boolean {
   const errorName = error?.name || error?.constructor?.name || '';
   const sdkErrorTypes = [
     'CallWrapperError',
-    'ExecutionInterruptedError', 
+    'ExecutionInterruptedError',
     'MissingNodeError',
     'InvalidModelError',
     'WorkflowValidationError',
@@ -131,6 +131,7 @@ function isWebSocketLifecycleError(error: any): boolean {
     lowerMessage.includes('websocket error:') ||
     lowerMessage.includes('ws connection') ||
     lowerMessage.includes('websocket closed unexpectedly') ||
+    lowerMessage.includes('connection lost to comfyui server') ||
     error?.code === 'WS_CONNECTION_FAILED' ||
     error?.code === 'WS_TIMEOUT' ||
     error?.code === 'WS_HANDSHAKE_FAILED'
@@ -147,11 +148,9 @@ function isWorkflowError(error: any): boolean {
   const lowerMessage = message.toLowerCase();
 
   // Check for structured workflow error fields
-  if (error && typeof error === 'object') {
-    if (error.node_id || error.nodeId || error.node_type || error.nodeType) {
+  if (error && typeof error === 'object' && (error.node_id || error.nodeId || error.node_type || error.nodeType)) {
       return true;
     }
-  }
 
   return (
     lowerMessage.includes('node') ||
@@ -192,10 +191,23 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
 
   // If error is already a structured ComfyUIError (but not a nested error object)
   if (error && typeof error === 'object' && error.message && !error.error) {
+    // Check if there's an exception_message that should override the message
+    const finalMessage = error.exception_message || error.message;
+    
+    // Handle ComfyUI specific fields in details
+    let details = error.response?.data || error.details;
+    if (error.node_id || error.node_type || error.nodeId || error.nodeType) {
+      details = {
+        ...details,
+        node_id: error.node_id || error.nodeId,
+        node_type: error.node_type || error.nodeType,
+      };
+    }
+    
     return {
       code: error.code,
-      details: error.details,
-      message: cleanComfyUIErrorMessage(error.message),
+      details,
+      message: cleanComfyUIErrorMessage(finalMessage),
       status: error.status || error.statusCode,
       type: error.type,
     };
@@ -204,12 +216,13 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
   // Handle other object types - restore more comprehensive status code extraction
   if (error && typeof error === 'object') {
     // Enhanced message extraction from various possible sources including ComfyUI specific formats
+    // Put exception_message first as it usually contains more detailed information
     const possibleMessage = [
+      error.exception_message, // ComfyUI specific field (highest priority)
+      error.error?.exception_message, // Nested ComfyUI exception message
+      error.error?.error, // Deeply nested error.error.error path
       error.message,
       error.error?.message,
-      error.error?.error, // Add deeply nested error.error.error path
-      error.exception_message, // ComfyUI specific field
-      error.error?.exception_message, // Nested ComfyUI exception message
       error.details, // Restore: original version had this path
       error.data?.message,
       error.body?.message,
@@ -235,8 +248,8 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
     const code = error.code || error.error?.code || error.response?.data?.code;
 
     // Enhanced details extraction including ComfyUI specific fields
-    let details = error.response?.data || error.error || undefined;
-    
+    let details = error.response?.data || error.details || error.error || undefined;
+
     // Include ComfyUI specific fields in details
     if (error.node_id || error.node_type || error.nodeId || error.nodeType) {
       details = {
