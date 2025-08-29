@@ -229,14 +229,6 @@ export class ModelResolverService {
   /**
    * Validate if a model exists
    */
-  /**
-   * Clear model name cache
-   * Note: Component caches are managed by ComfyUIClientService
-   */
-  clearCaches(): void {
-    this.modelCache.clear();
-  }
-
   async validateModel(modelId: string): Promise<ModelValidationResult> {
     try {
       const fileName = await this.resolveModelFileName(modelId);

@@ -266,24 +266,6 @@ describe('ModelResolverService', () => {
       expect(result2).toEqual(['model1.safetensors', 'model2.safetensors']);
       expect(mockClientService.getNodeDefs).toHaveBeenCalledTimes(2); // Called again, caching is in ClientService
     });
-    it('should clear model name cache', async () => {
-      // Use a non-registry model that requires server check
-      const customModel = 'custom_unregistered_model.safetensors';
-      mockClientService.getCheckpoints.mockResolvedValue([customModel]);
-
-      // Populate model cache
-      await service.resolveModelFileName(customModel);
-      expect(mockClientService.getCheckpoints).toHaveBeenCalledTimes(1);
-
-      // Clear caches (only affects model name cache)
-      service.clearCaches();
-
-      // Should call API again after cache clear for model resolution
-      await service.resolveModelFileName(customModel);
-      expect(mockClientService.getCheckpoints).toHaveBeenCalledTimes(2);
-
-      // Note: VAE and component caches are managed by ClientService
-    });
   });
 
   describe('getAvailableVAEFiles edge cases', () => {

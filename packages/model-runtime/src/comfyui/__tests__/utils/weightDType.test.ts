@@ -40,6 +40,10 @@ vi.mock('../../config/modelRegistry', () => {
 
   return {
     MODEL_REGISTRY: models,
+    MODEL_ID_VARIANT_MAP: {
+      'flux-dev': 'flux1-dev',
+      'flux-schnell': 'flux1-schnell',
+    },
     getModelConfig: vi.fn((modelName: string) => {
       const models = {
         'flux1-dev-fp8-e4m3fn.safetensors': {

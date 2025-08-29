@@ -26,7 +26,7 @@ export const WorkflowDetector = {
     // Special handling for custom SD models - hardcoded, not in registry
     if (cleanId === 'stable-diffusion-custom' || cleanId === 'stable-diffusion-custom-refiner') {
       return {
-        architecture: 'SDXL', // Custom SD uses SDXL architecture
+        architecture: 'SDXL', // Custom SD uses SDXL architecture (supports img2img)
         isSupported: true,
         variant: 'custom-sd',
       };

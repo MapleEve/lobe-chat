@@ -177,7 +177,7 @@ describe('WorkflowDetector', () => {
         // Custom SD models are hardcoded and don't use resolveModel
         expect(mockedResolveModel).not.toHaveBeenCalled();
         expect(result).toEqual({
-          architecture: 'SD1',
+          architecture: 'SDXL', // Uses SDXL for img2img support
           isSupported: true,
           variant: 'custom-sd',
         });
@@ -189,7 +189,7 @@ describe('WorkflowDetector', () => {
         // Custom SD models are hardcoded and don't use resolveModel
         expect(mockedResolveModel).not.toHaveBeenCalled();
         expect(result).toEqual({
-          architecture: 'SD1',
+          architecture: 'SDXL', // Uses SDXL for img2img support
           isSupported: true,
           variant: 'custom-sd',
         });
@@ -201,7 +201,7 @@ describe('WorkflowDetector', () => {
         // Custom SD models are hardcoded and don't use resolveModel
         expect(mockedResolveModel).not.toHaveBeenCalled();
         expect(result).toEqual({
-          architecture: 'SD1',
+          architecture: 'SDXL', // Uses SDXL for img2img support
           isSupported: true,
           variant: 'custom-sd',
         });
