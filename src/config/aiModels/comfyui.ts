@@ -49,8 +49,11 @@ export const fluxSchnellParamsSchema: ModelParamsSchema = {
     default: '1:1',
     enum: FLUX_ASPECT_RATIOS,
   },
+  cfg: { default: 1, max: 1, min: 1, step: 0 }, // Schnell uses fixed CFG of 1
   height: { default: 1024, max: 1536, min: 512, step: 8 },
   prompt: { default: '' },
+  samplerName: { default: 'euler' },
+  scheduler: { default: 'simple' },
   seed: { default: null },
   steps: { default: 4, max: 4, min: 1, step: 1 },
   width: { default: 1024, max: 1536, min: 512, step: 8 },
