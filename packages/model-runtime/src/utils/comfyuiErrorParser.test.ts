@@ -301,13 +301,34 @@ describe('ComfyUIErrorParser', () => {
 
       it('should identify SDK errors by message patterns', () => {
         const testCases = [
-          { message: 'SDK error: operation failed', expected: AgentRuntimeErrorType.ComfyUIBizError },
-          { message: 'Call wrapper timeout occurred', expected: AgentRuntimeErrorType.ComfyUIBizError },
-          { message: 'Execution interrupted by user', expected: AgentRuntimeErrorType.ComfyUIBizError },
-          { message: 'Missing node type in workflow', expected: AgentRuntimeErrorType.ComfyUIBizError },
-          { message: 'Invalid model configuration detected', expected: AgentRuntimeErrorType.ComfyUIBizError },
-          { message: 'SDK timeout after 30 seconds', expected: AgentRuntimeErrorType.ComfyUIBizError },
-          { message: 'SDK configuration error in settings', expected: AgentRuntimeErrorType.ComfyUIBizError },
+          {
+            message: 'SDK error: operation failed',
+            expected: AgentRuntimeErrorType.ComfyUIBizError,
+          },
+          {
+            message: 'Call wrapper timeout occurred',
+            expected: AgentRuntimeErrorType.ComfyUIBizError,
+          },
+          {
+            message: 'Execution interrupted by user',
+            expected: AgentRuntimeErrorType.ComfyUIBizError,
+          },
+          {
+            message: 'Missing node type in workflow',
+            expected: AgentRuntimeErrorType.ComfyUIBizError,
+          },
+          {
+            message: 'Invalid model configuration detected',
+            expected: AgentRuntimeErrorType.ComfyUIBizError,
+          },
+          {
+            message: 'SDK timeout after 30 seconds',
+            expected: AgentRuntimeErrorType.ComfyUIBizError,
+          },
+          {
+            message: 'SDK configuration error in settings',
+            expected: AgentRuntimeErrorType.ComfyUIBizError,
+          },
         ];
 
         testCases.forEach(({ message, expected }) => {
@@ -326,14 +347,14 @@ describe('ComfyUIErrorParser', () => {
             this.name = 'WentMissingError';
           }
         }
-        
+
         class FailedCacheError extends Error {
           constructor(message: string) {
             super(message);
             this.name = 'FailedCacheError';
           }
         }
-        
+
         const wentMissingError = new WentMissingError('Resource went missing');
         Object.defineProperty(wentMissingError, 'name', { value: 'WentMissingError' });
         const wentMissingResult = parseComfyUIErrorMessage(wentMissingError);
@@ -450,9 +471,21 @@ describe('ComfyUIErrorParser', () => {
 
       it('should identify WebSocket errors by code', () => {
         const testCases = [
-          { code: 'WS_CONNECTION_FAILED', message: 'WebSocket connection failed', expected: AgentRuntimeErrorType.ComfyUIServiceUnavailable },
-          { code: 'WS_TIMEOUT', message: 'WebSocket timeout occurred', expected: AgentRuntimeErrorType.ComfyUIServiceUnavailable },
-          { code: 'WS_HANDSHAKE_FAILED', message: 'WebSocket handshake failed', expected: AgentRuntimeErrorType.ComfyUIServiceUnavailable },
+          {
+            code: 'WS_CONNECTION_FAILED',
+            message: 'WebSocket connection failed',
+            expected: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
+          },
+          {
+            code: 'WS_TIMEOUT',
+            message: 'WebSocket timeout occurred',
+            expected: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
+          },
+          {
+            code: 'WS_HANDSHAKE_FAILED',
+            message: 'WebSocket handshake failed',
+            expected: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
+          },
         ];
 
         testCases.forEach(({ code, message, expected }) => {
@@ -486,7 +519,7 @@ describe('ComfyUIErrorParser', () => {
         const error = {
           message: 'Node execution failed',
           node_id: '5',
-          details: { nodeType: 'KSampler' }
+          details: { nodeType: 'KSampler' },
         };
         const result = parseComfyUIErrorMessage(error);
 
@@ -499,7 +532,7 @@ describe('ComfyUIErrorParser', () => {
         const error = {
           message: 'Node processing failed',
           nodeId: '3',
-          nodeType: 'TextEncode'
+          nodeType: 'TextEncode',
         };
         const result = parseComfyUIErrorMessage(error);
 
@@ -512,7 +545,7 @@ describe('ComfyUIErrorParser', () => {
       it('should identify workflow errors by node_type field', () => {
         const error = {
           message: 'Invalid node type',
-          node_type: 'UnknownNode'
+          node_type: 'UnknownNode',
         };
         const result = parseComfyUIErrorMessage(error);
 
@@ -524,7 +557,7 @@ describe('ComfyUIErrorParser', () => {
       it('should identify workflow errors by nodeType field', () => {
         const error = {
           message: 'Node type not supported',
-          nodeType: 'CustomNode'
+          nodeType: 'CustomNode',
         };
         const result = parseComfyUIErrorMessage(error);
 
@@ -536,7 +569,7 @@ describe('ComfyUIErrorParser', () => {
       it('should extract exception_message from root level', () => {
         const error = {
           message: 'General error occurred',
-          exception_message: 'Detailed exception information'
+          exception_message: 'Detailed exception information',
         };
         const result = parseComfyUIErrorMessage(error);
 
@@ -547,8 +580,8 @@ describe('ComfyUIErrorParser', () => {
         const error = {
           message: 'General error occurred',
           error: {
-            exception_message: 'Nested exception details'
-          }
+            exception_message: 'Nested exception details',
+          },
         };
         const result = parseComfyUIErrorMessage(error);
 
@@ -559,8 +592,8 @@ describe('ComfyUIErrorParser', () => {
         const error = {
           message: 'Top level message',
           error: {
-            error: 'Deeply nested error message'
-          }
+            error: 'Deeply nested error message',
+          },
         };
         const result = parseComfyUIErrorMessage(error);
 
@@ -572,7 +605,7 @@ describe('ComfyUIErrorParser', () => {
           message: 'General error',
           node_id: '7',
           nodeType: 'VAEDecode',
-          exception_message: 'VAE decoding failed: invalid tensor shape'
+          exception_message: 'VAE decoding failed: invalid tensor shape',
         };
         const result = parseComfyUIErrorMessage(error);
 
@@ -590,9 +623,9 @@ describe('ComfyUIErrorParser', () => {
           response: {
             data: {
               existingField: 'should be preserved',
-              timestamp: '2023-01-01'
-            }
-          }
+              timestamp: '2023-01-01',
+            },
+          },
         };
         const result = parseComfyUIErrorMessage(error);
 
@@ -746,6 +779,157 @@ describe('ComfyUIErrorParser', () => {
         };
         const result = parseComfyUIErrorMessage(error);
         expect(result.error.code).toBeUndefined();
+      });
+    });
+
+    describe('deep object property access branches - coverage improvement', () => {
+      it('should handle error with constructor but no name property', () => {
+        const error = Object.create(null);
+        error.constructor = {}; // constructor exists but has no name
+        error.message = 'SDK error: test';
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        expect(result.error.message).toBe('SDK error: test');
+      });
+
+      it('should extract message from error.data.message', () => {
+        const error = {
+          data: { message: 'Data layer message' },
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.message).toBe('Data layer message');
+      });
+
+      it('should extract message from error.body.message', () => {
+        const error = {
+          body: { message: 'Body layer message' },
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.message).toBe('Body layer message');
+      });
+
+      it('should extract message from error.response.text', () => {
+        const error = {
+          response: { text: 'Raw response text error' },
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.message).toBe('Raw response text error');
+      });
+
+      it('should extract message from error.response.body', () => {
+        const error = {
+          response: { body: 'Raw response body error' },
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.message).toBe('Raw response body error');
+      });
+
+      it('should extract message from error.statusText', () => {
+        const error = {
+          statusText: 'Internal Server Error',
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.message).toBe('Internal Server Error');
+      });
+
+      it('should handle error.response.data.message fallback', () => {
+        // Test that error.response.data.message is used when no higher priority message exists
+        const error = {
+          response: {
+            data: {
+              message: 'Response data message only',
+            },
+          },
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.message).toBe('Response data message only');
+        expect(result.error.details).toEqual({
+          message: 'Response data message only',
+        });
+      });
+
+      it('should handle generic object with node_id and node_type in other object branch', () => {
+        // This specifically tests lines 254-260 in the generic object branch
+        const error = {
+          node_id: 'node_123',
+          node_type: 'LoadImageNode',
+          message: 'Node execution failed',
+          // Ensure we're not in structured error branch
+          unknownField: 'force generic object path',
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.details).toEqual({
+          node_id: 'node_123',
+          node_type: 'LoadImageNode',
+        });
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
+      });
+
+      it('should handle generic object with nodeId and nodeType fields', () => {
+        // Test alternative field names in generic object branch
+        const error = {
+          nodeId: 'node_456',
+          nodeType: 'CLIPTextEncodeNode',
+          message: 'Text encoding failed',
+          randomField: 'ensure generic path',
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.details).toEqual({
+          node_id: 'node_456',
+          node_type: 'CLIPTextEncodeNode',
+        });
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
+      });
+
+      it('should merge node fields with existing details from response.data', () => {
+        const error = {
+          response: {
+            data: {
+              existingData: 'preserved',
+              workflow_id: 'wf_123',
+            },
+          },
+          node_id: 'node_789',
+          node_type: 'SamplerNode',
+          message: 'Sampling failed',
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.details).toEqual({
+          existingData: 'preserved',
+          workflow_id: 'wf_123',
+          node_id: 'node_789',
+          node_type: 'SamplerNode',
+        });
+      });
+
+      it('should handle node fields when details is from error.error', () => {
+        const error = {
+          error: {
+            someError: 'data',
+          },
+          nodeId: 'mixed_node',
+          message: 'Mixed error scenario',
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.details).toEqual({
+          someError: 'data',
+          node_id: 'mixed_node',
+          node_type: undefined,
+        });
+      });
+
+      it('should handle only node_type without node_id', () => {
+        const error = {
+          node_type: 'VAEDecode',
+          message: 'VAE decoding failed',
+          extraField: 'test',
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.details).toEqual({
+          node_id: undefined,
+          node_type: 'VAEDecode',
+        });
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
       });
     });
   });
