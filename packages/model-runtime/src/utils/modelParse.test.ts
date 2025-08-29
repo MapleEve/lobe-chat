@@ -98,7 +98,7 @@ const mockDefaultModelList: (Partial<ChatModelCard> & { id: string })[] = [
 ];
 
 // Mock the import
-vi.mock('@/config/aiModels', () => ({
+vi.mock('model-bank', () => ({
   LOBE_DEFAULT_MODEL_LIST: mockDefaultModelList,
 }));
 
@@ -403,7 +403,7 @@ describe('modelParse', () => {
           reasoning: true,
         },
       };
-      const mockModule = await import('@/config/aiModels');
+      const mockModule = await import('model-bank');
       mockModule.LOBE_DEFAULT_MODEL_LIST.push(tempMockEntry as any);
 
       const modelList = [{ id: modelId }];
@@ -490,7 +490,7 @@ describe('modelParse', () => {
           contextWindowTokens: 5000,
         };
 
-        const mockModule = await import('@/config/aiModels');
+        const mockModule = await import('model-bank');
         mockModule.LOBE_DEFAULT_MODEL_LIST.push(tempModelEntry as any);
 
         const config = MODEL_LIST_CONFIGS.openai;
@@ -715,7 +715,7 @@ describe('modelParse', () => {
           reasoning: true,
         },
       };
-      const mockModule = await import('@/config/aiModels');
+      const mockModule = await import('model-bank');
       mockModule.LOBE_DEFAULT_MODEL_LIST.push(tempMockEntry as any);
 
       const modelList = [{ id: modelId }];
@@ -744,7 +744,7 @@ describe('modelParse', () => {
           reasoning: false,
         },
       };
-      const mockModule = await import('@/config/aiModels');
+      const mockModule = await import('model-bank');
       mockModule.LOBE_DEFAULT_MODEL_LIST.push(tempMockEntry as any);
 
       const modelList = [{ id: modelId }];
