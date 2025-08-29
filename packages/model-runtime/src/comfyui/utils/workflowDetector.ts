@@ -26,7 +26,7 @@ export const WorkflowDetector = {
     // Special handling for custom SD models - hardcoded, not in registry
     if (cleanId === 'stable-diffusion-custom' || cleanId === 'stable-diffusion-custom-refiner') {
       return {
-        architecture: 'SD1', // Custom SD uses SD1-like architecture
+        architecture: 'SDXL', // Custom SD uses SDXL architecture
         isSupported: true,
         variant: 'custom-sd',
       };
@@ -36,8 +36,6 @@ export const WorkflowDetector = {
     const config = resolveModel(cleanId);
 
     if (config) {
-      // Return the detection result with the actual variant from config
-      // No type casting needed - just pass through the variant
       return {
         architecture:
           config.modelFamily === 'FLUX'
