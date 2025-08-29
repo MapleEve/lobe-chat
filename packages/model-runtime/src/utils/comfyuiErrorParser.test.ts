@@ -848,6 +848,26 @@ describe('ComfyUIErrorParser', () => {
         });
       });
 
+      it('should extract message from error.response.data.error.message - deepest path', () => {
+        // This covers line 230: error.response?.data?.error?.message
+        const error = {
+          response: {
+            data: {
+              error: {
+                message: 'Deeply nested response error message',
+              },
+            },
+          },
+        };
+        const result = parseComfyUIErrorMessage(error);
+        expect(result.error.message).toBe('Deeply nested response error message');
+        expect(result.error.details).toEqual({
+          error: {
+            message: 'Deeply nested response error message',
+          },
+        });
+      });
+
       it('should handle generic object with node_id and node_type in other object branch', () => {
         // This specifically tests lines 254-260 in the generic object branch
         const error = {
