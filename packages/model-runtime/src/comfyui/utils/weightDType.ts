@@ -1,4 +1,4 @@
-import { resolveModel } from './modelNameResolver';
+import { resolveModel } from './staticModelLookup';
 
 /**
  * FLUX 模型权重类型选择工具 / FLUX Model Weight Dtype Selection Tool

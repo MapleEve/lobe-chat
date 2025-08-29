@@ -1,11 +1,11 @@
 import { type Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { ModelConfig } from '../../config/modelRegistry';
-import { resolveModel } from '../../utils/modelNameResolver';
+import { resolveModel } from '../../utils/staticModelLookup';
 import { type SD3Variant, WorkflowDetector } from '../../utils/workflowDetector';
 
-// Mock the modelNameResolver module
-vi.mock('../../utils/modelNameResolver', () => ({
+// Mock the staticModelLookup module
+vi.mock('../../utils/staticModelLookup', () => ({
   resolveModel: vi.fn(),
 }));
 

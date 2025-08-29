@@ -6,7 +6,7 @@
  */
 import debug from 'debug';
 
-import { MODEL_REGISTRY } from '../config/modelRegistry';
+import { MODEL_ID_VARIANT_MAP, MODEL_REGISTRY } from '../config/modelRegistry';
 import { SYSTEM_COMPONENTS } from '../config/systemComponents';
 import { COMPONENT_NODE_MAPPINGS, CUSTOM_SD_CONFIG, SUPPORTED_MODEL_FORMATS } from '../constants';
 import { ModelResolverError } from '../errors/modelResolverError';
@@ -44,9 +44,9 @@ export interface ModelValidationResult {
  */
 export class ModelResolverService {
   private clientService: ComfyUIClientService;
-  private modelCache: Map<string, { timestamp: number, value: string; }> = new Map();
-  private vaeCache: { timestamp: number, value: string[]; } | null = null;
-  private componentCache: Map<string, { timestamp: number, value: string[]; }> = new Map();
+  private modelCache: Map<string, { timestamp: number; value: string }> = new Map();
+  private vaeCache: { timestamp: number; value: string[] } | null = null;
+  private componentCache: Map<string, { timestamp: number; value: string[] }> = new Map();
   private readonly CACHE_TTL = 60 * 1000; // 1 minute
 
   constructor(clientService: ComfyUIClientService) {
@@ -92,14 +92,35 @@ export class ModelResolverService {
       return fixedFileName;
     }
 
-    // 1. Direct registry lookup (filename is the registry key)
+    // 1. Try model ID mapping first
+    log('Checking MODEL_ID_VARIANT_MAP for:', cleanId);
+    const mappedVariant = MODEL_ID_VARIANT_MAP[cleanId];
+    log('Mapped variant result:', mappedVariant);
+
+    if (mappedVariant) {
+      log('Found model ID mapping:', cleanId, '->', mappedVariant);
+
+      // Find first model with this variant
+      for (const [filename, modelConfig] of Object.entries(MODEL_REGISTRY)) {
+        if (modelConfig.variant === mappedVariant) {
+          log('Found by mapped variant:', filename);
+          this.modelCache.set(modelId, { timestamp: now, value: filename });
+          return filename;
+        }
+      }
+      log('No registry entry found with variant:', mappedVariant);
+    } else {
+      log('No mapping found for cleanId:', cleanId);
+    }
+
+    // 2. Direct registry lookup (filename is the registry key)
     if (MODEL_REGISTRY[cleanId]) {
       this.modelCache.set(modelId, { timestamp: now, value: cleanId });
       log('Found in registry:', cleanId);
       return cleanId;
     }
 
-    // 2. If it's already a model file format, check if it exists on server
+    // 3. If it's already a model file format, check if it exists on server
     if (isModelFile(cleanId)) {
       const serverModels = await this.getAvailableModelFiles();
       if (serverModels.includes(cleanId)) {
@@ -110,7 +131,7 @@ export class ModelResolverService {
       // Don't throw error yet, try other methods
     }
 
-    // 3. Not found - return undefined
+    // 4. Not found - return undefined
     return undefined;
   }
 
@@ -128,7 +149,7 @@ export class ModelResolverService {
   async getAvailableVAEFiles(): Promise<string[]> {
     // Use cache if available and not expired
     const now = Date.now();
-    if (this.vaeCache && (now - this.vaeCache.timestamp < this.CACHE_TTL)) {
+    if (this.vaeCache && now - this.vaeCache.timestamp < this.CACHE_TTL) {
       return this.vaeCache.value;
     }
 

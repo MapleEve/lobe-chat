@@ -1,7 +1,7 @@
 /**
  * Simple Workflow Detector
  */
-import { resolveModel } from './modelNameResolver';
+import { resolveModel } from './staticModelLookup';
 
 export interface WorkflowDetectionResult {
   architecture: 'FLUX' | 'SD3' | 'SD1' | 'SDXL' | 'unknown';
