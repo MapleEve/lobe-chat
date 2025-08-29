@@ -137,11 +137,13 @@ export async function buildFluxSchnellWorkflow(
   workflow['6'].inputs.cfg = params.cfg; // KSampler needs cfg
   workflow['6'].inputs.steps = params.steps; // KSampler needs steps
   workflow['6'].inputs.seed = params.seed ?? generateUniqueSeeds(1)[0]; // KSampler needs seed
+  workflow['6'].inputs.scheduler = params.scheduler; // KSampler needs scheduler
+  workflow['6'].inputs.sampler_name = params.samplerName; // KSampler needs sampler_name
 
   // Create PromptBuilder - removed prompt input parameters as they are set directly
   const builder = new PromptBuilder(
     workflow,
-    ['width', 'height', 'steps', 'cfg', 'seed'],
+    ['width', 'height', 'steps', 'cfg', 'seed', 'scheduler', 'sampler_name'],
     ['images'],
   );
 
