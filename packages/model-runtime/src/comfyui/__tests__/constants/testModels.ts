@@ -6,17 +6,17 @@
 // Real FLUX models from registry
 export const TEST_FLUX_MODELS = {
   DEV: 'flux1-dev.safetensors',
-  SCHNELL: 'flux1-schnell.safetensors',
   KONTEXT: 'flux1-kontext-dev.safetensors',
   KREA: 'flux1-krea-dev.safetensors',
+  SCHNELL: 'flux1-schnell.safetensors',
 } as const;
 
 // Real SD3.5 models from registry
 export const TEST_SD35_MODELS = {
   LARGE: 'sd3.5_large.safetensors',
+  LARGE_FP8: 'sd3.5_large_fp8_scaled.safetensors',
   LARGE_TURBO: 'sd3.5_large_turbo.safetensors',
   MEDIUM: 'sd3.5_medium.safetensors',
-  LARGE_FP8: 'sd3.5_large_fp8_scaled.safetensors',
 } as const;
 
 // Real SDXL models from registry
@@ -44,18 +44,20 @@ export const TEST_COMPONENTS = {
 
 // Common test model sets for different scenarios
 export const TEST_MODEL_SETS = {
+  
+  // Models that don't exist (for error testing)
+NON_EXISTENT: [
+    'nonexistent-model.safetensors',
+    'unknown-model.safetensors',
+    'fake-model.safetensors',
+  ],
+  
   // Models that should exist in registry
-  REGISTERED: [
+REGISTERED: [
     TEST_FLUX_MODELS.DEV,
     TEST_FLUX_MODELS.SCHNELL,
     TEST_SD35_MODELS.LARGE,
     TEST_SDXL_MODELS.BASE,
-  ],
-  // Models that don't exist (for error testing)
-  NON_EXISTENT: [
-    'nonexistent-model.safetensors',
-    'unknown-model.safetensors',
-    'fake-model.safetensors',
   ],
 } as const;
 

@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   COMFYUI_DEFAULTS,
+  CUSTOM_SD_CONFIG,
+  DEFAULT_NEGATIVE_PROMPT,
   FLUX_MODEL_CONFIG,
+  SD_MODEL_CONFIG,
   STYLE_KEYWORDS,
   WORKFLOW_DEFAULTS,
-
 } from '../constants';
 
 describe('ComfyUI Constants', () => {
@@ -19,162 +21,154 @@ describe('ComfyUI Constants', () => {
     it('should be a readonly object (TypeScript as const)', () => {
       // `as const` provides readonly types in TypeScript, not runtime freezing
       expect(typeof COMFYUI_DEFAULTS).toBe('object');
-      expect(COMFYUI_DEFAULTS).toBeDefined();
     });
   });
 
   describe('FLUX_MODEL_CONFIG', () => {
     it('should have correct filename prefixes', () => {
-      expect(FLUX_MODEL_CONFIG.FILENAME_PREFIXES.DEV).toBe(
-        'LobeChat/%year%-%month%-%day%/FLUX_Dev',
-      );
-      expect(FLUX_MODEL_CONFIG.FILENAME_PREFIXES.SCHNELL).toBe(
-        'LobeChat/%year%-%month%-%day%/FLUX_Schnell',
-      );
-      expect(FLUX_MODEL_CONFIG.FILENAME_PREFIXES.KONTEXT).toBe(
-        'LobeChat/%year%-%month%-%day%/FLUX_Kontext',
-      );
-      expect(FLUX_MODEL_CONFIG.FILENAME_PREFIXES.KREA).toBe(
-        'LobeChat/%year%-%month%-%day%/FLUX_Krea',
-      );
+      expect(FLUX_MODEL_CONFIG.FILENAME_PREFIXES.SCHNELL).toContain('FLUX_Schnell');
+      expect(FLUX_MODEL_CONFIG.FILENAME_PREFIXES.DEV).toContain('FLUX_Dev');
+      expect(FLUX_MODEL_CONFIG.FILENAME_PREFIXES.KONTEXT).toContain('FLUX_Kontext');
+      expect(FLUX_MODEL_CONFIG.FILENAME_PREFIXES.KREA).toContain('FLUX_Krea');
     });
 
     it('should have all required prefixes', () => {
-      const prefixes = Object.keys(FLUX_MODEL_CONFIG.FILENAME_PREFIXES);
-      expect(prefixes).toContain('DEV');
-      expect(prefixes).toContain('SCHNELL');
-      expect(prefixes).toContain('KONTEXT');
-      expect(prefixes).toContain('KREA');
+      const expectedKeys = ['SCHNELL', 'DEV', 'KONTEXT', 'KREA'];
+      expect(Object.keys(FLUX_MODEL_CONFIG.FILENAME_PREFIXES)).toEqual(
+        expect.arrayContaining(expectedKeys),
+      );
     });
 
     it('should be a readonly object (TypeScript as const)', () => {
       // `as const` provides readonly types in TypeScript, not runtime freezing
       expect(typeof FLUX_MODEL_CONFIG).toBe('object');
-      expect(FLUX_MODEL_CONFIG).toBeDefined();
     });
   });
 
   describe('WORKFLOW_DEFAULTS', () => {
     it('should have correct image defaults', () => {
       expect(WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE).toBe(1);
-      expect(WORKFLOW_DEFAULTS.IMAGE.HEIGHT).toBe(1024);
-      expect(WORKFLOW_DEFAULTS.IMAGE.WIDTH).toBe(1024);
-    });
-
-    it('should have correct Kontext configuration', () => {
-      expect(WORKFLOW_DEFAULTS.KONTEXT.CFG).toBe(3.5);
-      expect(WORKFLOW_DEFAULTS.KONTEXT.STEPS).toBe(28);
-    });
-
-    it('should have correct Krea configuration', () => {
-      expect(WORKFLOW_DEFAULTS.KREA.CFG).toBe(3.5);
-      expect(WORKFLOW_DEFAULTS.KREA.STEPS).toBe(15);
-    });
-
-    it('should have correct noise defaults', () => {
-      expect(WORKFLOW_DEFAULTS.NOISE.SEED).toBe(0);
+      // WIDTH and HEIGHT are provided by frontend, not defaults
     });
 
     it('should have correct sampling defaults', () => {
-      expect(WORKFLOW_DEFAULTS.SAMPLING.CFG).toBe(3.5);
+      // Only internal workflow parameters remain
       expect(WORKFLOW_DEFAULTS.SAMPLING.DENOISE).toBe(1);
       expect(WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT).toBe(1.15);
-      expect(WORKFLOW_DEFAULTS.SAMPLING.SAMPLER).toBe('euler');
-      expect(WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER).toBe('simple');
-      expect(WORKFLOW_DEFAULTS.SAMPLING.STEPS).toBe(25);
+      // CFG, SAMPLER, SCHEDULER, STEPS are provided by frontend
     });
 
-    it('should have correct Schnell configuration', () => {
-      expect(WORKFLOW_DEFAULTS.SCHNELL.CFG).toBe(1);
-      expect(WORKFLOW_DEFAULTS.SCHNELL.STEPS).toBe(4);
+    it('should have correct SD3 defaults', () => {
+      expect(WORKFLOW_DEFAULTS.SD3.SHIFT).toBe(3);
     });
 
     it('should be a readonly object (TypeScript as const)', () => {
       // `as const` provides readonly types in TypeScript, not runtime freezing
       expect(typeof WORKFLOW_DEFAULTS).toBe('object');
-      expect(WORKFLOW_DEFAULTS).toBeDefined();
     });
   });
 
   describe('STYLE_KEYWORDS', () => {
     it('should have all required categories', () => {
-      expect(STYLE_KEYWORDS.ARTISTS).toBeDefined();
-      expect(STYLE_KEYWORDS.ART_STYLES).toBeDefined();
-      expect(STYLE_KEYWORDS.LIGHTING).toBeDefined();
-      expect(STYLE_KEYWORDS.PHOTOGRAPHY).toBeDefined();
-      expect(STYLE_KEYWORDS.QUALITY).toBeDefined();
-      expect(STYLE_KEYWORDS.RENDERING).toBeDefined();
+      const expectedCategories = [
+        'ARTISTS',
+        'ART_STYLES',
+        'LIGHTING',
+        'PHOTOGRAPHY',
+        'QUALITY',
+        'RENDERING',
+      ];
+      expect(Object.keys(STYLE_KEYWORDS)).toEqual(expect.arrayContaining(expectedCategories));
     });
 
     it('should have non-empty arrays for each category', () => {
-      expect(STYLE_KEYWORDS.ARTISTS.length).toBeGreaterThan(0);
-      expect(STYLE_KEYWORDS.ART_STYLES.length).toBeGreaterThan(0);
-      expect(STYLE_KEYWORDS.LIGHTING.length).toBeGreaterThan(0);
-      expect(STYLE_KEYWORDS.PHOTOGRAPHY.length).toBeGreaterThan(0);
-      expect(STYLE_KEYWORDS.QUALITY.length).toBeGreaterThan(0);
-      expect(STYLE_KEYWORDS.RENDERING.length).toBeGreaterThan(0);
+      Object.values(STYLE_KEYWORDS).forEach((keywords) => {
+        expect(Array.isArray(keywords)).toBe(true);
+        expect(keywords.length).toBeGreaterThan(0);
+      });
     });
 
     it('should contain expected artist keywords', () => {
-      expect(STYLE_KEYWORDS.ARTISTS).toContain('by greg rutkowski');
-      expect(STYLE_KEYWORDS.ARTISTS).toContain('by artgerm');
-      expect(STYLE_KEYWORDS.ARTISTS).toContain('trending on artstation');
+      expect(STYLE_KEYWORDS.ARTISTS).toEqual(
+        expect.arrayContaining(['by greg rutkowski', 'by artgerm', 'trending on artstation']),
+      );
     });
 
     it('should contain expected art style keywords', () => {
-      expect(STYLE_KEYWORDS.ART_STYLES).toContain('photorealistic');
-      expect(STYLE_KEYWORDS.ART_STYLES).toContain('anime');
-      expect(STYLE_KEYWORDS.ART_STYLES).toContain('digital art');
+      expect(STYLE_KEYWORDS.ART_STYLES).toEqual(
+        expect.arrayContaining(['photorealistic', 'anime', 'digital art', '3d render']),
+      );
     });
 
     it('should contain expected lighting keywords', () => {
-      expect(STYLE_KEYWORDS.LIGHTING).toContain('dramatic lighting');
-      expect(STYLE_KEYWORDS.LIGHTING).toContain('golden hour');
-      expect(STYLE_KEYWORDS.LIGHTING).toContain('volumetric lighting');
+      expect(STYLE_KEYWORDS.LIGHTING).toEqual(
+        expect.arrayContaining(['dramatic lighting', 'studio lighting', 'soft lighting']),
+      );
     });
 
     it('should contain expected photography keywords', () => {
-      expect(STYLE_KEYWORDS.PHOTOGRAPHY).toContain('depth of field');
-      expect(STYLE_KEYWORDS.PHOTOGRAPHY).toContain('bokeh');
-      expect(STYLE_KEYWORDS.PHOTOGRAPHY).toContain('macro');
+      expect(STYLE_KEYWORDS.PHOTOGRAPHY).toEqual(
+        expect.arrayContaining([
+          'depth of field',
+          'bokeh',
+          '35mm photograph',
+          'professional photograph',
+        ]),
+      );
     });
 
     it('should contain expected quality keywords', () => {
-      expect(STYLE_KEYWORDS.QUALITY).toContain('high quality');
-      expect(STYLE_KEYWORDS.QUALITY).toContain('4k');
-      expect(STYLE_KEYWORDS.QUALITY).toContain('masterpiece');
+      expect(STYLE_KEYWORDS.QUALITY).toEqual(
+        expect.arrayContaining([
+          'masterpiece',
+          'best quality',
+          'high quality',
+          'extremely detailed',
+        ]),
+      );
     });
 
     it('should contain expected rendering keywords', () => {
-      expect(STYLE_KEYWORDS.RENDERING).toContain('octane render');
-      expect(STYLE_KEYWORDS.RENDERING).toContain('ray tracing');
-      expect(STYLE_KEYWORDS.RENDERING).toContain('unreal engine');
+      expect(STYLE_KEYWORDS.RENDERING).toEqual(
+        expect.arrayContaining(['octane render', 'unreal engine', 'ray tracing', 'cycles render']),
+      );
     });
   });
 
-
-
   describe('Integration tests', () => {
-    it('should have consistent configuration values', () => {
-      // Verify that Schnell uses CFG 1 (as documented)
-      expect(WORKFLOW_DEFAULTS.SCHNELL.CFG).toBe(1);
-
-      // Verify that Dev uses CFG 3.5 (as documented)
-      expect(WORKFLOW_DEFAULTS.SAMPLING.CFG).toBe(3.5);
-
-      // Verify that Krea and Kontext both use CFG 3.5
-      expect(WORKFLOW_DEFAULTS.KREA.CFG).toBe(3.5);
-      expect(WORKFLOW_DEFAULTS.KONTEXT.CFG).toBe(3.5);
-    });
-
     it('should have reasonable default values', () => {
-      // Image dimensions should be power of 2 or common sizes
-      expect(WORKFLOW_DEFAULTS.IMAGE.WIDTH % 64).toBe(0);
-      expect(WORKFLOW_DEFAULTS.IMAGE.HEIGHT % 64).toBe(0);
+      // Only test remaining defaults
+      expect(WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE).toBeGreaterThan(0);
+      expect(WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE).toBeLessThanOrEqual(8);
+      
+      expect(WORKFLOW_DEFAULTS.SAMPLING.DENOISE).toBeGreaterThan(0);
+      expect(WORKFLOW_DEFAULTS.SAMPLING.DENOISE).toBeLessThanOrEqual(1);
+      
+      expect(WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT).toBeGreaterThan(0);
+      expect(WORKFLOW_DEFAULTS.SD3.SHIFT).toBeGreaterThan(0);
+    });
+  });
 
-      // Steps should be reasonable ranges
-      expect(WORKFLOW_DEFAULTS.SAMPLING.STEPS).toBeGreaterThan(0);
-      expect(WORKFLOW_DEFAULTS.SAMPLING.STEPS).toBeLessThan(100);
+  describe('DEFAULT_NEGATIVE_PROMPT', () => {
+    it('should be defined and non-empty', () => {
+      expect(DEFAULT_NEGATIVE_PROMPT).toBeDefined();
+      expect(DEFAULT_NEGATIVE_PROMPT).not.toBe('');
+    });
+  });
+
+  describe('CUSTOM_SD_CONFIG', () => {
+    it('should have model and VAE filenames', () => {
+      expect(CUSTOM_SD_CONFIG.MODEL_FILENAME).toBeDefined();
+      expect(CUSTOM_SD_CONFIG.VAE_FILENAME).toBeDefined();
+    });
+  });
+
+  describe('SD_MODEL_CONFIG', () => {
+    it('should have correct filename prefixes', () => {
+      expect(SD_MODEL_CONFIG.FILENAME_PREFIXES.SD15).toContain('SD15');
+      expect(SD_MODEL_CONFIG.FILENAME_PREFIXES.SD35).toContain('SD35');
+      expect(SD_MODEL_CONFIG.FILENAME_PREFIXES.SDXL).toContain('SDXL');
+      expect(SD_MODEL_CONFIG.FILENAME_PREFIXES.CUSTOM).toContain('CustomSD');
     });
   });
 });

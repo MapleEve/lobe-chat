@@ -14,7 +14,7 @@ export const COMFYUI_DEFAULTS = {
 } as const;
 
 /**
- * FLUX model configuration (simplified) / FLUX 模型配置（简化版）
+ * FLUX model configuration / FLUX 模型配置
  * Removed over-engineered dynamic T5 selection, maintain simple fixed configuration / 移除过度工程化的动态T5选择，保持简单固定配置
  */
 export const FLUX_MODEL_CONFIG = {
@@ -27,68 +27,42 @@ export const FLUX_MODEL_CONFIG = {
 } as const;
 
 /**
+ * SD model configuration
+ * Fixed model and filename prefixes for SD models
+ */
+export const SD_MODEL_CONFIG = {
+  FILENAME_PREFIXES: {
+    CUSTOM: 'LobeChat/%year%-%month%-%day%/CustomSD',
+    SD15: 'LobeChat/%year%-%month%-%day%/SD15',
+    SD35: 'LobeChat/%year%-%month%-%day%/SD35',
+    SDXL: 'LobeChat/%year%-%month%-%day%/SDXL',
+  },
+} as const;
+
+/**
  * Default workflow node parameters / 工作流节点默认参数
  * Based on 2024 community best practices configuration / 基于 2024 年社区最佳实践配置
  */
 
+/**
+ * Essential workflow defaults for internal use only
+ * These are hardcoded values used by workflow internals, not user-configurable parameters
+ */
 export const WORKFLOW_DEFAULTS = {
+  // Image dimensions and batch settings
   IMAGE: {
-    BATCH_SIZE: 1,
-    HEIGHT: 1024,
-    WIDTH: 1024,
-  },
-  // FLUX Kontext specific configuration - image editing model / FLUX Kontext 特定配置 - 图像编辑模型
-  KONTEXT: {
-    CFG: 3.5, // Use guidance distillation, can use lower CFG / 使用 guidance distillation，可用较低 CFG
-    STEPS: 28, // Image editing requires more steps to ensure quality / 图像编辑需要更多步数确保质量
+    BATCH_SIZE: 1,  // workflow internal use
   },
 
-  // FLUX Krea specific configuration - photographic aesthetics optimization / FLUX Krea 特定配置 - 摄影美学优化
-  KREA: {
-    CFG: 3.5, // Photographic realism uses 3.5 or lower / 摄影真实感使用 3.5 或更低
-    STEPS: 15, // Fast high-quality generation, 15 steps sufficient / 快速高质量生成，15 步足够
-  },
-
-  NOISE: {
-    SEED: 0, // Use 0 as default, will be overridden by SDK's seed() function when needed
-  },
-
+  // Internal noise and sampling settings
   SAMPLING: {
-    // FLUX Dev: CFG 3.5 for Distilled CFG, regular CFG should be set to 1 / FLUX Dev: CFG 3.5 用于 Distilled CFG，常规 CFG 应设为 1
-    // More natural effects can use CFG 2, but 3.5 provides stronger prompt adherence / 更自然的效果可使用 CFG 2，但 3.5 提供更强的提示词遵循
-    CFG: 3.5,
-    DENOISE: 1,
-    MAX_SHIFT: 1.15,
-    SAMPLER: 'euler',
-    SCHEDULER: 'simple',
-    // FLUX Dev optimal steps range 20-30, 25 steps optimize faces, 30 steps refine clothing/hands / FLUX Dev 最佳步数范围 20-30，25 步优化面部，30 步完善服装/手部
-    STEPS: 25,
+    DENOISE: 1,      // t2i mode internal use
+    MAX_SHIFT: 1.15, // FLUX internal parameter
   },
 
-  // FLUX Schnell specific configuration / FLUX Schnell 特定配置
-  SCHNELL: {
-    CFG: 1, // Schnell should use CFG 1 / Schnell 应使用 CFG 1
-    STEPS: 4, // Schnell recommended 1-4 steps, 4 steps optimal / Schnell 推荐 1-4 步，4 步最佳
-  },
-
-  // SD family defaults / SD 系列默认值
-  SD: {
-    DENOISE: {
-      I2I: 0.75, // Image-to-image denoising strength
-      T2I: 1, // Text-to-image always 1.0
-    },
-    SAMPLER: 'euler',
-    SCHEDULER: {
-      SD1: 'normal',
-      SD3: 'sgm_uniform',
-      SDXL: 'normal',
-    },
-  },
-
-  // SD3.5 specific configuration / SD3.5 特定配置
-  SD35: {
-    CFG: 4.5, // Optimal CFG scale for SD3.5 model balance between prompt adherence and quality / SD3.5 模型最佳 CFG 比例，平衡提示词遵循度和质量
-    STEPS: 28, // Recommended steps for SD3.5 to achieve high quality results / SD3.5 推荐步数以获得高质量结果
+  // SD3.5 specific internal settings
+  SD3: {
+    SHIFT: 3,        // SD3.5 ModelSamplingSD3 internal parameter
   },
 } as const;
 
@@ -151,6 +125,8 @@ export const STYLE_KEYWORDS = {
     'landscape',
     'close-up',
     'dof',
+    '35mm photograph',
+    'professional photograph',
   ],
 
   // Quality descriptions / 质量描述
@@ -166,6 +142,7 @@ export const STYLE_KEYWORDS = {
     'sharp focus',
     'detailed',
     'intricate',
+    'extremely detailed',
   ],
 
   // Rendering and effects / 渲染和效果
@@ -173,6 +150,7 @@ export const STYLE_KEYWORDS = {
     'octane render',
     'unreal engine',
     'ray tracing',
+    'cycles render',
     'global illumination',
     'subsurface scattering',
     'bloom',
