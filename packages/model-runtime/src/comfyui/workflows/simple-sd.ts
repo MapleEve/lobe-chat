@@ -12,10 +12,10 @@
  */
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { generateUniqueSeeds } from '../../../../utils/src/number';
+import { generateUniqueSeeds } from '@/utils/number';
 import { type ModelConfig, getModelConfig } from '../config/modelRegistry';
-import { type ComponentConfig, getAllComponentsWithNames } from '../config/systemComponents';
-import { DEFAULT_NEGATIVE_PROMPT, WORKFLOW_DEFAULTS } from '../constants';
+import { CUSTOM_SD_CONFIG, DEFAULT_NEGATIVE_PROMPT, WORKFLOW_DEFAULTS } from '../constants';
+import { getWorkflowFilenamePrefix } from '../config/workflowRegistry';
 import type { WorkflowContext } from '../services/workflowBuilder';
 
 /**
@@ -23,19 +23,13 @@ import type { WorkflowContext } from '../services/workflowBuilder';
  */
 export interface SimpleSDParams extends Record<string, any> {
   cfg?: number; // Guidance scale for generation
-  customVAE?: string; // Custom VAE override
   denoise?: number; // Denoising strength for i2i mode (0.0 - 1.0, default: 0.75)
   height?: number; // Image height
   imageUrl?: string; // Frontend parameter: Input image URL for i2i mode
   imageUrls?: string[]; // Alternative: Array of image URLs (uses first one)
   inputImage?: string; // Internal parameter: Input image URL/path for i2i mode
-  isCustomSD?: boolean; // Legacy flag for custom SD models
-  mode?: 't2i' | 'i2i'; // Generation mode: text-to-image or image-to-image
-  negativePrompt?: string; // Negative prompt text
-
   prompt?: string; // Text prompt for generation
-  sampler?: string; // Sampling algorithm (default: 'euler')
-  samplerName?: string; // Alternative name for sampler (backward compatibility)
+  samplerName?: string; // Sampling algorithm (default: 'euler')
   scheduler?: string; // Noise scheduler (default: varies by model type)
   seed?: number; // Random seed for generation
   steps?: number; // Number of denoising steps
@@ -44,9 +38,15 @@ export interface SimpleSDParams extends Record<string, any> {
 }
 
 /**
- * Determine if a model should use external VAE
- * SD3.5 variants (sd35, custom-sd) should not use external VAE
- * SD1.5 and SDXL variants should use external VAE if available
+ * @param modelConfig - Model configuration from registry
+ * @returns Whether to attach external VAE
+ */
+/**
+ * Determine if external VAE should be attached based on model configuration
+ *
+ * - SD3 family models (sd35-inclclip) have built-in VAE - don't attach external
+ * - SD1/SDXL models need external VAE - should attach if available
+ * - Custom SD models are handled separately with their own VAE logic
  *
  * @param modelConfig - Model configuration from registry
  * @returns Whether to attach external VAE
@@ -54,55 +54,15 @@ export interface SimpleSDParams extends Record<string, any> {
 function shouldAttachVAE(modelConfig: ModelConfig | null): boolean {
   if (!modelConfig) return false;
 
-  // SD3.5 models with external encoders should not use external VAE
-  if (modelConfig.variant === 'sd35') {
-    return false;
-  }
-
-  // SD3.5 models with built-in encoders (inclclip) should not use external VAE
-  // Check by model family SD3 which indicates SD3.5 architecture
+  // SD3 family models (including sd35-inclclip) have built-in VAE
   if (modelConfig.modelFamily === 'SD3') {
     return false;
   }
 
-  // SD1.5 and SDXL variants should use external VAE if available
-  if (modelConfig.modelFamily === 'SD1' || modelConfig.modelFamily === 'SDXL') {
-    return true;
-  }
-
-  // Default: don't use external VAE for other models
-  return false;
+  // SD1 and SDXL models need external VAE
+  return modelConfig.modelFamily === 'SD1' || modelConfig.modelFamily === 'SDXL';
 }
 
-/**
- * Get optimal VAE for a model based on its family
- *
- * @param modelConfig - Model configuration from registry
- * @returns VAE filename or undefined if none found
- */
-function getOptimalVAEForModel(modelConfig: ModelConfig | null): string | undefined {
-  if (!modelConfig) return undefined;
-
-  try {
-    // Find VAEs for the model family
-    const availableVAEs = getAllComponentsWithNames({
-      modelFamily: modelConfig.modelFamily as ComponentConfig['modelFamily'],
-      type: 'vae',
-    });
-
-    if (availableVAEs.length === 0) {
-      return undefined;
-    }
-
-    // Sort by priority (lower number = higher priority)
-    const sortedVAEs = availableVAEs.sort((a, b) => a.config.priority - b.config.priority);
-
-    return sortedVAEs[0].name;
-  } catch {
-    // If there's an error getting VAE, fall back to built-in VAE
-    return undefined;
-  }
-}
 
 /**
  * Build Simple SD workflow for models with CheckpointLoaderSimple compatibility
@@ -118,80 +78,35 @@ export async function buildSimpleSDWorkflow(
   params: SimpleSDParams,
   context: WorkflowContext,
 ): Promise<PromptBuilder<any, any, any>> {
-  // Map frontend parameters to workflow parameters
-  // Frontend sends imageUrl and strength, we need inputImage and denoise
-  const mappedParams = {
-    ...params,
-    denoise: params.strength ?? params.denoise,
-    inputImage: params.imageUrl || params.imageUrls?.[0] || params.inputImage,
-  };
-
-  const {
-    prompt,
-    width,
-    height,
-    steps,
-    seed,
-    cfg,
-    mode,
-    inputImage,
-    denoise,
-    samplerName,
-    sampler,
-    scheduler,
-    negativePrompt,
-    isCustomSD,
-    customVAE,
-  } = mappedParams;
-
-  const actualSeed = seed ?? generateUniqueSeeds(1)[0];
-
-  // Determine if we're in image-to-image mode
-  // Auto-detect mode based on presence of input image if mode not specified
-  const detectedMode = mode || (inputImage ? 'i2i' : 't2i');
-  const isI2IMode = detectedMode === 'i2i' && Boolean(inputImage);
+  // Determine if we're in image-to-image mode based on presence of input image
+  const isI2IMode = Boolean(params.imageUrl || params.imageUrls?.[0]);
 
   // Get model configuration to determine VAE handling and default parameters
   const modelConfig = getModelConfig(modelFileName) || null;
 
-  // Set defaults based on model family
-  const defaultSamplerName = WORKFLOW_DEFAULTS.SD.SAMPLER;
-  const defaultScheduler =
-    modelConfig?.modelFamily === 'SD3'
-      ? WORKFLOW_DEFAULTS.SD.SCHEDULER.SD3
-      : WORKFLOW_DEFAULTS.SD.SCHEDULER.SD1; // SD1 and SDXL use same scheduler
-
-  const finalSamplerName = samplerName ?? sampler ?? defaultSamplerName;
-  const finalScheduler = scheduler ?? defaultScheduler;
-  const finalNegativePrompt = negativePrompt ?? DEFAULT_NEGATIVE_PROMPT;
-
-  // Get optimal VAE
+  // Get optimal VAE - business logic in workflow layer
   let selectedVAE: string | undefined;
 
-  // Custom SD models: use fixed VAE filename from modelResolverService
-  // The service will check if the fixed VAE file exists and return it
-  if (isCustomSD && context?.modelResolverService) {
-    selectedVAE = await context.modelResolverService.selectVAE({
-      customVAE: customVAE, // Still allow override if needed
-      isCustomSD: true,
-      modelFileName,
-    });
-  }
-  // Non-custom models: auto-detect VAE based on model family
-  else if (shouldAttachVAE(modelConfig)) {
-    // Use the static system components approach from original implementation
-    selectedVAE = getOptimalVAEForModel(modelConfig);
+  // Determine if this is a custom SD model by checking the filename
+  const isCustomSD = modelFileName === CUSTOM_SD_CONFIG.MODEL_FILENAME;
 
-    // If static approach didn't find VAE, try service layer as fallback
-    if (!selectedVAE && context?.modelResolverService) {
-      selectedVAE = await context.modelResolverService.selectVAE({
-        customVAE: undefined,
-        isCustomSD: false,
-        modelFileName,
-      });
+  // VAE selection logic:
+  // 1. Custom SD models: Try to use the configured custom VAE file if it exists
+  //    If not available, fall back to built-in VAE (selectedVAE remains undefined)
+  if (isCustomSD && context?.modelResolverService) {
+    const fixedVAEFileName = CUSTOM_SD_CONFIG.VAE_FILENAME;
+    const serverVAEs = await context.modelResolverService.getAvailableVAEFiles();
+
+    if (serverVAEs.includes(fixedVAEFileName)) {
+      selectedVAE = fixedVAEFileName;
     }
+    // If custom VAE not found, use built-in VAE (selectedVAE remains undefined)
   }
-  // SD3 models or when no VAE found: use built-in VAE (selectedVAE remains undefined)
+  // 2. Non-custom models: Try to find optimal VAE based on model family
+  else if (shouldAttachVAE(modelConfig) && context?.modelResolverService) {
+    selectedVAE = await context.modelResolverService.getOptimalComponent('vae', modelConfig!.modelFamily);
+  }
+  // If no VAE found or it's SD3, use built-in VAE (selectedVAE remains undefined)
 
   // Base workflow for models with built-in CLIP/T5 encoders
   /* eslint-disable sort-keys-fix/sort-keys-fix */
@@ -208,7 +123,7 @@ export async function buildSimpleSDWorkflow(
       class_type: 'CLIPTextEncode',
       inputs: {
         clip: ['1', 1], // Use checkpoint's built-in CLIP
-        text: prompt || '',
+        text: params.prompt,
       },
     },
     '3': {
@@ -216,34 +131,32 @@ export async function buildSimpleSDWorkflow(
       class_type: 'CLIPTextEncode',
       inputs: {
         clip: ['1', 1], // Use checkpoint's built-in CLIP
-        text: finalNegativePrompt,
+        text: DEFAULT_NEGATIVE_PROMPT,
       },
     },
     '4': {
       _meta: { title: 'Empty Latent' },
       class_type: 'EmptyLatentImage',
       inputs: {
-        batch_size: 1,
-        height: height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
-        width: width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH,
+        batch_size: WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE,
+        height: params.height,
+        width: params.width,
       },
     },
     '5': {
       _meta: { title: 'KSampler' },
       class_type: 'KSampler',
       inputs: {
-        cfg: cfg ?? WORKFLOW_DEFAULTS.SAMPLING.CFG,
-        denoise:
-          denoise ??
-          (isI2IMode ? WORKFLOW_DEFAULTS.SD.DENOISE.I2I : WORKFLOW_DEFAULTS.SD.DENOISE.T2I),
+        cfg: params.cfg,
+        denoise: isI2IMode ? params.strength : WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
         latent_image: isI2IMode ? ['IMG_ENCODE', 0] : ['4', 0], // Dynamic connection based on mode
         model: ['1', 0],
         negative: ['3', 0],
         positive: ['2', 0],
-        sampler_name: finalSamplerName,
-        scheduler: finalScheduler,
-        seed: actualSeed,
-        steps: steps ?? WORKFLOW_DEFAULTS.SAMPLING.STEPS,
+        sampler_name: params.samplerName,
+        scheduler: params.scheduler,
+        seed: params.seed ?? generateUniqueSeeds(1)[0],
+        steps: params.steps,
       },
     },
     '6': {
@@ -258,7 +171,7 @@ export async function buildSimpleSDWorkflow(
       _meta: { title: 'Save Image' },
       class_type: 'SaveImage',
       inputs: {
-        filename_prefix: 'SimpleSD',
+        filename_prefix: getWorkflowFilenamePrefix('buildSimpleSDWorkflow', context.variant),
         images: ['6', 0],
       },
     },
@@ -283,7 +196,7 @@ export async function buildSimpleSDWorkflow(
       _meta: { title: 'Load Input Image' },
       class_type: 'LoadImage',
       inputs: {
-        image: inputImage || '',
+        image: params.imageUrl || params.imageUrls?.[0] || '',
       },
     };
 
@@ -337,19 +250,19 @@ export async function buildSimpleSDWorkflow(
 
   // Set input values
   builder
-    .input('prompt', prompt || '')
-    .input('width', width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH)
-    .input('height', height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT)
-    .input('steps', steps ?? WORKFLOW_DEFAULTS.SAMPLING.STEPS)
-    .input('seed', actualSeed)
-    .input('cfg', cfg ?? WORKFLOW_DEFAULTS.SAMPLING.CFG)
-    .input('samplerName', finalSamplerName)
-    .input('scheduler', finalScheduler);
+    .input('prompt', params.prompt)
+    .input('width', params.width)
+    .input('height', params.height)
+    .input('steps', params.steps)
+    .input('seed', params.seed ?? generateUniqueSeeds(1)[0])
+    .input('cfg', params.cfg)
+    .input('samplerName', params.samplerName)
+    .input('scheduler', params.scheduler);
 
   // Add i2i-specific input values
   if (isI2IMode) {
-    builder.input('inputImage', inputImage);
-    builder.input('denoise', denoise ?? WORKFLOW_DEFAULTS.SD.DENOISE.I2I);
+    builder.input('inputImage', params.imageUrl || params.imageUrls?.[0]);
+    builder.input('denoise', params.strength);
   }
 
   return builder;

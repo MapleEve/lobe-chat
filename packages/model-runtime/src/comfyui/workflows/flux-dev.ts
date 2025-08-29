@@ -1,21 +1,21 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { generateUniqueSeeds } from '../../../../utils/src/number';
-import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
+import { generateUniqueSeeds } from '@/utils/number';
+import { WORKFLOW_DEFAULTS } from '../constants';
+import { getWorkflowFilenamePrefix } from '../config/workflowRegistry';
 import type { WorkflowContext } from '../services/workflowBuilder';
 import { splitPromptForDualCLIP } from '../utils/promptSplitter';
 import { selectOptimalWeightDtype } from '../utils/weightDType';
 
 /**
- * FLUX Dev 工作流构建器 / FLUX Dev Workflow Builder
+ * FLUX Dev Workflow Builder
  *
- * @description 构建20步高质量生成工作流，使用FluxGuidance和SamplerCustomAdvanced
- * Builds 20-step high-quality generation workflow with FluxGuidance and SamplerCustomAdvanced
+ * @description Builds 20-step high-quality generation workflow with FluxGuidance and SamplerCustomAdvanced
  *
- * @param {string} modelFileName - 模型文件名 / Model filename
- * @param {Record<string, any>} params - 生成参数 / Generation parameters
- * @param {WorkflowContext} context - 工作流上下文 / Workflow context
- * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow
+ * @param {string} modelFileName - Model filename
+ * @param {Record<string, any>} params - Generation parameters
+ * @param {WorkflowContext} context - Workflow context
+ * @returns {PromptBuilder<any, any, any>} Built workflow
  */
 export async function buildFluxDevWorkflow(
   modelFileName: string,
@@ -27,8 +27,8 @@ export async function buildFluxDevWorkflow(
   const selectedVAE = await context.modelResolverService.getOptimalComponent('vae', 'FLUX');
   const selectedCLIP = await context.modelResolverService.getOptimalComponent('clip', 'FLUX');
 
-  // 处理prompt分离 - 在工作流构建早期进行
-  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
+  // Process prompt splitting early in workflow construction
+  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt);
 
   /* eslint-disable sort-keys-fix/sort-keys-fix */
   const workflow = {
@@ -72,7 +72,7 @@ export async function buildFluxDevWorkflow(
       },
       class_type: 'SaveImage',
       inputs: {
-        filename_prefix: FLUX_MODEL_CONFIG.FILENAME_PREFIXES.DEV,
+        filename_prefix: getWorkflowFilenamePrefix('buildFluxDevWorkflow', context.variant),
         images: ['11', 0],
       },
     },
@@ -82,7 +82,7 @@ export async function buildFluxDevWorkflow(
       },
       class_type: 'RandomNoise',
       inputs: {
-        noise_seed: WORKFLOW_DEFAULTS.NOISE.SEED,
+        noise_seed: 0,
       },
     },
     '14': {
@@ -121,10 +121,10 @@ export async function buildFluxDevWorkflow(
       class_type: 'ModelSamplingFlux',
       inputs: {
         base_shift: 0.5, // Required parameter for FLUX models
-        height: WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
+        height: params.height,
         max_shift: WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT,
         model: ['2', 0],
-        width: WORKFLOW_DEFAULTS.IMAGE.WIDTH,
+        width: params.width,
       },
     },
     '5': {
@@ -135,7 +135,7 @@ export async function buildFluxDevWorkflow(
       inputs: {
         clip: ['1', 0],
         clip_l: '',
-        guidance: WORKFLOW_DEFAULTS.SAMPLING.CFG,
+        guidance: params.cfg,
         t5xxl: '',
       },
     },
@@ -145,9 +145,9 @@ export async function buildFluxDevWorkflow(
       },
       class_type: 'FluxGuidance',
       inputs: {
-        // FluxGuidance需要conditioning输入，接收CLIPTextEncodeFlux输出
+        // FluxGuidance requires conditioning input from CLIPTextEncodeFlux output
         conditioning: ['5', 0],
-        guidance: WORKFLOW_DEFAULTS.SAMPLING.CFG,
+        guidance: params.cfg,
       },
     },
     '7': {
@@ -157,8 +157,8 @@ export async function buildFluxDevWorkflow(
       class_type: 'EmptySD3LatentImage',
       inputs: {
         batch_size: WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE,
-        height: WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
-        width: WORKFLOW_DEFAULTS.IMAGE.WIDTH,
+        height: params.height,
+        width: params.width,
       },
     },
     '8': {
@@ -167,7 +167,7 @@ export async function buildFluxDevWorkflow(
       },
       class_type: 'KSamplerSelect',
       inputs: {
-        sampler_name: WORKFLOW_DEFAULTS.SAMPLING.SAMPLER,
+        sampler_name: params.samplerName,
       },
     },
     '9': {
@@ -178,50 +178,40 @@ export async function buildFluxDevWorkflow(
       inputs: {
         denoise: WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
         model: ['4', 0],
-        scheduler: WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER,
-        steps: WORKFLOW_DEFAULTS.SAMPLING.STEPS,
+        scheduler: params.scheduler,
+        steps: params.steps,
       },
     },
   };
 
   /* eslint-enable sort-keys-fix/sort-keys-fix */
 
-  // 直接设置prompt值到工作流节点，而不依赖PromptBuilder的输入映射
   workflow['5'].inputs.clip_l = clipLPrompt;
   workflow['5'].inputs.t5xxl = t5xxlPrompt;
 
-  // Apply input values to workflow
-  const width = params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH;
-  const height = params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT;
-  const cfg = params.cfg ?? WORKFLOW_DEFAULTS.SAMPLING.CFG;
-  const steps = params.steps ?? WORKFLOW_DEFAULTS.SAMPLING.STEPS;
-  const seed = params.seed ?? generateUniqueSeeds(1)[0];
-  const samplerName = params.samplerName ?? WORKFLOW_DEFAULTS.SAMPLING.SAMPLER;
-  const scheduler = params.scheduler ?? WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER;
+  // Set shared values directly to avoid conflicts - use params directly without intermediate variables
+  workflow['4'].inputs.width = params.width; // ModelSamplingFlux needs width/height
+  workflow['4'].inputs.height = params.height;
+  workflow['5'].inputs.guidance = params.cfg; // CLIPTextEncodeFlux needs guidance
+  workflow['7'].inputs.width = params.width; // EmptySD3LatentImage needs width/height
+  workflow['7'].inputs.height = params.height;
+  workflow['6'].inputs.guidance = params.cfg; // FluxGuidance needs guidance
+  workflow['8'].inputs.sampler_name = params.samplerName; // KSamplerSelect needs sampler_name
+  workflow['9'].inputs.steps = params.steps; // BasicScheduler needs steps
+  workflow['9'].inputs.scheduler = params.scheduler; // BasicScheduler needs scheduler
+  workflow['13'].inputs.noise_seed = params.seed ?? generateUniqueSeeds(1)[0]; // RandomNoise needs seed
 
-  // Set shared values directly to avoid conflicts
-  workflow['4'].inputs.width = width; // ModelSamplingFlux needs width/height
-  workflow['4'].inputs.height = height;
-  workflow['5'].inputs.guidance = cfg; // CLIPTextEncodeFlux needs guidance
-  workflow['7'].inputs.width = width; // EmptySD3LatentImage needs width/height
-  workflow['7'].inputs.height = height;
-  workflow['6'].inputs.guidance = cfg; // FluxGuidance needs guidance
-  workflow['8'].inputs.sampler_name = samplerName; // KSamplerSelect needs sampler_name
-  workflow['9'].inputs.steps = steps; // BasicScheduler needs steps
-  workflow['9'].inputs.scheduler = scheduler; // BasicScheduler needs scheduler
-  workflow['13'].inputs.noise_seed = seed; // RandomNoise needs seed
-
-  // 创建 PromptBuilder
+  // Create PromptBuilder
   const builder = new PromptBuilder(
     workflow,
-    ['width', 'height', 'steps', 'cfg', 'seed', 'samplerName', 'scheduler'], // 添加新的参数
+    ['width', 'height', 'steps', 'cfg', 'seed', 'samplerName', 'scheduler'],
     ['images'],
   );
 
-  // 设置输出节点
+  // Set output node
   builder.setOutputNode('images', '12');
 
-  // 设置输入节点映射
+  // Set input node mappings
   builder.setInputNode('seed', '13.inputs.noise_seed');
   builder.setInputNode('width', '7.inputs.width');
   builder.setInputNode('height', '7.inputs.height');
@@ -230,15 +220,15 @@ export async function buildFluxDevWorkflow(
   builder.setInputNode('samplerName', '8.inputs.sampler_name');
   builder.setInputNode('scheduler', '9.inputs.scheduler');
 
-  // 设置输入值（不包括prompt，已直接设置到工作流）
+  // Set input values (prompt already set directly in workflow)
   builder
-    .input('width', width)
-    .input('height', height)
-    .input('steps', steps)
-    .input('cfg', cfg)
-    .input('seed', seed)
-    .input('samplerName', samplerName)
-    .input('scheduler', scheduler);
+    .input('width', params.width)
+    .input('height', params.height)
+    .input('steps', params.steps)
+    .input('cfg', params.cfg)
+    .input('seed', params.seed ?? generateUniqueSeeds(1)[0])
+    .input('samplerName', params.samplerName)
+    .input('scheduler', params.scheduler);
 
   return builder;
 }

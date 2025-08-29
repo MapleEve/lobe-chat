@@ -1,21 +1,21 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { generateUniqueSeeds } from '../../../../utils/src/number';
-import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
+import { generateUniqueSeeds } from '@/utils/number';
+import {  WORKFLOW_DEFAULTS } from '../constants';
+import { getWorkflowFilenamePrefix } from '../config/workflowRegistry';
 import type { WorkflowContext } from '../services/workflowBuilder';
 import { splitPromptForDualCLIP } from '../utils/promptSplitter';
 import { selectOptimalWeightDtype } from '../utils/weightDType';
 
 /**
- * FLUX Kontext 工作流构建器 / FLUX Kontext Workflow Builder
+ * FLUX Kontext Workflow Builder
  *
- * @description 构建28步图像编辑生成工作流，支持文生图和图生图
- * Builds 28-step image editing workflow supporting text-to-image and image-to-image
+ * @description Builds 28-step image editing workflow supporting text-to-image and image-to-image
  *
- * @param {string} modelFileName - 模型文件名 / Model filename
- * @param {Record<string, any>} params - 生成参数 / Generation parameters
- * @param {WorkflowContext} context - 工作流上下文 / Workflow context
- * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow
+ * @param {string} modelFileName - Model filename
+ * @param {Record<string, any>} params - Generation parameters
+ * @param {WorkflowContext} context - Workflow context
+ * @returns {PromptBuilder<any, any, any>} Built workflow
  */
 export async function buildFluxKontextWorkflow(
   modelFileName: string,
@@ -27,7 +27,7 @@ export async function buildFluxKontextWorkflow(
   const selectedVAE = await context.modelResolverService.getOptimalComponent('vae', 'FLUX');
   const selectedCLIP = await context.modelResolverService.getOptimalComponent('clip', 'FLUX');
 
-  // 检查是否有输入图像
+  // Check if there's an input image
   const hasInputImage = Boolean(params.imageUrl || params.imageUrls?.[0]);
 
   /* eslint-disable sort-keys-fix/sort-keys-fix */
@@ -69,10 +69,10 @@ export async function buildFluxKontextWorkflow(
       class_type: 'ModelSamplingFlux',
       inputs: {
         base_shift: 0.5, // Required parameter for FLUX models
-        height: WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
+        height: params.height,
         max_shift: WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT,
         model: ['2', 0],
-        width: WORKFLOW_DEFAULTS.IMAGE.WIDTH,
+        width: params.width,
       },
     },
     '5': {
@@ -83,7 +83,7 @@ export async function buildFluxKontextWorkflow(
       inputs: {
         clip: ['1', 0],
         clip_l: '',
-        guidance: WORKFLOW_DEFAULTS.KONTEXT.CFG,
+        guidance: params.cfg,
         t5xxl: '',
       },
     },
@@ -93,9 +93,9 @@ export async function buildFluxKontextWorkflow(
       },
       class_type: 'FluxGuidance',
       inputs: {
-        // FluxGuidance需要conditioning输入，接收CLIPTextEncodeFlux输出
+        // FluxGuidance requires conditioning input from CLIPTextEncodeFlux output
         conditioning: ['5', 0],
-        guidance: WORKFLOW_DEFAULTS.KONTEXT.CFG,
+        guidance: params.cfg,
       },
     },
     '8': {
@@ -104,7 +104,7 @@ export async function buildFluxKontextWorkflow(
       },
       class_type: 'KSamplerSelect',
       inputs: {
-        sampler_name: 'dpmpp_2m', // 图生图用普通DPM++（无SDE）
+        sampler_name: 'dpmpp_2m', // Use regular DPM++ (no SDE) for i2i
       },
     },
     '9': {
@@ -113,10 +113,10 @@ export async function buildFluxKontextWorkflow(
       },
       class_type: 'BasicScheduler',
       inputs: {
-        denoise: hasInputImage ? (params.denoise ?? 0.75) : WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
+        denoise: params.strength,
         model: ['4', 0],
         scheduler: 'karras',
-        steps: WORKFLOW_DEFAULTS.KONTEXT.STEPS,
+        steps: params.steps,
       },
     },
     '10': {
@@ -126,7 +126,7 @@ export async function buildFluxKontextWorkflow(
       class_type: 'SamplerCustomAdvanced',
       inputs: {
         guider: ['14', 0], // ✅ BasicGuider provides GUIDER type (handles model/conditioning)
-        latent_image: hasInputImage ? ['img_encode', 0] : ['7', 0], // 根据是否有输入图像选择latent来源
+        latent_image: hasInputImage ? ['img_encode', 0] : ['7', 0], // Choose latent source based on input image presence
         noise: ['13', 0], // Random noise for initialization
         sampler: ['8', 0], // Sampling algorithm
         sigmas: ['9', 0], // Noise schedule from BasicScheduler
@@ -148,7 +148,7 @@ export async function buildFluxKontextWorkflow(
       },
       class_type: 'SaveImage',
       inputs: {
-        filename_prefix: FLUX_MODEL_CONFIG.FILENAME_PREFIXES.KONTEXT,
+        filename_prefix: getWorkflowFilenamePrefix('buildFluxKontextWorkflow', context.variant),
         images: ['11', 0],
       },
     },
@@ -158,7 +158,7 @@ export async function buildFluxKontextWorkflow(
       },
       class_type: 'RandomNoise',
       inputs: {
-        noise_seed: WORKFLOW_DEFAULTS.NOISE.SEED,
+        noise_seed: params.seed ?? generateUniqueSeeds(1)[0],
       },
     },
     '14': {
@@ -174,7 +174,7 @@ export async function buildFluxKontextWorkflow(
   };
   /* eslint-enable sort-keys-fix/sort-keys-fix */
 
-  // 如果有输入图像，添加图像加载和编码节点
+  // If there's an input image, add image loading and encoding nodes
   if (hasInputImage) {
     workflow['img_load'] = {
       _meta: {
@@ -182,7 +182,7 @@ export async function buildFluxKontextWorkflow(
       },
       class_type: 'LoadImage',
       inputs: {
-        image: params.imageUrl || params.imageUrls?.[0] || '', // 直接设置图像URL
+        image: params.imageUrl || params.imageUrls?.[0] || '', // Set image URL directly
       },
     };
 
@@ -197,7 +197,7 @@ export async function buildFluxKontextWorkflow(
       },
     };
   } else {
-    // 文生图模式，添加空白latent
+    // Text-to-image mode, add empty latent
     workflow['7'] = {
       _meta: {
         title: 'Empty SD3 Latent Image',
@@ -205,55 +205,49 @@ export async function buildFluxKontextWorkflow(
       class_type: 'EmptySD3LatentImage',
       inputs: {
         batch_size: WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE,
-        height: WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
-        width: WORKFLOW_DEFAULTS.IMAGE.WIDTH,
+        height: params.height,
+        width: params.width,
       },
     };
   }
 
-  // 处理prompt分离 - 在工作流构建早期进行
-  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
+  // Process prompt splitting early in workflow construction
+  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt);
 
-  // 直接设置prompt值到工作流节点，而不依赖PromptBuilder的输入映射
+  // Set prompt values directly to workflow nodes instead of using PromptBuilder input mapping
   workflow['5'].inputs.clip_l = clipLPrompt;
   workflow['5'].inputs.t5xxl = t5xxlPrompt;
 
-  // Apply input values to workflow
-  const width = params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH;
-  const height = params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT;
-  const cfg = params.cfg ?? WORKFLOW_DEFAULTS.KONTEXT.CFG;
-  const seed = params.seed ?? generateUniqueSeeds(1)[0];
-
-  // Manually set values for nodes that need the same parameters (since setInputNode can only map one-to-one)
-  workflow['5'].inputs.guidance = cfg; // CLIPTextEncodeFlux needs guidance
-  workflow['6'].inputs.guidance = cfg; // FluxGuidance needs guidance
-  workflow['9'].inputs.steps = params.steps ?? WORKFLOW_DEFAULTS.KONTEXT.STEPS; // BasicScheduler needs steps
-  workflow['13'].inputs.noise_seed = seed; // RandomNoise needs seed
+  // Apply input values to workflow - directly set parameters without intermediate variables
+  workflow['5'].inputs.guidance = params.cfg; // CLIPTextEncodeFlux needs guidance
+  workflow['6'].inputs.guidance = params.cfg; // FluxGuidance needs guidance
+  workflow['9'].inputs.steps = params.steps; // BasicScheduler needs steps
+  workflow['13'].inputs.noise_seed = params.seed ?? generateUniqueSeeds(1)[0]; // RandomNoise needs seed
 
   if (!hasInputImage) {
     // Text-to-image mode: ModelSamplingFlux needs width/height (EmptySD3LatentImage will get it via setInputNode)
-    workflow['4'].inputs.width = width;
-    workflow['4'].inputs.height = height;
-    workflow['7'].inputs.width = width;
-    workflow['7'].inputs.height = height;
+    workflow['4'].inputs.width = params.width;
+    workflow['4'].inputs.height = params.height;
+    workflow['7'].inputs.width = params.width;
+    workflow['7'].inputs.height = params.height;
   } else {
     // Image-to-image mode: ModelSamplingFlux still needs width/height for proper sampling
-    workflow['4'].inputs.width = width;
-    workflow['4'].inputs.height = height;
+    workflow['4'].inputs.width = params.width;
+    workflow['4'].inputs.height = params.height;
   }
 
-  // 创建 PromptBuilder - 移除prompt相关的输入参数，因为已直接设置
-  const inputParams = ['width', 'height', 'steps', 'cfg', 'seed']; // 移除 'prompt_clip_l', 'prompt_t5xxl'
+  // Create PromptBuilder - removed prompt input parameters as they are set directly
+  const inputParams = ['width', 'height', 'steps', 'cfg', 'seed']; // Removed 'prompt_clip_l', 'prompt_t5xxl'
   if (hasInputImage) {
     inputParams.push('imageUrl', 'denoise');
   }
 
   const builder = new PromptBuilder(workflow, inputParams, ['images']);
 
-  // 设置输出节点
+  // Set output node
   builder.setOutputNode('images', '12');
 
-  // 保留其他参数的输入映射（不包括prompt相关）
+  // Keep input mappings for other parameters (excluding prompt-related)
   builder.setInputNode('seed', '13.inputs.noise_seed');
   builder.setInputNode('steps', '9.inputs.steps');
   builder.setInputNode('cfg', '6.inputs.guidance');
@@ -269,30 +263,30 @@ export async function buildFluxKontextWorkflow(
     builder.setInputNode('height', '4.inputs.height');
   }
 
-  // 图生图模式下的额外映射
+  // Additional mappings for image-to-image mode
   if (hasInputImage) {
     builder.setInputNode('imageUrl', 'img_load.inputs.image');
     builder.setInputNode('denoise', '9.inputs.denoise');
   } else {
-    // 文生图模式下仍然需要denoise映射，但会使用默认值
+    // Text-to-image mode still needs denoise mapping but will use default value
     builder.setInputNode('denoise', '9.inputs.denoise');
   }
 
-  // 设置输入值（不包括prompt，已直接设置到工作流）
+  // Set input values (excluding prompt, already set directly in workflow)
   builder
-    .input('width', width)
-    .input('height', height)
-    .input('steps', params.steps ?? WORKFLOW_DEFAULTS.KONTEXT.STEPS)
-    .input('cfg', cfg)
-    .input('seed', seed);
+    .input('width', params.width)
+    .input('height', params.height)
+    .input('steps', params.steps)
+    .input('cfg', params.cfg)
+    .input('seed', params.seed ?? generateUniqueSeeds(1)[0]);
 
   if (hasInputImage) {
     builder
       .input('imageUrl', params.imageUrl || params.imageUrls?.[0] || '')
-      .input('denoise', params.denoise ?? 0.75);
+      .input('denoise', params.strength);
   } else {
-    // 文生图模式使用默认denoise值
-    builder.input('denoise', params.denoise ?? WORKFLOW_DEFAULTS.SAMPLING.DENOISE);
+    // Text-to-image mode uses default denoise value 1.0
+    builder.input('denoise', WORKFLOW_DEFAULTS.SAMPLING.DENOISE);
   }
 
   return builder;

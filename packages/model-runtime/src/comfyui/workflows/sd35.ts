@@ -8,56 +8,36 @@
  */
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { generateUniqueSeeds } from '../../../../utils/src/number';
-import { getAllComponentsWithNames } from '../config/systemComponents';
+import { generateUniqueSeeds } from '@/utils/number';
 import { DEFAULT_NEGATIVE_PROMPT, WORKFLOW_DEFAULTS } from '../constants';
+import { getWorkflowFilenamePrefix } from '../config/workflowRegistry';
 import { WorkflowError } from '../errors';
 import type { WorkflowContext } from '../services/workflowBuilder';
 
-export interface SD35WorkflowParams {
-  cfg?: number;
-  denoise?: number;
-  height?: number;
-  negativePrompt?: string;
-  prompt: string;
-  sampler?: string;
-  scheduler?: string;
-  seed?: number;
-  shift?: number;
-  steps?: number;
-  width?: number;
-}
+
 
 /**
- * Detect available encoder configuration
+ * Detect available encoder configuration using service layer
  */
-function detectAvailableEncoder(): {
+async function detectAvailableEncoder(
+  context: WorkflowContext,
+): Promise<{
   clipG?: string;
   clipL?: string;
   t5?: string;
   type: 'triple' | 'dual_clip' | 't5';
-} | null {
-  // Get all available CLIP and T5 components
-  const clipComponents = getAllComponentsWithNames({ type: 'clip' });
-  const t5Components = getAllComponentsWithNames({ type: 't5' });
+} | null> {
+  // Get components from service
+  const clipL = await context.modelResolverService.getOptimalComponent('clip', 'FLUX');
+  const clipG = await context.modelResolverService.getOptimalComponent('clip', 'SD3');
+  const t5 = await context.modelResolverService.getOptimalComponent('t5', 'FLUX');
 
-  // Find CLIP L and CLIP G for SD3
-  const clipL = clipComponents.find((c) => c.name === 'clip_l.safetensors');
-  const clipG = clipComponents.find(
-    (c) => c.name === 'clip_g.safetensors' && c.config.modelFamily === 'SD3',
-  );
-
-  // Find T5XXL (prefer fp16, fallback to fp8)
-  const t5 = t5Components
-    .filter((c) => c.config.modelFamily === 'SD3' || c.config.modelFamily === 'FLUX')
-    .sort((a, b) => a.config.priority - b.config.priority)[0];
-
-  // Best case: all three encoders available
+  // Best case: all three encoders
   if (clipL && clipG && t5) {
     return {
-      clipG: clipG.name,
-      clipL: clipL.name,
-      t5: t5.name,
+      clipG,
+      clipL,
+      t5,
       type: 'triple',
     };
   }
@@ -65,8 +45,8 @@ function detectAvailableEncoder(): {
   // Dual CLIP configuration
   if (clipL && clipG) {
     return {
-      clipG: clipG.name,
-      clipL: clipL.name,
+      clipG,
+      clipL,
       type: 'dual_clip',
     };
   }
@@ -74,12 +54,11 @@ function detectAvailableEncoder(): {
   // T5 only configuration
   if (t5) {
     return {
-      t5: t5.name,
+      t5,
       type: 't5',
     };
   }
 
-  // No valid encoder configuration found
   return null;
 }
 
@@ -88,19 +67,12 @@ function detectAvailableEncoder(): {
  */
 export async function buildSD35Workflow(
   modelFileName: string,
-  params: SD35WorkflowParams,
-  _context: WorkflowContext,
+  params: Record<string, any>,
+  context: WorkflowContext,
 ): Promise<PromptBuilder<any, any, any>> {
-  void _context; // Context not used in SD3.5 workflow
-  const { prompt, width, height, steps, seed, cfg, sampler, scheduler, negativePrompt, shift } =
-    params;
 
-  const actualSeed = seed ?? generateUniqueSeeds(1)[0];
-  const finalSampler = sampler ?? WORKFLOW_DEFAULTS.SAMPLING.SAMPLER;
-  const finalScheduler = scheduler ?? WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER;
-
-  // Detect available encoders
-  const encoderConfig = detectAvailableEncoder();
+  // Detect available encoders using service layer
+  const encoderConfig = await detectAvailableEncoder(context);
 
   // SD3.5 REQUIRES external encoders - no encoder = throw error
   if (!encoderConfig) {
@@ -159,7 +131,7 @@ export async function buildSD35Workflow(
       class_type: 'CLIPTextEncode',
       inputs: {
         clip: clipNode,
-        text: prompt,
+        text: params.prompt,
       },
     },
     '4': {
@@ -167,7 +139,7 @@ export async function buildSD35Workflow(
       class_type: 'CLIPTextEncode',
       inputs: {
         clip: clipNode,
-        text: negativePrompt || DEFAULT_NEGATIVE_PROMPT,
+        text: DEFAULT_NEGATIVE_PROMPT,
       },
     },
     '5': {
@@ -175,24 +147,24 @@ export async function buildSD35Workflow(
       class_type: 'EmptySD3LatentImage',
       inputs: {
         batch_size: WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE,
-        height: height || WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
-        width: width || WORKFLOW_DEFAULTS.IMAGE.WIDTH,
+        height: params.height,
+        width: params.width,
       },
     },
     '6': {
       _meta: { title: 'KSampler' },
       class_type: 'KSampler',
       inputs: {
-        cfg: cfg || WORKFLOW_DEFAULTS.SD35.CFG,
-        denoise: params.denoise || WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
+        cfg: params.cfg,
+        denoise: WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
         latent_image: ['5', 0],
         model: ['12', 0], // Use ModelSamplingSD3 output
         negative: negativeConditioningNode,
         positive: positiveConditioningNode,
-        sampler_name: finalSampler,
-        scheduler: finalScheduler,
-        seed: actualSeed,
-        steps: steps || WORKFLOW_DEFAULTS.SD35.STEPS,
+        sampler_name: params.samplerName,
+        scheduler: params.scheduler,
+        seed: params.seed ?? generateUniqueSeeds(1)[0],
+        steps: params.steps,
       },
     },
     '7': {
@@ -207,7 +179,7 @@ export async function buildSD35Workflow(
       _meta: { title: 'Save Image' },
       class_type: 'SaveImage',
       inputs: {
-        filename_prefix: 'LobeChat/%year%-%month%-%day%/SD35',
+        filename_prefix: getWorkflowFilenamePrefix('buildSD35Workflow', context.variant),
         images: ['7', 0],
       },
     },
@@ -216,7 +188,7 @@ export async function buildSD35Workflow(
       class_type: 'ModelSamplingSD3',
       inputs: {
         model: ['1', 0],
-        shift: shift || 3,
+        shift: WORKFLOW_DEFAULTS.SD3.SHIFT,
       },
     },
   };
@@ -232,11 +204,8 @@ export async function buildSD35Workflow(
       'steps',
       'seed',
       'cfg',
-      'sampler',
+      'samplerName',
       'scheduler',
-      'negativePrompt',
-      'denoise',
-      'shift',
     ],
     ['images'],
   );
@@ -246,30 +215,24 @@ export async function buildSD35Workflow(
 
   // Set input node mappings
   builder.setInputNode('prompt', '3.inputs.text');
-  builder.setInputNode('negativePrompt', '4.inputs.text');
   builder.setInputNode('width', '5.inputs.width');
   builder.setInputNode('height', '5.inputs.height');
   builder.setInputNode('steps', '6.inputs.steps');
   builder.setInputNode('seed', '6.inputs.seed');
   builder.setInputNode('cfg', '6.inputs.cfg');
-  builder.setInputNode('sampler', '6.inputs.sampler_name');
+  builder.setInputNode('samplerName', '6.inputs.sampler_name');
   builder.setInputNode('scheduler', '6.inputs.scheduler');
-  builder.setInputNode('denoise', '6.inputs.denoise');
-  builder.setInputNode('shift', '12.inputs.shift');
 
   // Set input values
   builder
-    .input('prompt', prompt)
-    .input('negativePrompt', negativePrompt || DEFAULT_NEGATIVE_PROMPT)
-    .input('width', width || WORKFLOW_DEFAULTS.IMAGE.WIDTH)
-    .input('height', height || WORKFLOW_DEFAULTS.IMAGE.HEIGHT)
-    .input('steps', steps || WORKFLOW_DEFAULTS.SD35.STEPS)
-    .input('cfg', cfg || WORKFLOW_DEFAULTS.SD35.CFG)
-    .input('seed', actualSeed)
-    .input('sampler', finalSampler)
-    .input('scheduler', finalScheduler)
-    .input('denoise', params.denoise || WORKFLOW_DEFAULTS.SAMPLING.DENOISE)
-    .input('shift', shift || 3);
+    .input('prompt', params.prompt)
+    .input('width', params.width)
+    .input('height', params.height)
+    .input('steps', params.steps)
+    .input('cfg', params.cfg)
+    .input('seed', params.seed ?? generateUniqueSeeds(1)[0])
+    .input('samplerName', params.samplerName)
+    .input('scheduler', params.scheduler)
 
   return builder;
 }

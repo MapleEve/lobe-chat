@@ -1,21 +1,21 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { generateUniqueSeeds } from '../../../../utils/src/number';
-import { FLUX_MODEL_CONFIG, WORKFLOW_DEFAULTS } from '../constants';
+import { generateUniqueSeeds } from '@/utils/number';
+import { WORKFLOW_DEFAULTS } from '../constants';
+import { getWorkflowFilenamePrefix } from '../config/workflowRegistry';
 import type { WorkflowContext } from '../services/workflowBuilder';
 import { splitPromptForDualCLIP } from '../utils/promptSplitter';
 import { selectOptimalWeightDtype } from '../utils/weightDType';
 
 /**
- * FLUX Schnell 工作流构建器 / FLUX Schnell Workflow Builder
+ * FLUX Schnell Workflow Builder
  *
- * @description 构建4步快速生成工作流，针对速度优化
- * Builds 4-step fast generation workflow optimized for speed
+ * @description Builds 4-step fast generation workflow optimized for speed
  *
- * @param {string} modelFileName - 模型文件名 / Model filename
- * @param {Record<string, any>} params - 生成参数 / Generation parameters
- * @param {WorkflowContext} context - 工作流上下文 / Workflow context
- * @returns {PromptBuilder<any, any, any>} 构建的工作流 / Built workflow
+ * @param {string} modelFileName - Model filename
+ * @param {Record<string, any>} params - Generation parameters
+ * @param {WorkflowContext} context - Workflow context
+ * @returns {PromptBuilder<any, any, any>} Built workflow
  */
 export async function buildFluxSchnellWorkflow(
   modelFileName: string,
@@ -27,8 +27,8 @@ export async function buildFluxSchnellWorkflow(
   const selectedVAE = await context.modelResolverService.getOptimalComponent('vae', 'FLUX');
   const selectedCLIP = await context.modelResolverService.getOptimalComponent('clip', 'FLUX');
 
-  // 处理prompt分离 - 在工作流构建早期进行
-  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt ?? '');
+  // Process prompt splitting early in workflow construction
+  const { t5xxlPrompt, clipLPrompt } = splitPromptForDualCLIP(params.prompt);
 
   /* eslint-disable sort-keys-fix/sort-keys-fix */
   const workflow = {
@@ -70,8 +70,8 @@ export async function buildFluxSchnellWorkflow(
       inputs: {
         clip: ['1', 0],
         clip_l: clipLPrompt,
-        guidance: WORKFLOW_DEFAULTS.SCHNELL.CFG,
-        t5xxl: t5xxlPrompt, // Schnell 使用 CFG 1
+        guidance: 1,
+        t5xxl: t5xxlPrompt, // Schnell uses CFG 1
       },
     },
     '5': {
@@ -81,8 +81,8 @@ export async function buildFluxSchnellWorkflow(
       class_type: 'EmptySD3LatentImage',
       inputs: {
         batch_size: WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE,
-        height: WORKFLOW_DEFAULTS.IMAGE.HEIGHT,
-        width: WORKFLOW_DEFAULTS.IMAGE.WIDTH,
+        height: params.height,
+        width: params.width,
       },
     },
     '6': {
@@ -91,16 +91,16 @@ export async function buildFluxSchnellWorkflow(
       },
       class_type: 'KSampler',
       inputs: {
-        cfg: WORKFLOW_DEFAULTS.SCHNELL.CFG,
+        cfg: 1,
         denoise: WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
         latent_image: ['5', 0],
         model: ['2', 0],
         negative: ['4', 0],
         positive: ['4', 0],
-        sampler_name: WORKFLOW_DEFAULTS.SAMPLING.SAMPLER,
-        scheduler: WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER,
-        seed: WORKFLOW_DEFAULTS.NOISE.SEED,
-        steps: WORKFLOW_DEFAULTS.SCHNELL.STEPS,
+        sampler_name: params.samplerName,
+        scheduler: params.scheduler,
+        seed: params.seed ?? generateUniqueSeeds(1)[0],
+        steps: params.steps,
       },
     },
     '7': {
@@ -119,56 +119,49 @@ export async function buildFluxSchnellWorkflow(
       },
       class_type: 'SaveImage',
       inputs: {
-        filename_prefix: FLUX_MODEL_CONFIG.FILENAME_PREFIXES.SCHNELL,
+        filename_prefix: getWorkflowFilenamePrefix('buildFluxSchnellWorkflow', context.variant),
         images: ['7', 0],
       },
     },
   };
   /* eslint-enable sort-keys-fix/sort-keys-fix */
 
-  // 直接设置prompt值到工作流节点，而不依赖PromptBuilder的输入映射
+  // Set prompt values directly to workflow nodes instead of using PromptBuilder input mapping
   workflow['4'].inputs.clip_l = clipLPrompt;
   workflow['4'].inputs.t5xxl = t5xxlPrompt;
 
-  // Apply input values to workflow
-  const width = params.width ?? WORKFLOW_DEFAULTS.IMAGE.WIDTH;
-  const height = params.height ?? WORKFLOW_DEFAULTS.IMAGE.HEIGHT;
-  const cfg = params.cfg ?? WORKFLOW_DEFAULTS.SCHNELL.CFG;
-  const steps = params.steps ?? WORKFLOW_DEFAULTS.SCHNELL.STEPS;
-  const seed = params.seed ?? generateUniqueSeeds(1)[0];
+  // Set shared values directly to avoid conflicts - use params directly without intermediate variables
+  workflow['5'].inputs.width = params.width; // EmptySD3LatentImage needs width/height
+  workflow['5'].inputs.height = params.height;
+  workflow['4'].inputs.guidance = params.cfg; // CLIPTextEncodeFlux needs guidance
+  workflow['6'].inputs.cfg = params.cfg; // KSampler needs cfg
+  workflow['6'].inputs.steps = params.steps; // KSampler needs steps
+  workflow['6'].inputs.seed = params.seed ?? generateUniqueSeeds(1)[0]; // KSampler needs seed
 
-  // Set shared values directly to avoid conflicts
-  workflow['5'].inputs.width = width; // EmptySD3LatentImage needs width/height
-  workflow['5'].inputs.height = height;
-  workflow['4'].inputs.guidance = cfg; // CLIPTextEncodeFlux needs guidance
-  workflow['6'].inputs.cfg = cfg; // KSampler needs cfg
-  workflow['6'].inputs.steps = steps; // KSampler needs steps
-  workflow['6'].inputs.seed = seed; // KSampler needs seed
-
-  // 创建 PromptBuilder - 移除prompt相关的输入参数，因为已直接设置
+  // Create PromptBuilder - removed prompt input parameters as they are set directly
   const builder = new PromptBuilder(
     workflow,
-    ['width', 'height', 'steps', 'cfg', 'seed'], // 移除prompt相关参数
+    ['width', 'height', 'steps', 'cfg', 'seed'],
     ['images'],
   );
 
-  // 设置输出节点
+  // Set output node
   builder.setOutputNode('images', '8');
 
-  // 设置输入节点映射
+  // Set input node mappings
   builder.setInputNode('seed', '6.inputs.seed');
   builder.setInputNode('width', '5.inputs.width');
   builder.setInputNode('height', '5.inputs.height');
   builder.setInputNode('steps', '6.inputs.steps');
   builder.setInputNode('cfg', '6.inputs.cfg');
 
-  // 设置输入值（不包括prompt，已直接设置到工作流）
+  // Set input values (prompt already set directly in workflow)
   builder
-    .input('width', width)
-    .input('height', height)
-    .input('steps', steps)
-    .input('cfg', cfg)
-    .input('seed', seed);
+    .input('width', params.width)
+    .input('height', params.height)
+    .input('steps', params.steps)
+    .input('cfg', params.cfg)
+    .input('seed', params.seed ?? generateUniqueSeeds(1)[0]);
 
   return builder;
 }
