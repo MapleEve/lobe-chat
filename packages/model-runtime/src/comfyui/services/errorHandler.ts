@@ -84,6 +84,12 @@ export class ErrorHandlerService {
     }
 
     if (error instanceof ServicesError) {
+      // If error already has parsed errorType in details, use it directly
+      if (error.details?.errorType) {
+        return error.details.errorType;
+      }
+
+      // Otherwise use mapping table
       const mapping: Record<string, string> = {
         [ServicesError.Reasons.INVALID_ARGS]: AgentRuntimeErrorType.InvalidComfyUIArgs,
         [ServicesError.Reasons.INVALID_AUTH]: AgentRuntimeErrorType.InvalidProviderAPIKey,

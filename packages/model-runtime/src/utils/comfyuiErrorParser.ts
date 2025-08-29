@@ -89,7 +89,7 @@ function isSDKCustomError(error: any): boolean {
     'ComfyUIConnectionError',
     'ComfyUITimeoutError',
     'ComfyUIRuntimeError',
-    'ComfyUIConfigError'
+    'ComfyUIConfigError',
   ];
 
   if (sdkErrorTypes.includes(errorName)) {
@@ -148,9 +148,13 @@ function isWorkflowError(error: any): boolean {
   const lowerMessage = message.toLowerCase();
 
   // Check for structured workflow error fields
-  if (error && typeof error === 'object' && (error.node_id || error.nodeId || error.node_type || error.nodeType)) {
-      return true;
-    }
+  if (
+    error &&
+    typeof error === 'object' &&
+    (error.node_id || error.nodeId || error.node_type || error.nodeType)
+  ) {
+    return true;
+  }
 
   return (
     lowerMessage.includes('node') ||
@@ -193,7 +197,7 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
   if (error && typeof error === 'object' && error.message && !error.error) {
     // Check if there's an exception_message that should override the message
     const finalMessage = error.exception_message || error.message;
-    
+
     // Handle ComfyUI specific fields in details
     let details = error.response?.data || error.details;
     if (error.node_id || error.node_type || error.nodeId || error.nodeType) {
@@ -203,7 +207,7 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
         node_type: error.node_type || error.nodeType,
       };
     }
-    
+
     return {
       code: error.code,
       details,
@@ -299,6 +303,14 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
       };
     }
 
+    // 400 indicates bad request, usually configuration or authentication error
+    if (status === 400) {
+      return {
+        error: comfyError,
+        errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
+      };
+    }
+
     // 404 indicates service endpoint does not exist, meaning ComfyUI service is unavailable or address is incorrect
     if (status === 404) {
       return {
@@ -343,6 +355,12 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
   const message = comfyError.message;
   if (!status && message) {
     if (message.includes('HTTP 401') || message.includes('401')) {
+      return {
+        error: comfyError,
+        errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
+      };
+    }
+    if (message.includes('HTTP 400') || message.includes('400')) {
       return {
         error: comfyError,
         errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
