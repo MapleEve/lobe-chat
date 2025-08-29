@@ -81,15 +81,17 @@ function isSDKCustomError(error: any): boolean {
   // Check for SDK error class names
   const errorName = error?.name || error?.constructor?.name || '';
   const sdkErrorTypes = [
+    // Base error class
     'CallWrapperError',
+    // Actual SDK error classes from comfyui-sdk
+    'WentMissingError',
+    'FailedCacheError',
+    'EnqueueFailedError',
+    'DisconnectedError',
+    'ExecutionFailedError',
+    'CustomEventError',
     'ExecutionInterruptedError',
     'MissingNodeError',
-    'InvalidModelError',
-    'WorkflowValidationError',
-    'ComfyUIConnectionError',
-    'ComfyUITimeoutError',
-    'ComfyUIRuntimeError',
-    'ComfyUIConfigError',
   ];
 
   if (sdkErrorTypes.includes(errorName)) {
@@ -185,6 +187,19 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
 
   // Handle Error objects (higher priority than generic object check)
   if (error instanceof Error) {
+    // Check if there's a cause field with actual error details (SDK pattern)
+    // Always prefer the cause if it exists, as it contains the actual error
+    if ((error as any).cause) {
+      const cause = (error as any).cause;
+      // Recursively extract error info from cause
+      const causeInfo = extractComfyUIErrorInfo(cause);
+      return {
+        ...causeInfo,
+        // Preserve the original error type if cause doesn't have one
+        type: causeInfo.type || error.name,
+      };
+    }
+
     return {
       code: (error as any).code,
       message: cleanComfyUIErrorMessage(error.message),
@@ -219,6 +234,16 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
 
   // Handle other object types - restore more comprehensive status code extraction
   if (error && typeof error === 'object') {
+    // Check for cause field first (SDK pattern)
+    // Always prefer cause if it exists, as it contains the actual error details
+    if (error.cause) {
+      const causeInfo = extractComfyUIErrorInfo(error.cause);
+      return {
+        ...causeInfo,
+        type: causeInfo.type || error.type || error.name || error.constructor?.name,
+      };
+    }
+
     // Enhanced message extraction from various possible sources including ComfyUI specific formats
     // Put exception_message first as it usually contains more detailed information
     const possibleMessage = [
