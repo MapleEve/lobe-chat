@@ -24,6 +24,37 @@ export const MODEL_REGISTRY: Record<string, ModelConfig> = {
 };
 
 // ===================================================================
+// Model ID to Variant Mapping
+// Maps common model IDs to their corresponding variants
+// ===================================================================
+
+/**
+ * Model ID to Variant mapping
+ * Maps actual frontend model IDs to their corresponding variants in registry
+ * Based on src/config/aiModels/comfyui.ts definitions
+ */
+/* eslint-disable sort-keys-fix/sort-keys-fix */
+export const MODEL_ID_VARIANT_MAP: Record<string, string> = {
+  // FLUX models - based on actual frontend IDs
+  'flux-schnell': 'schnell', // comfyui/flux-schnell
+  'flux-dev': 'dev', // comfyui/flux-dev
+  'flux-krea-dev': 'krea', // comfyui/flux-krea-dev
+  'flux-kontext-dev': 'kontext', // comfyui/flux-kontext-dev
+
+  // SD3 models - based on actual frontend IDs
+  'stable-diffusion-35': 'sd35', // comfyui/stable-diffusion-35
+  'stable-diffusion-35-inclclip': 'sd35-inclclip', // comfyui/stable-diffusion-35-inclclip
+
+  // SD1/SDXL models - based on actual frontend IDs
+  'stable-diffusion-15': 'sd15-t2i', // comfyui/stable-diffusion-15
+  'stable-diffusion-xl': 'sdxl-t2i', // comfyui/stable-diffusion-xl
+  'stable-diffusion-refiner': 'sdxl-i2i', // comfyui/stable-diffusion-refiner
+  'stable-diffusion-custom': 'custom-sd', // comfyui/stable-diffusion-custom
+  'stable-diffusion-custom-refiner': 'custom-sd', // comfyui/stable-diffusion-custom-refiner
+};
+/* eslint-enable sort-keys-fix/sort-keys-fix */
+
+// ===================================================================
 // Universal Query Interface - One Function Rules All
 // ===================================================================
 

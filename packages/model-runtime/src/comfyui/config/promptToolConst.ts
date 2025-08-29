@@ -564,7 +564,7 @@ export const STYLE_ADJECTIVE_PATTERNS = {
 
   // Complexity and detail / 复杂度和细节
   detail:
-    /^(simple|complex|intricate|elaborate|detailed|minimal|basic|advanced|sophisticated|primitive|refined|crude|delicate|robust)$/i,
+    /^(simple|complex|intricate|elaborate|detailed|minimal|advanced|sophisticated|primitive|refined|crude|delicate|robust)$/i,
 
   // Professional quality / 专业质量
   professional:
