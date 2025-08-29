@@ -5,7 +5,7 @@ import {
   FLUX_MODEL_CONFIG,
   STYLE_KEYWORDS,
   WORKFLOW_DEFAULTS,
-  getAllStyleKeywords,
+
 } from '../constants';
 
 describe('ComfyUI Constants', () => {
@@ -152,55 +152,7 @@ describe('ComfyUI Constants', () => {
     });
   });
 
-  describe('getAllStyleKeywords', () => {
-    it('should return a flattened array of all style keywords', () => {
-      const allKeywords = getAllStyleKeywords();
-      expect(Array.isArray(allKeywords)).toBe(true);
-      expect(allKeywords.length).toBeGreaterThan(0);
-    });
 
-    it('should include keywords from all categories', () => {
-      const allKeywords = getAllStyleKeywords();
-
-      // Check that keywords from each category are present
-      expect(allKeywords).toContain('by greg rutkowski'); // ARTISTS
-      expect(allKeywords).toContain('photorealistic'); // ART_STYLES
-      expect(allKeywords).toContain('dramatic lighting'); // LIGHTING
-      expect(allKeywords).toContain('depth of field'); // PHOTOGRAPHY
-      expect(allKeywords).toContain('high quality'); // QUALITY
-      expect(allKeywords).toContain('octane render'); // RENDERING
-    });
-
-    it('should return the same result on multiple calls', () => {
-      const result1 = getAllStyleKeywords();
-      const result2 = getAllStyleKeywords();
-      expect(result1).toEqual(result2);
-    });
-
-    it('should flatten all categories correctly', () => {
-      const allKeywords = getAllStyleKeywords();
-      const manualFlat = [
-        ...STYLE_KEYWORDS.ARTISTS,
-        ...STYLE_KEYWORDS.ART_STYLES,
-        ...STYLE_KEYWORDS.LIGHTING,
-        ...STYLE_KEYWORDS.PHOTOGRAPHY,
-        ...STYLE_KEYWORDS.QUALITY,
-        ...STYLE_KEYWORDS.RENDERING,
-      ];
-      expect(allKeywords).toEqual(manualFlat);
-    });
-
-    it('should not contain duplicate keywords', () => {
-      const allKeywords = getAllStyleKeywords();
-      const uniqueKeywords = [...new Set(allKeywords)];
-      expect(allKeywords.length).toBe(uniqueKeywords.length);
-    });
-
-    it('should return readonly array', () => {
-      const allKeywords = getAllStyleKeywords();
-      expect(Object.isFrozen(allKeywords)).toBe(false); // readonly in TypeScript, not frozen in runtime
-    });
-  });
 
   describe('Integration tests', () => {
     it('should have consistent configuration values', () => {

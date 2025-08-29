@@ -1,4 +1,11 @@
-import { getAllStyleKeywords } from '../constants';
+import { STYLE_KEYWORDS } from '../constants';
+
+/**
+ * Get all style keywords - flattened array
+ */
+const getAllStyleKeywords = (): readonly string[] => {
+  return Object.values(STYLE_KEYWORDS).flat();
+};
 
 /**
  * FLUX 双CLIP提示词智能分割工具

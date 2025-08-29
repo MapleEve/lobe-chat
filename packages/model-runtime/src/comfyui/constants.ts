@@ -180,12 +180,6 @@ export const STYLE_KEYWORDS = {
   ],
 } as const;
 
-/**
- * Get all style keywords - flattened array / 获取所有风格关键词 - 扁平化数组
- */
-export const getAllStyleKeywords = (): readonly string[] => {
-  return Object.values(STYLE_KEYWORDS).flat();
-};
 
 /**
  * Default negative prompt for all SD models
@@ -205,14 +199,6 @@ export const SUPPORTED_MODEL_FORMATS = [
   '.gguf', // GGUF format for quantized models
 ] as const;
 
-/**
- * Check if a filename has a supported model format extension
- * @param filename - The filename to check
- * @returns True if the filename has a supported model format extension
- */
-export const isModelFile = (filename: string): boolean => {
-  return SUPPORTED_MODEL_FORMATS.some((ext) => filename.endsWith(ext));
-};
 
 /**
  * Custom SD model configuration

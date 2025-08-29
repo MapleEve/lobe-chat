@@ -8,11 +8,20 @@ import debug from 'debug';
 
 import { MODEL_REGISTRY, getModelConfig } from '../config/modelRegistry';
 import { SYSTEM_COMPONENTS } from '../config/systemComponents';
-import { COMPONENT_NODE_MAPPINGS, CUSTOM_SD_CONFIG, isModelFile } from '../constants';
+import { COMPONENT_NODE_MAPPINGS, CUSTOM_SD_CONFIG, SUPPORTED_MODEL_FORMATS } from '../constants';
 import { ModelResolverError } from '../errors/modelResolverError';
 import { ComfyUIClientService } from './comfyuiClient';
 
 const log = debug('lobe-image:comfyui:model-resolver');
+
+/**
+ * Check if a filename has a supported model format extension
+ * @param filename - The filename to check
+ * @returns True if the filename has a supported model format extension
+ */
+const isModelFile = (filename: string): boolean => {
+  return SUPPORTED_MODEL_FORMATS.some((ext) => filename.endsWith(ext));
+};
 
 /**
  * Model validation result
@@ -25,6 +34,13 @@ export interface ModelValidationResult {
 /**
  * Model Resolver Service
  * Provides model resolution, validation, and component selection
+ * @params clientService - The ComfyUI client service instance
+ * @params modelCache - Cache for resolved model filenames
+ * @params vaeCache - Cache for available VAE files
+ * @params componentCache - Cache for available component files
+ * @returns The resolved model filename or undefined if not found
+ * @throws ModelResolverError for any resolution or validation issues
+ * @note This service does not handle workflow building or execution
  */
 export class ModelResolverService {
   private clientService: ComfyUIClientService;
@@ -40,7 +56,7 @@ export class ModelResolverService {
    * Resolve a model ID to its actual filename
    * Fixed: removed over-defensive programming and guessing strategies
    */
-  async resolveModelFileName(modelId: string): Promise<string> {
+  async resolveModelFileName(modelId: string): Promise<string | undefined> {
     log('Resolving model:', modelId);
 
     // Check cache first
@@ -61,11 +77,7 @@ export class ModelResolverService {
       // Verify the custom model file exists on server
       const serverModels = await this.getAvailableModelFiles();
       if (!serverModels.includes(fixedFileName)) {
-        throw new ModelResolverError(
-          ModelResolverError.Reasons.MODEL_NOT_FOUND,
-          `Custom SD model file not found. Please ensure '${fixedFileName}' is in the ComfyUI models folder`,
-          { expectedFile: fixedFileName, modelId },
-        );
+        return undefined;
       }
 
       this.modelCache.set(modelId, fixedFileName);
@@ -91,17 +103,12 @@ export class ModelResolverService {
       // Don't throw error yet, try other methods
     }
 
-    // 3. Not found - throw error
-    throw new ModelResolverError(
-      ModelResolverError.Reasons.MODEL_NOT_FOUND,
-      `Model not found: ${modelId}`,
-      { modelId },
-    );
+    // 3. Not found - return undefined
+    return undefined;
   }
 
   /**
    * Get available model files from server
-   * Fixed: use SDK's getCheckpoints method, let errors propagate
    */
   async getAvailableModelFiles(): Promise<string[]> {
     const checkpoints = await this.clientService.getCheckpoints();
@@ -110,7 +117,6 @@ export class ModelResolverService {
 
   /**
    * Get available VAE files from server
-   * Fixed: use SDK's getNodeDefs method, let errors propagate
    */
   async getAvailableVAEFiles(): Promise<string[]> {
     // Use cache if available
@@ -139,7 +145,6 @@ export class ModelResolverService {
   /**
    * Get available component files from ComfyUI node
    * Generic method that queries ComfyUI for any node type's available files
-   * Fixed: use SDK's getNodeDefs, let errors propagate
    * @param loaderNode - The ComfyUI node name (e.g., 'CLIPLoader', 'VAELoader')
    * @param inputKey - The input field name to query (e.g., 'clip_name', 'vae_name')
    */
@@ -177,7 +182,7 @@ export class ModelResolverService {
    * @param modelFamily - Model family (FLUX, SD3, etc.)
    * @returns The best matching component name
    */
-  async getOptimalComponent(type: string, modelFamily: string): Promise<string> {
+  async getOptimalComponent(type: string, modelFamily: string): Promise<string | undefined> {
     // Get prioritized components from configuration
     const configComponents = Object.entries(SYSTEM_COMPONENTS)
       .filter(([, config]) => config.type === type && config.modelFamily === modelFamily)
@@ -186,11 +191,7 @@ export class ModelResolverService {
     // Get node mapping for this component type
     const nodeMapping = COMPONENT_NODE_MAPPINGS[type];
     if (!nodeMapping) {
-      throw new ModelResolverError(
-        ModelResolverError.Reasons.COMPONENT_NOT_FOUND,
-        `Unknown component type: ${type}`,
-        { type },
-      );
+      return undefined;
     }
 
     // Get available files from server
@@ -203,16 +204,12 @@ export class ModelResolverService {
       }
     }
 
-    throw new ModelResolverError(
-      ModelResolverError.Reasons.COMPONENT_NOT_FOUND,
-      `No ${type} component available for ${modelFamily}`,
-      { availableCount: serverFiles.length, modelFamily, type },
-    );
+    // No matching component found
+    return undefined;
   }
 
   /**
    * Select appropriate VAE for a model
-   * Fixed: removed needsExternalVAE business logic, service only provides availability
    */
   async selectVAE(options: {
     customVAE?: string;
@@ -276,14 +273,23 @@ export class ModelResolverService {
   async validateModel(modelId: string): Promise<ModelValidationResult> {
     try {
       const fileName = await this.resolveModelFileName(modelId);
-      return { actualFileName: fileName, exists: true };
+      if (fileName) {
+        return { actualFileName: fileName, exists: true };
+      } else {
+        // Model not found - throw error for backward compatibility
+        throw new ModelResolverError(
+          ModelResolverError.Reasons.MODEL_NOT_FOUND,
+          `Model not found: ${modelId}`,
+          { modelId },
+        );
+      }
     } catch (error) {
       // Re-throw service errors
       if (error instanceof ModelResolverError) {
         throw error;
       }
 
-      // Model not found
+      // Unexpected error - return false (original behavior)
       return { exists: false };
     }
   }
