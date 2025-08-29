@@ -51,113 +51,20 @@ export const SD_MODEL_CONFIG = {
 export const WORKFLOW_DEFAULTS = {
   // Image dimensions and batch settings
   IMAGE: {
-    BATCH_SIZE: 1,  // workflow internal use
+    BATCH_SIZE: 1, // workflow internal use
   },
 
   // Internal noise and sampling settings
   SAMPLING: {
-    DENOISE: 1,      // t2i mode internal use
+    DENOISE: 1, // t2i mode internal use
     MAX_SHIFT: 1.15, // FLUX internal parameter
   },
 
   // SD3.5 specific internal settings
   SD3: {
-    SHIFT: 3,        // SD3.5 ModelSamplingSD3 internal parameter
+    SHIFT: 3, // SD3.5 ModelSamplingSD3 internal parameter
   },
 } as const;
-
-/**
- * Style keywords configuration - organized by category for easy maintenance and extension / 风格关键词配置 - 按类别组织便于维护和扩展
- */
-export const STYLE_KEYWORDS = {
-  // Artists and platforms / 艺术家和平台
-  ARTISTS: [
-    'by greg rutkowski',
-    'by artgerm',
-    'trending on artstation',
-    'concept art',
-    'illustration',
-    'artwork',
-    'painting',
-  ],
-
-  // Art styles / 艺术风格
-  ART_STYLES: [
-    'photorealistic',
-    'photo realistic',
-    'realistic',
-    'anime',
-    'cartoon',
-    'oil painting',
-    'watercolor',
-    'sketch',
-    'digital art',
-    '3d render',
-    'pixel art',
-    'manga',
-    'cinematic',
-  ],
-
-  // Lighting effects / 光照效果
-  LIGHTING: [
-    'dramatic lighting',
-    'soft lighting',
-    'studio lighting',
-    'golden hour',
-    'neon lights',
-    'rim lighting',
-    'volumetric lighting',
-    'natural lighting',
-    'warm lighting',
-    'cold lighting',
-  ],
-
-  // Photography terms / 摄影术语
-  PHOTOGRAPHY: [
-    'depth of field',
-    'bokeh',
-    'motion blur',
-    'film grain',
-    'macro',
-    'wide angle',
-    'telephoto',
-    'portrait',
-    'landscape',
-    'close-up',
-    'dof',
-    '35mm photograph',
-    'professional photograph',
-  ],
-
-  // Quality descriptions / 质量描述
-  QUALITY: [
-    'high quality',
-    'best quality',
-    '4k',
-    '8k',
-    'ultra detailed',
-    'highly detailed',
-    'masterpiece',
-    'professional',
-    'sharp focus',
-    'detailed',
-    'intricate',
-    'extremely detailed',
-  ],
-
-  // Rendering and effects / 渲染和效果
-  RENDERING: [
-    'octane render',
-    'unreal engine',
-    'ray tracing',
-    'cycles render',
-    'global illumination',
-    'subsurface scattering',
-    'bloom',
-    'lens flare',
-  ],
-} as const;
-
 
 /**
  * Default negative prompt for all SD models
@@ -177,14 +84,13 @@ export const SUPPORTED_MODEL_FORMATS = [
   '.gguf', // GGUF format for quantized models
 ] as const;
 
-
 /**
  * Custom SD model configuration
  * Fixed model and VAE filenames for custom SD models
  */
 export const CUSTOM_SD_CONFIG = {
-  MODEL_FILENAME: 'custom_sd_lobe.safetensors',  // Both custom models use same file
-  VAE_FILENAME: 'custom_sd_vae_lobe.safetensors',  // Optional VAE file
+  MODEL_FILENAME: 'custom_sd_lobe.safetensors', // Both custom models use same file
+  VAE_FILENAME: 'custom_sd_vae_lobe.safetensors', // Optional VAE file
 } as const;
 
 /**

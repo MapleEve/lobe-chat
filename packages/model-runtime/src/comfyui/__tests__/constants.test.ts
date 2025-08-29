@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
+import { STYLE_KEYWORDS } from '../config/promptToolConst';
 import {
   COMFYUI_DEFAULTS,
   CUSTOM_SD_CONFIG,
   DEFAULT_NEGATIVE_PROMPT,
   FLUX_MODEL_CONFIG,
   SD_MODEL_CONFIG,
-  STYLE_KEYWORDS,
   WORKFLOW_DEFAULTS,
 } from '../constants';
 
@@ -140,10 +140,10 @@ describe('ComfyUI Constants', () => {
       // Only test remaining defaults
       expect(WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE).toBeGreaterThan(0);
       expect(WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE).toBeLessThanOrEqual(8);
-      
+
       expect(WORKFLOW_DEFAULTS.SAMPLING.DENOISE).toBeGreaterThan(0);
       expect(WORKFLOW_DEFAULTS.SAMPLING.DENOISE).toBeLessThanOrEqual(1);
-      
+
       expect(WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT).toBeGreaterThan(0);
       expect(WORKFLOW_DEFAULTS.SD3.SHIFT).toBeGreaterThan(0);
     });
