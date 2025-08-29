@@ -68,9 +68,9 @@ describe('ImageService', () => {
 
     // Mock workflow detector
     vi.mocked(WorkflowDetector, true).detectModelType = vi.fn().mockReturnValue({
+      architecture: 'flux-schnell',
       isSupported: true,
       modelType: 'FLUX',
-      architecture: 'flux-schnell',
     });
   });
 
@@ -78,17 +78,17 @@ describe('ImageService', () => {
     const mockPayload: CreateImagePayload = {
       model: 'flux-schnell',
       params: {
+        height: 1024,
         prompt: 'test prompt',
         width: 1024,
-        height: 1024,
       },
     };
 
     it('should successfully create image with text2img workflow', async () => {
       // Setup mocks
       mockModelResolverService.validateModel.mockResolvedValue({
-        exists: true,
         actualFileName: 'flux1-schnell-fp8.safetensors',
+        exists: true,
       });
 
       const mockWorkflow = { id: 'test-workflow' };
@@ -98,9 +98,9 @@ describe('ImageService', () => {
         images: {
           images: [
             {
-              width: 1024,
-              height: 1024,
               data: 'base64data',
+              height: 1024,
+              width: 1024,
             },
           ],
         },
@@ -113,9 +113,9 @@ describe('ImageService', () => {
 
       // Verify
       expect(result).toEqual({
-        width: 1024,
         height: 1024,
         imageUrl: 'https://comfyui.test/image.png',
+        width: 1024,
       });
 
       expect(mockModelResolverService.validateModel).toHaveBeenCalledWith('flux-schnell');
@@ -134,9 +134,9 @@ describe('ImageService', () => {
 
       mockErrorHandler.handleError.mockImplementation((error: any) => {
         throw {
+          error: { message: error.message },
           errorType: AgentRuntimeErrorType.ModelNotFound,
           provider: 'comfyui',
-          error: { message: error.message },
         };
       });
 
@@ -150,8 +150,8 @@ describe('ImageService', () => {
     it('should handle empty result from workflow', async () => {
       // Setup
       mockModelResolverService.validateModel.mockResolvedValue({
-        exists: true,
         actualFileName: 'flux1-schnell-fp8.safetensors',
+        exists: true,
       });
 
       mockWorkflowBuilderService.buildWorkflow.mockResolvedValue({});
@@ -161,9 +161,9 @@ describe('ImageService', () => {
 
       mockErrorHandler.handleError.mockImplementation((error: any) => {
         throw {
+          error: { message: error.message },
           errorType: AgentRuntimeErrorType.ComfyUIBizError,
           provider: 'comfyui',
-          error: { message: error.message },
         };
       });
 
@@ -179,25 +179,25 @@ describe('ImageService', () => {
     const mockPayloadWithImage: CreateImagePayload = {
       model: 'flux-schnell',
       params: {
-        prompt: 'test prompt',
-        imageUrl: 'https://s3.test/bucket/image.png',
-        width: 1024,
         height: 1024,
+        imageUrl: 'https://s3.test/bucket/image.png',
+        prompt: 'test prompt',
+        width: 1024,
       },
     };
 
     it('should fetch image from URL and upload to ComfyUI', async () => {
       // Setup mocks
       mockModelResolverService.validateModel.mockResolvedValue({
-        exists: true,
         actualFileName: 'flux1-schnell-fp8.safetensors',
+        exists: true,
       });
 
       // Fetch mocks
       const mockImageData = new Uint8Array([1, 2, 3, 4, 5]);
       mockFetch.mockResolvedValue({
-        ok: true,
         arrayBuffer: vi.fn().mockResolvedValue(mockImageData.buffer),
+        ok: true,
       });
 
       // Upload mock
@@ -206,18 +206,18 @@ describe('ImageService', () => {
       // Workflow mocks
       mockWorkflowBuilderService.buildWorkflow.mockResolvedValue({});
       mockClientService.executeWorkflow.mockResolvedValue({
-        images: { images: [{ width: 1024, height: 1024 }] },
+        images: { images: [{ height: 1024, width: 1024 }] },
       });
       mockClientService.getPathImage.mockReturnValue('https://comfyui.test/result.png');
 
       // Execute
-      const result = await imageService.createImage(mockPayloadWithImage);
+      await imageService.createImage(mockPayloadWithImage);
 
       // Verify fetch was called with the image URL
       expect(mockFetch).toHaveBeenCalledWith('https://s3.test/bucket/image.png');
       expect(mockClientService.uploadImage).toHaveBeenCalledWith(
         Buffer.from(mockImageData),
-        expect.stringMatching(/^LobeChat_img2img_\d+\.png$/),
+        expect.stringMatching(/^LobeChat_img2img_\d+_[\dA-Za-z]{4}\.png$/),
       );
 
       // Verify the URL was replaced with ComfyUI filename
@@ -228,15 +228,15 @@ describe('ImageService', () => {
       const payloadWithFilename: CreateImagePayload = {
         model: 'flux-schnell',
         params: {
-          prompt: 'test prompt',
-          imageUrl: 'existing_image.png', // Not a URL
+          imageUrl: 'existing_image.png',
+          prompt: 'test prompt', // Not a URL
         },
       };
 
       // Setup
       mockModelResolverService.validateModel.mockResolvedValue({
-        exists: true,
         actualFileName: 'flux1-schnell-fp8.safetensors',
+        exists: true,
       });
 
       mockWorkflowBuilderService.buildWorkflow.mockResolvedValue({});
@@ -257,15 +257,15 @@ describe('ImageService', () => {
       const payload: CreateImagePayload = {
         model: 'flux-schnell',
         params: {
-          prompt: 'test prompt',
           imageUrl: 'https://s3.test/missing.png',
+          prompt: 'test prompt',
         },
       };
 
       // Setup
       mockModelResolverService.validateModel.mockResolvedValue({
-        exists: true,
         actualFileName: 'model.safetensors',
+        exists: true,
       });
 
       // Fetch error
@@ -289,22 +289,22 @@ describe('ImageService', () => {
       const payload: CreateImagePayload = {
         model: 'flux-schnell',
         params: {
-          prompt: 'test prompt',
           imageUrl: 'https://s3.test/large.png',
+          prompt: 'test prompt',
         },
       };
 
       // Setup
       mockModelResolverService.validateModel.mockResolvedValue({
-        exists: true,
         actualFileName: 'model.safetensors',
+        exists: true,
       });
 
       // Large image data
       const largeImageData = new Uint8Array(31 * 1024 * 1024); // 31MB (exceeds 30MB limit)
       mockFetch.mockResolvedValue({
-        ok: true,
         arrayBuffer: vi.fn().mockResolvedValue(largeImageData.buffer),
+        ok: true,
       });
 
       mockErrorHandler.handleError.mockImplementation((error: any) => {
@@ -319,21 +319,21 @@ describe('ImageService', () => {
       const payload: CreateImagePayload = {
         model: 'flux-schnell',
         params: {
-          prompt: 'test prompt',
           imageUrl: 'https://s3.test/empty.png',
+          prompt: 'test prompt',
         },
       };
 
       // Setup
       mockModelResolverService.validateModel.mockResolvedValue({
-        exists: true,
         actualFileName: 'model.safetensors',
+        exists: true,
       });
 
       // Empty image data
       mockFetch.mockResolvedValue({
-        ok: true,
         arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(0)),
+        ok: true,
       });
 
       mockErrorHandler.handleError.mockImplementation((error: any) => {
@@ -348,15 +348,15 @@ describe('ImageService', () => {
       const payload: CreateImagePayload = {
         model: 'flux-schnell',
         params: {
-          prompt: 'test prompt',
           imageUrl: 'https://s3.test/network-error.png',
+          prompt: 'test prompt',
         },
       };
 
       // Setup
       mockModelResolverService.validateModel.mockResolvedValue({
-        exists: true,
         actualFileName: 'model.safetensors',
+        exists: true,
       });
 
       // Network error
@@ -374,21 +374,21 @@ describe('ImageService', () => {
       const payloadWithArray: CreateImagePayload = {
         model: 'flux-schnell',
         params: {
-          prompt: 'test prompt',
           imageUrls: ['https://s3.test/image.png'],
+          prompt: 'test prompt',
         },
       };
 
       // Setup
       mockModelResolverService.validateModel.mockResolvedValue({
-        exists: true,
         actualFileName: 'model.safetensors',
+        exists: true,
       });
 
       // S3 mocks
       mockFetch.mockResolvedValue({
-        ok: true,
         arrayBuffer: vi.fn().mockResolvedValue(new Uint8Array([1, 2, 3]).buffer),
+        ok: true,
       });
       mockClientService.uploadImage.mockResolvedValue('uploaded.png');
 
@@ -417,8 +417,8 @@ describe('ImageService', () => {
 
       // Setup
       mockModelResolverService.validateModel.mockResolvedValue({
-        exists: true,
         actualFileName: 'unsupported.safetensors',
+        exists: true,
       });
 
       // Mock unsupported detection
@@ -428,9 +428,9 @@ describe('ImageService', () => {
 
       mockErrorHandler.handleError.mockImplementation((error: any) => {
         throw {
+          error: { message: error.message },
           errorType: AgentRuntimeErrorType.ModelNotFound,
           provider: 'comfyui',
-          error: { message: error.message },
         };
       });
 
@@ -444,23 +444,23 @@ describe('ImageService', () => {
       const payload: CreateImagePayload = {
         model: 'sd3.5-large',
         params: {
-          prompt: 'test',
-          negativePrompt: 'bad',
-          width: 1024,
           height: 768,
+          negativePrompt: 'bad',
+          prompt: 'test',
+          width: 1024,
         },
       };
 
       // Setup
       mockModelResolverService.validateModel.mockResolvedValue({
-        exists: true,
         actualFileName: 'sd3.5_large.safetensors',
+        exists: true,
       });
 
       const detectionResult = {
+        architecture: 'sd35-large',
         isSupported: true,
         modelType: 'SD35',
-        architecture: 'sd35-large',
       };
 
       vi.mocked(WorkflowDetector).detectModelType = vi.fn().mockReturnValue(detectionResult);
@@ -496,13 +496,13 @@ describe('ImageService', () => {
       mockModelResolverService.validateModel.mockRejectedValue(testError);
 
       mockErrorHandler.handleError.mockImplementation(() => {
-        throw { transformed: true, original: testError };
+        throw { original: testError, transformed: true };
       });
 
       // Execute
       await expect(imageService.createImage(payload)).rejects.toMatchObject({
-        transformed: true,
         original: testError,
+        transformed: true,
       });
 
       // Verify error handler was called

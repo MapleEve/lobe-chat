@@ -21,9 +21,9 @@ vi.mock('../../utils/modelResolver', () => ({
       cleanName === TEST_FLUX_MODELS.DEV
     ) {
       return {
+        family: 'flux',
         modelFamily: 'FLUX',
         variant: 'dev',
-        family: 'flux',
       };
     }
 
@@ -45,7 +45,7 @@ vi.mock('../../utils/weightDType', () => ({
 
 // Mock PromptBuilder and seed function - capture constructor arguments for test access
 vi.mock('@saintno/comfyui-sdk', () => ({
-  PromptBuilder: vi.fn().mockImplementation((workflow, _inputs, _outputs) => {
+  PromptBuilder: vi.fn().mockImplementation((workflow) => {
     // Store the workflow reference so modifications are reflected
     const mockInstance = {
       input: vi.fn().mockReturnThis(),
@@ -66,7 +66,28 @@ describe('buildFluxDevWorkflow', async () => {
   it('should create FLUX Dev workflow with default parameters', async () => {
     const modelName = 'flux_dev.safetensors';
     const params = {
-      prompt: 'A beautiful landscape',
+      
+// Default from fluxDevParamsSchema  
+cfg: 3.5,
+      
+
+// Default from fluxDevParamsSchema
+height: 1024,  
+      
+prompt: 'A beautiful landscape',  
+      
+// Default from fluxDevParamsSchema
+samplerName: 'euler',  
+      
+
+// Default from fluxDevParamsSchema
+scheduler: 'simple',  
+      
+
+// Default from fluxDevParamsSchema
+steps: 20,  
+      
+width: 1024,  // Default from fluxDevParamsSchema
     };
 
     const result = await buildFluxDevWorkflow(modelName, params, mockContext);
@@ -79,7 +100,7 @@ describe('buildFluxDevWorkflow', async () => {
             clip: ['1', 0],
             clip_l: 'A beautiful landscape',
             // ✅ 验证prompt正确设置
-            guidance: WORKFLOW_DEFAULTS.SAMPLING.CFG,
+            guidance: 3.5, // Frontend provides CFG
             // ✅ 验证prompt正确设置
             t5xxl: 'A beautiful landscape',
           }),
@@ -100,7 +121,7 @@ describe('buildFluxDevWorkflow', async () => {
       prompt: 'Custom prompt',
       samplerName: 'dpmpp_2m',
       scheduler: 'karras',
-      steps: WORKFLOW_DEFAULTS.SAMPLING.STEPS,
+      steps: 25, // Frontend provides steps
       width: 512,
     };
 
@@ -114,7 +135,7 @@ describe('buildFluxDevWorkflow', async () => {
     expect(workflow['4'].inputs.height).toBe(768); // ✅ 直接设置到工作流
     expect(workflow['7'].inputs.width).toBe(512); // ✅ 修复: 现在直接设置
     expect(workflow['7'].inputs.height).toBe(768); // ✅ 修复: 现在直接设置
-    expect(workflow['9'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SAMPLING.STEPS);
+    expect(workflow['9'].inputs.steps).toBe(25); // Frontend provides steps
     expect(workflow['5'].inputs.guidance).toBe(4.5); // ✅ 直接设置到工作流
     expect(workflow['6'].inputs.guidance).toBe(4.5); // ✅ 修复: 现在直接设置
     // ✅ samplerName and scheduler parameters are now supported
@@ -124,22 +145,50 @@ describe('buildFluxDevWorkflow', async () => {
 
   it('should handle empty prompt', async () => {
     const modelName = 'flux_dev.safetensors';
-    const params = {};
+    const params = {
+      
+// Default from fluxDevParamsSchema
+cfg: 3.5,  
+      
+
+// Default from fluxDevParamsSchema
+height: 1024,  
+      
+
+prompt: '',  
+      
+
+// Default from fluxDevParamsSchema
+samplerName: 'euler',  
+      
+
+
+// Default from fluxDevParamsSchema
+scheduler: 'simple',  
+      
+
+
+// Default from fluxDevParamsSchema
+steps: 20,  
+      
+// Empty prompt
+width: 1024,  // Default from fluxDevParamsSchema
+    };
 
     await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
     // Should use default values
-    expect(workflow['4'].inputs.width).toBe(WORKFLOW_DEFAULTS.IMAGE.WIDTH);
-    expect(workflow['4'].inputs.height).toBe(WORKFLOW_DEFAULTS.IMAGE.HEIGHT);
-    expect(workflow['7'].inputs.width).toBe(WORKFLOW_DEFAULTS.IMAGE.WIDTH);
-    expect(workflow['7'].inputs.height).toBe(WORKFLOW_DEFAULTS.IMAGE.HEIGHT);
-    expect(workflow['9'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SAMPLING.STEPS);
-    expect(workflow['5'].inputs.guidance).toBe(WORKFLOW_DEFAULTS.SAMPLING.CFG);
-    expect(workflow['6'].inputs.guidance).toBe(WORKFLOW_DEFAULTS.SAMPLING.CFG);
+    expect(workflow['4'].inputs.width).toBe(1024);
+    expect(workflow['4'].inputs.height).toBe(1024);
+    expect(workflow['7'].inputs.width).toBe(1024);
+    expect(workflow['7'].inputs.height).toBe(1024);
+    expect(workflow['9'].inputs.steps).toBe(20); // Frontend provides steps
+    expect(workflow['5'].inputs.guidance).toBe(3.5); // Frontend provides CFG
+    expect(workflow['6'].inputs.guidance).toBe(3.5); // Frontend provides CFG
     expect(workflow['8'].inputs.sampler_name).toBe('euler');
-    expect(workflow['9'].inputs.scheduler).toBe(WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER);
+    expect(workflow['9'].inputs.scheduler).toBe('simple'); // Frontend provides scheduler
   });
 
   it('should have correct workflow connections', async () => {
@@ -182,14 +231,22 @@ describe('buildFluxDevWorkflow', async () => {
 
   it('should use correct default steps for Dev', async () => {
     const modelName = 'flux_dev.safetensors';
-    const params = { prompt: 'test' };
+    const params = { 
+      cfg: 3.5,
+      height: 1024,
+      prompt: 'test',
+      samplerName: 'euler',
+      scheduler: 'simple',
+      steps: 20,
+      width: 1024
+    };
 
     await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
-    // Should default to 25 steps for Dev
-    expect(workflow['9'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SAMPLING.STEPS);
+    // Should default to 20 steps for Dev
+    expect(workflow['9'].inputs.steps).toBe(20); // Frontend provides steps
   });
 
   it('should have model sampling flux configuration', async () => {
@@ -288,14 +345,22 @@ describe('buildFluxDevWorkflow', async () => {
 
   it('should use default sampler configuration when not provided', async () => {
     const modelName = 'flux_dev.safetensors';
-    const params = { prompt: 'test' };
+    const params = { 
+      cfg: 3.5,
+      height: 1024,
+      prompt: 'test',
+      samplerName: 'euler',
+      scheduler: 'simple',
+      steps: 20,
+      width: 1024
+    };
 
     await buildFluxDevWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
-    expect(workflow['8'].inputs.sampler_name).toBe(WORKFLOW_DEFAULTS.SAMPLING.SAMPLER);
-    expect(workflow['9'].inputs.scheduler).toBe(WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER);
+    expect(workflow['8'].inputs.sampler_name).toBe('euler'); // Frontend provides sampler
+    expect(workflow['9'].inputs.scheduler).toBe('simple'); // Frontend provides scheduler
   });
 
   it('should handle Krea-style parameters via parameterized Dev template', async () => {

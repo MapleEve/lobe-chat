@@ -22,7 +22,7 @@ describe('WorkflowBuilderService', () => {
     vi.clearAllMocks();
 
     mockModelResolver = {
-      selectVAE: vi.fn(),
+      getAvailableVAEFiles: vi.fn().mockResolvedValue(['sdxl_vae.safetensors']),
       getOptimalComponent: vi.fn(),
     };
 
@@ -46,11 +46,11 @@ describe('WorkflowBuilderService', () => {
         { architecture: 'FLUX', isSupported: true },
         TEST_MODELS.flux,
         {
-          prompt: 'A beautiful landscape',
-          width: 1024,
-          height: 1024,
           cfg: 3.5,
+          height: 1024,
+          prompt: 'A beautiful landscape',
           steps: 20,
+          width: 1024,
         },
       );
 
@@ -61,19 +61,19 @@ describe('WorkflowBuilderService', () => {
     });
 
     it('should build SD/SDXL workflow with VAE', async () => {
-      mockModelResolver.selectVAE.mockResolvedValue(TEST_COMPONENTS.sd.vae);
+      mockModelResolver.getOptimalComponent.mockResolvedValue(TEST_COMPONENTS.sd.vae);
 
       const workflow = await service.buildWorkflow(
         'stable-diffusion-xl',
         { architecture: 'SDXL', isSupported: true },
         TEST_MODELS.sdxl,
         {
-          prompt: 'A beautiful landscape',
-          width: 1024,
-          height: 1024,
           cfg: 7,
-          steps: 20,
+          height: 1024,
           negativePrompt: 'blurry, ugly',
+          prompt: 'A beautiful landscape',
+          steps: 20,
+          width: 1024,
         },
       );
 
@@ -94,15 +94,15 @@ describe('WorkflowBuilderService', () => {
 
       const workflow = await service.buildWorkflow(
         'stable-diffusion-35',
-        { architecture: 'SD3', variant: 'sd35', isSupported: true },
+        { architecture: 'SD3', isSupported: true, variant: 'sd35' },
         TEST_MODELS.sd35,
         {
-          prompt: 'A futuristic city',
-          width: 1024,
-          height: 1024,
           cfg: 4.5,
+          height: 1024,
+          prompt: 'A futuristic city',
+          shift: 3,
           steps: 28,
-          shift: 3.0,
+          width: 1024,
         },
       );
 
@@ -170,7 +170,7 @@ describe('WorkflowBuilderService', () => {
   describe('SD/SDXL workflow specifics', () => {
     it('should build workflow with VAE loader when external VAE specified', async () => {
       // For SDXL, the workflow will use sdxl_vae.safetensors from getOptimalVAEForModel
-      mockModelResolver.selectVAE.mockResolvedValue('sdxl_vae.safetensors');
+      mockModelResolver.getOptimalComponent.mockResolvedValue('sdxl_vae.safetensors');
 
       const workflow = await service.buildWorkflow(
         'stable-diffusion-xl',
@@ -188,7 +188,7 @@ describe('WorkflowBuilderService', () => {
     });
 
     it('should support custom sampler and scheduler', async () => {
-      mockModelResolver.selectVAE.mockResolvedValue(undefined);
+      mockModelResolver.getOptimalComponent.mockResolvedValue(undefined);
 
       const workflow = await service.buildWorkflow(
         'stable-diffusion-xl',
@@ -196,7 +196,7 @@ describe('WorkflowBuilderService', () => {
         TEST_MODELS.sdxl,
         {
           prompt: 'test',
-          sampler: 'dpmpp_2m',
+          samplerName: 'dpmpp_2m',
           scheduler: 'karras',
         },
       );
@@ -220,7 +220,7 @@ describe('WorkflowBuilderService', () => {
 
       const workflow = await service.buildWorkflow(
         'stable-diffusion-35',
-        { architecture: 'SD3', variant: 'sd35', isSupported: true },
+        { architecture: 'SD3', isSupported: true, variant: 'sd35' },
         TEST_MODELS.sd35,
         { prompt: 'test' },
       );
@@ -233,37 +233,43 @@ describe('WorkflowBuilderService', () => {
       expect(tripleClipNode).toBeDefined();
     });
 
-    it('should fallback to checkpoint CLIP when components not available', async () => {
-      // Mock no components available - getOptimalComponent will be called but we won't mock it
-      // so it will return undefined/throw
+    it('should throw error when components not available', async () => {
+      // Mock no components available
+      mockModelResolver.getOptimalComponent.mockResolvedValue(undefined);
 
-      const workflow = await service.buildWorkflow(
+      await expect(service.buildWorkflow(
         'stable-diffusion-35',
-        { architecture: 'SD3', variant: 'sd35', isSupported: true },
+        { architecture: 'SD3', isSupported: true, variant: 'sd35' },
         TEST_MODELS.sd35,
         { prompt: 'test' },
-      );
+      )).rejects.toThrow(WorkflowError);
 
-      const nodes = workflow.workflow as any;
-      const tripleClipNode = Object.values(nodes).find(
-        (node: any) => node.class_type === 'TripleCLIPLoader',
-      );
-
-      // Current implementation creates TripleCLIPLoader with defaults when components not available
-      expect(tripleClipNode).toBeDefined();
+      await expect(service.buildWorkflow(
+        'stable-diffusion-35',
+        { architecture: 'SD3', isSupported: true, variant: 'sd35' },
+        TEST_MODELS.sd35,
+        { prompt: 'test' },
+      )).rejects.toThrow('SD3.5 models require external CLIP/T5 encoder files');
     });
 
-    it('should apply shift parameter correctly', async () => {
-      // Mock no components available - getOptimalComponent will be called but we won't mock it
-      // so it will return undefined/throw
+    it('should use default shift parameter', async () => {
+      // Mock components available for this test
+      let callCount = 0;
+      mockModelResolver.getOptimalComponent.mockImplementation(() => {
+        callCount++;
+        if (callCount === 1) return Promise.resolve('clip_l.safetensors');
+        if (callCount === 2) return Promise.resolve('clip_g.safetensors');
+        return Promise.resolve('t5xxl_fp16.safetensors');
+      });
 
       const workflow = await service.buildWorkflow(
         'stable-diffusion-35',
-        { architecture: 'SD3', variant: 'sd35', isSupported: true },
+        { architecture: 'SD3', isSupported: true, variant: 'sd35' },
         TEST_MODELS.sd35,
         {
           prompt: 'test',
-          shift: 5.0,
+          cfg: 4.5,
+          steps: 28,
         },
       );
 
@@ -272,7 +278,7 @@ describe('WorkflowBuilderService', () => {
         (node: any) => node.class_type === 'ModelSamplingSD3',
       ) as any;
 
-      expect(samplingNode.inputs.shift).toBe(5.0);
+      expect(samplingNode.inputs.shift).toBe(3); // Uses default from WORKFLOW_DEFAULTS.SD3.SHIFT
     });
   });
 });

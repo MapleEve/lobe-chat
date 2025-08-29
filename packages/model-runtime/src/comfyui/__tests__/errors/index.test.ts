@@ -8,6 +8,11 @@ import {
   isComfyUIInternalError,
 } from '../../errors/index';
 
+// Helper function for testing error throwing
+const throwWorkflowError = () => {
+  throw new WorkflowError('test', WorkflowError.Reasons.UNSUPPORTED_MODEL);
+};
+
 describe('ComfyUI Internal Error System', () => {
   describe('ComfyUIInternalError Base Class', () => {
     // Create a concrete implementation for testing
@@ -369,9 +374,6 @@ describe('ComfyUI Internal Error System', () => {
     });
 
     it('should allow catching at different levels', () => {
-      const throwWorkflowError = () => {
-        throw new WorkflowError('test', WorkflowError.Reasons.UNSUPPORTED_MODEL);
-      };
       // Can catch as specific error
       expect(() => {
         try {

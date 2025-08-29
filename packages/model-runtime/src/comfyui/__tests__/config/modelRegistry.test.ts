@@ -14,7 +14,7 @@ describe('ModelRegistry', () => {
       expect(Object.keys(MODEL_REGISTRY).length).toBeGreaterThan(0);
 
       // Check that all models have required fields
-      Object.entries(MODEL_REGISTRY).forEach(([_name, config]) => {
+      Object.entries(MODEL_REGISTRY).forEach(([, config]) => {
         expect(config).toBeDefined();
         expect(config.modelFamily).toBeDefined();
         expect(config.priority).toBeTypeOf('number');
@@ -32,7 +32,7 @@ describe('ModelRegistry', () => {
     });
 
     it('should have valid priority ranges', () => {
-      Object.entries(MODEL_REGISTRY).forEach(([_name, config]) => {
+      Object.entries(MODEL_REGISTRY).forEach(([, config]) => {
         // Priorities should be positive numbers
         expect(config.priority).toBeGreaterThan(0);
         expect(config.priority).toBeLessThanOrEqual(10);
@@ -166,16 +166,16 @@ describe('ModelRegistry', () => {
       // 所有过滤条件都匹配
       const config = getModelConfig('flux1-dev.safetensors', {
         modelFamily: 'FLUX',
-        variant: 'dev',
-        priority: 1
+        priority: 1,
+        variant: 'dev'
       });
       expect(config).toBeDefined();
 
       // 其中一个过滤条件不匹配
       const nonMatchingConfig = getModelConfig('flux1-dev.safetensors', {
         modelFamily: 'FLUX',
-        variant: 'dev',
-        priority: 5  // 错误的 priority
+        priority: 5,
+        variant: 'dev'  // 错误的 priority
       });
       expect(nonMatchingConfig).toBeUndefined();
     });

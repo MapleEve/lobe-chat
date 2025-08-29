@@ -13,7 +13,7 @@ describe('SystemComponents', () => {
       expect(Object.keys(SYSTEM_COMPONENTS).length).toBeGreaterThan(0);
 
       // Check that all components have required fields
-      Object.entries(SYSTEM_COMPONENTS).forEach(([_name, config]) => {
+      Object.entries(SYSTEM_COMPONENTS).forEach(([, config]) => {
         expect(config).toBeDefined();
         expect(config.type).toBeDefined();
         expect(config.priority).toBeTypeOf('number');
@@ -73,9 +73,9 @@ describe('SystemComponents', () => {
 
     it('should filter by multiple criteria', () => {
       const result = getAllComponentsWithNames({
-        type: 'lora',
         modelFamily: 'FLUX',
         priority: 1,
+        type: 'lora',
       });
       expect(result.length).toBeGreaterThan(0);
       result.forEach(({ config }) => {
@@ -87,8 +87,8 @@ describe('SystemComponents', () => {
 
     it('should filter by compatible variant', () => {
       const result = getAllComponentsWithNames({
-        type: 'lora',
         compatibleVariant: 'dev',
+        type: 'lora',
       });
       expect(result.length).toBeGreaterThan(0);
       result.forEach(({ config }) => {
@@ -99,8 +99,8 @@ describe('SystemComponents', () => {
 
     it('should return empty array for invalid filters', () => {
       const result = getAllComponentsWithNames({
-        type: 'vae',
         modelFamily: 'NONEXISTENT' as any,
+        type: 'vae',
       });
       expect(result).toEqual([]);
     });

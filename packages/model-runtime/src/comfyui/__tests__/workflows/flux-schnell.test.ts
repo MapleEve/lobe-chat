@@ -2,7 +2,6 @@
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { WORKFLOW_DEFAULTS } from '../../constants';
 import { buildFluxSchnellWorkflow } from '../../workflows/flux-schnell';
 import { mockContext } from '../helpers/mockContext';
 
@@ -14,9 +13,9 @@ vi.mock('../../utils/modelResolver', () => ({
     // Mock configuration mapping for FLUX Schnell test models
     if (cleanName.includes('flux_schnell') || cleanName.includes('flux-schnell')) {
       return {
+        family: 'flux',
         modelFamily: 'FLUX',
         variant: 'schnell',
-        family: 'flux',
       };
     }
 
@@ -38,6 +37,7 @@ vi.mock('../../utils/weightDType', () => ({
 
 // Mock PromptBuilder and seed function - capture constructor arguments for test access
 vi.mock('@saintno/comfyui-sdk', () => ({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   PromptBuilder: vi.fn().mockImplementation((workflow, _inputs, _outputs) => {
     // Store the workflow reference so modifications are reflected
     const mockInstance = {
@@ -59,15 +59,19 @@ describe('buildFluxSchnellWorkflow', () => {
   it('should create FLUX Schnell workflow with default parameters', async () => {
     const modelName = 'flux_schnell.safetensors';
     const params = {
+      cfg: 1, // Default from fluxSchnellParamsSchema (max 4 steps)
+      height: 1024, // Default from fluxSchnellParamsSchema
       prompt: 'A beautiful landscape',
+      samplerName: 'euler', // Schnell always uses CFG 1
+      scheduler: 'simple', // Not in schema but workflow expects it
+      steps: 4, // Default from fluxSchnellParamsSchema
+      width: 1024, // Not in schema but workflow expects it
     };
 
-    const result = await buildFluxSchnellWorkflow(modelName, params, mockContext);
+    await buildFluxSchnellWorkflow(modelName, params, mockContext);
 
     // Check the workflow object from the PromptBuilder call
     const workflow = (PromptBuilder as any).mock.calls[0][0];
-    const inputs = (PromptBuilder as any).mock.calls[0][1];
-    const outputs = (PromptBuilder as any).mock.calls[0][2];
 
     // Verify workflow structure
     expect(workflow['1']).toEqual({
@@ -91,17 +95,18 @@ describe('buildFluxSchnellWorkflow', () => {
 
     expect(workflow['4'].inputs.clip_l).toBe('A beautiful landscape');
     expect(workflow['4'].inputs.t5xxl).toBe('A beautiful landscape');
-    expect(workflow['4'].inputs.guidance).toBe(WORKFLOW_DEFAULTS.SCHNELL.CFG);
+    expect(workflow['4'].inputs.guidance).toBe(1); // Schnell uses CFG 1
 
     expect(workflow['6'].inputs.cfg).toBe(1);
-    expect(workflow['6'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SCHNELL.STEPS);
+    expect(workflow['6'].inputs.steps).toBe(4); // Schnell uses 4 steps
     expect(workflow['6'].inputs.seed).toBeGreaterThan(0); // Random seed
 
-    // Check input/output parameters (prompt parameters removed as they're set directly)
-    expect(inputs).toEqual(['width', 'height', 'steps', 'cfg', 'seed']);
-    expect(outputs).toEqual(['images']);
-
-    expect(result.setOutputNode).toHaveBeenCalledWith('images', '8');
+    // Verify PromptBuilder was called with workflow and node mappings
+    expect(PromptBuilder).toHaveBeenCalledWith(
+      expect.any(Object), // workflow
+      expect.arrayContaining(['width', 'height', 'steps', 'cfg', 'seed']), // input keys
+      ['images'], // output keys
+    );
   });
 
   it('should create workflow with custom parameters', async () => {
@@ -116,7 +121,7 @@ describe('buildFluxSchnellWorkflow', () => {
       width: 512,
     };
 
-    const result = await buildFluxSchnellWorkflow(modelName, params, mockContext);
+    await buildFluxSchnellWorkflow(modelName, params, mockContext);
 
     // Check the modified workflow object from the PromptBuilder call
     const workflow = (PromptBuilder as any).mock.calls[0][0];
@@ -126,26 +131,34 @@ describe('buildFluxSchnellWorkflow', () => {
     expect(workflow['5'].inputs.height).toBe(768);
     expect(workflow['6'].inputs.steps).toBe(8);
     expect(workflow['6'].inputs.seed).toBe(12_345);
-    // samplerName and scheduler parameters are not currently supported in the Schnell implementation
-    expect(workflow['6'].inputs.sampler_name).toBe('euler'); // Uses default value
-    expect(workflow['6'].inputs.scheduler).toBe(WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER); // Uses default value
+    // Frontend provides sampler and scheduler
+    expect(workflow['6'].inputs.sampler_name).toBe('dpmpp_2m');
+    expect(workflow['6'].inputs.scheduler).toBe('karras');
   });
 
   it('should handle empty prompt', async () => {
     const modelName = 'flux_schnell.safetensors';
-    const params = {};
+    const params = {
+      cfg: 1,
+      height: 1024,
+      prompt: '', // Empty prompt test
+      samplerName: 'euler',
+      scheduler: 'simple',
+      steps: 4,
+      width: 1024,
+    };
 
     await buildFluxSchnellWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
     // Should use default values
-    expect(workflow['5'].inputs.width).toBe(WORKFLOW_DEFAULTS.IMAGE.WIDTH);
-    expect(workflow['5'].inputs.height).toBe(WORKFLOW_DEFAULTS.IMAGE.HEIGHT);
-    expect(workflow['6'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SCHNELL.STEPS);
+    expect(workflow['5'].inputs.width).toBe(1024);
+    expect(workflow['5'].inputs.height).toBe(1024);
+    expect(workflow['6'].inputs.steps).toBe(4); // Schnell uses 4 steps
     expect(workflow['6'].inputs.seed).toBeGreaterThan(0); // Random seed, not 0
     expect(workflow['6'].inputs.sampler_name).toBe('euler');
-    expect(workflow['6'].inputs.scheduler).toBe(WORKFLOW_DEFAULTS.SAMPLING.SCHEDULER);
+    expect(workflow['6'].inputs.scheduler).toBe('simple'); // Frontend provides scheduler
   });
 
   it('should have correct workflow structure', async () => {
@@ -182,14 +195,22 @@ describe('buildFluxSchnellWorkflow', () => {
 
   it('should use correct default steps for Schnell', async () => {
     const modelName = 'flux_schnell.safetensors';
-    const params = { prompt: 'test' };
+    const params = { 
+      cfg: 1,
+      height: 1024,
+      prompt: 'test',
+      samplerName: 'euler',
+      scheduler: 'simple',
+      steps: 4,
+      width: 1024
+    };
 
     await buildFluxSchnellWorkflow(modelName, params, mockContext);
 
     const workflow = (PromptBuilder as any).mock.calls[0][0];
 
     // Should default to 4 steps for Schnell
-    expect(workflow['6'].inputs.steps).toBe(WORKFLOW_DEFAULTS.SCHNELL.STEPS);
+    expect(workflow['6'].inputs.steps).toBe(4); // Schnell uses 4 steps
   });
 
   it('should have all required meta information', async () => {

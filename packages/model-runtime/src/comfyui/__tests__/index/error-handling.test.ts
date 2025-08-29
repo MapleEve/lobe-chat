@@ -3,7 +3,6 @@ import { CallWrapper, ComfyApi, PromptBuilder } from '@saintno/comfyui-sdk';
 import { Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentRuntimeErrorType } from '../../../error';
-import { AgentRuntimeError } from '../../../utils/createError';
 import { ModelResolverError } from '../../errors/modelResolverError';
 import { CreateImagePayload, LobeComfyUI } from '../../index';
 import { WorkflowDetector } from '../../utils/workflowDetector';
@@ -29,7 +28,6 @@ let mockWorkflowBuilderService: any;
 vi.mock('../../services/comfyuiClient', () => {
   const MockComfyUIClientService = vi.fn().mockImplementation(() => {
     mockClientService = {
-      validateConnection: vi.fn().mockResolvedValue(true),
       executeWorkflow: vi.fn().mockImplementation((workflow, onProgress) => {
         return new Promise((resolve) => {
           onProgress?.({ progress: 100 });
@@ -46,7 +44,6 @@ vi.mock('../../services/comfyuiClient', () => {
           });
         });
       }),
-      getPathImage: vi.fn().mockReturnValue('http://localhost:8188/view?filename=test.png'),
       getObjectInfo: vi.fn().mockResolvedValue({
         CheckpointLoaderSimple: {
           input: {
@@ -56,6 +53,8 @@ vi.mock('../../services/comfyuiClient', () => {
           },
         },
       }),
+      getPathImage: vi.fn().mockReturnValue('http://localhost:8188/view?filename=test.png'),
+      validateConnection: vi.fn().mockResolvedValue(true),
     };
     return mockClientService;
   });
@@ -65,6 +64,14 @@ vi.mock('../../services/comfyuiClient', () => {
 vi.mock('../../services/modelResolver', () => {
   const MockModelResolverService = vi.fn().mockImplementation(() => {
     mockModelResolverService = {
+      clearCache: vi.fn(),
+      getAvailableModelFiles: vi.fn().mockResolvedValue(['flux-schnell.safetensors']),
+      resolveModelFileName: vi.fn().mockResolvedValue('test.safetensors'),
+      selectComponents: vi.fn().mockResolvedValue({
+        clip: ['clip_l.safetensors', 'clip_g.safetensors'],
+        t5: 't5xxl_fp16.safetensors',
+      }),
+      selectVAE: vi.fn().mockResolvedValue(undefined),
       validateModel: vi.fn().mockImplementation((modelId: string) => {
         if (modelId.includes('unknown')) {
           return Promise.resolve({ exists: false });
@@ -72,14 +79,6 @@ vi.mock('../../services/modelResolver', () => {
         const fileName = modelId.split('/').pop() || modelId;
         return Promise.resolve({ actualFileName: fileName + '.safetensors', exists: true });
       }),
-      resolveModelFileName: vi.fn().mockResolvedValue('test.safetensors'),
-      selectVAE: vi.fn().mockResolvedValue(undefined),
-      selectComponents: vi.fn().mockResolvedValue({
-        clip: ['clip_l.safetensors', 'clip_g.safetensors'],
-        t5: 't5xxl_fp16.safetensors',
-      }),
-      getAvailableModelFiles: vi.fn().mockResolvedValue(['flux-schnell.safetensors']),
-      clearCache: vi.fn(),
     };
     return mockModelResolverService;
   });
@@ -101,8 +100,7 @@ vi.mock('../../services/workflowBuilder', () => {
   return { WorkflowBuilderService: MockWorkflowBuilderService };
 });
 
-const _provider = 'comfyui';
-const bizErrorType = 'ComfyUIBizError';
+const workflowErrorType = 'ComfyUIWorkflowError';
 const emptyResultErrorType = AgentRuntimeErrorType.ComfyUIBizError;
 const serviceUnavailableErrorType = 'ComfyUIServiceUnavailable';
 const modelNotFoundErrorType = 'ModelNotFound';
@@ -112,7 +110,8 @@ describe('LobeComfyUI - Error Handling', () => {
   let mockComfyApi: ReturnType<typeof createMockComfyApi>;
   let mockCallWrapper: ReturnType<typeof createMockCallWrapper>;
   let mockPromptBuilder: ReturnType<typeof createMockPromptBuilder>;
-  let mockModelResolver: ReturnType<typeof createMockModelResolver>;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  let _mockModelResolver: ReturnType<typeof createMockModelResolver>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -121,7 +120,7 @@ describe('LobeComfyUI - Error Handling', () => {
     mockComfyApi = createMockComfyApi();
     mockCallWrapper = createMockCallWrapper();
     mockPromptBuilder = createMockPromptBuilder();
-    mockModelResolver = createMockModelResolver();
+    _mockModelResolver = createMockModelResolver();
 
     // Mock ComfyApi constructor to return our mock instance
     (ComfyApi as unknown as Mock).mockImplementation(() => mockComfyApi as any);
@@ -230,7 +229,7 @@ describe('LobeComfyUI - Error Handling', () => {
       });
     });
 
-    it('should throw ComfyUIBizError when workflow fails', async () => {
+    it('should throw ComfyUIWorkflowError when workflow fails', async () => {
       // Mock successful validation
       mockModelResolverService.validateModel.mockResolvedValue({
         actualFileName: 'flux-schnell.safetensors',
@@ -251,7 +250,7 @@ describe('LobeComfyUI - Error Handling', () => {
         error: expect.objectContaining({
           message: expect.any(String),
         }),
-        errorType: bizErrorType,
+        errorType: workflowErrorType,
         provider: 'comfyui',
       });
     });

@@ -8,7 +8,6 @@ import { WorkflowDetector } from '../../utils/workflowDetector';
 import {
   createMockCallWrapper,
   createMockComfyApi,
-  createMockModelResolver,
   createMockPromptBuilder,
 } from '../helpers/testSetup';
 
@@ -22,7 +21,6 @@ vi.mock('@saintno/comfyui-sdk', () => ({
 // Mock the ComfyUI services
 vi.mock('../../services/comfyuiClient', () => {
   const MockComfyUIClientService = vi.fn().mockImplementation(() => ({
-    validateConnection: vi.fn().mockResolvedValue(true),
     executeWorkflow: vi.fn().mockImplementation((workflow, onProgress) => {
       return new Promise((resolve) => {
         // Simulate successful execution
@@ -40,7 +38,6 @@ vi.mock('../../services/comfyuiClient', () => {
         });
       });
     }),
-    getPathImage: vi.fn().mockReturnValue('http://localhost:8188/view?filename=test.png'),
     getObjectInfo: vi.fn().mockResolvedValue({
       CheckpointLoaderSimple: {
         input: {
@@ -50,23 +47,18 @@ vi.mock('../../services/comfyuiClient', () => {
         },
       },
     }),
+    getPathImage: vi.fn().mockReturnValue('http://localhost:8188/view?filename=test.png'),
+    validateConnection: vi.fn().mockResolvedValue(true),
   }));
   return { ComfyUIClientService: MockComfyUIClientService };
 });
 
 vi.mock('../../services/modelResolver', () => {
   const MockModelResolverService = vi.fn().mockImplementation(() => ({
-    validateModel: vi.fn().mockImplementation((modelId: string) => {
-      if (
-        modelId.includes('non-existent') ||
-        modelId.includes('unknown') ||
-        modelId.includes('non-verified')
-      ) {
-        return Promise.resolve({ exists: false });
-      }
-      const fileName = modelId.split('/').pop() || modelId;
-      return Promise.resolve({ actualFileName: fileName + '.safetensors', exists: true });
-    }),
+    clearCache: vi.fn(),
+    getAvailableModelFiles: vi
+      .fn()
+      .mockResolvedValue(['flux-schnell.safetensors', 'flux-dev.safetensors', 'sd15-base.ckpt']),
     resolveModelFileName: vi.fn().mockImplementation((modelId: string) => {
       if (
         modelId.includes('non-existent') ||
@@ -78,15 +70,22 @@ vi.mock('../../services/modelResolver', () => {
       const fileName = modelId.split('/').pop() || modelId;
       return Promise.resolve(fileName + '.safetensors');
     }),
-    selectVAE: vi.fn().mockResolvedValue(undefined),
     selectComponents: vi.fn().mockResolvedValue({
       clip: ['clip_l.safetensors', 'clip_g.safetensors'],
       t5: 't5xxl_fp16.safetensors',
     }),
-    getAvailableModelFiles: vi
-      .fn()
-      .mockResolvedValue(['flux-schnell.safetensors', 'flux-dev.safetensors', 'sd15-base.ckpt']),
-    clearCache: vi.fn(),
+    selectVAE: vi.fn().mockResolvedValue(undefined),
+    validateModel: vi.fn().mockImplementation((modelId: string) => {
+      if (
+        modelId.includes('non-existent') ||
+        modelId.includes('unknown') ||
+        modelId.includes('non-verified')
+      ) {
+        return Promise.resolve({ exists: false });
+      }
+      const fileName = modelId.split('/').pop() || modelId;
+      return Promise.resolve({ actualFileName: fileName + '.safetensors', exists: true });
+    }),
   }));
   return { ModelResolverService: MockModelResolverService };
 });
@@ -193,7 +192,7 @@ vi.mock('../../config/systemComponents', () => ({
     }
     return [];
   }),
-  getOptimalComponent: vi.fn().mockImplementation((type: string, _modelFamily: string) => {
+  getOptimalComponent: vi.fn().mockImplementation((type: string) => {
     if (type === 't5') return 't5xxl_fp16.safetensors';
     if (type === 'vae') return 'ae.safetensors';
     if (type === 'clip') return 'clip_l.safetensors';
@@ -206,7 +205,6 @@ describe('LobeComfyUI - Core Functionality', () => {
   let mockComfyApi: ReturnType<typeof createMockComfyApi>;
   let mockCallWrapper: ReturnType<typeof createMockCallWrapper>;
   let mockPromptBuilder: ReturnType<typeof createMockPromptBuilder>;
-  let mockModelResolver: ReturnType<typeof createMockModelResolver>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -221,7 +219,6 @@ describe('LobeComfyUI - Core Functionality', () => {
     (PromptBuilder as Mock).mockImplementation(() => mockPromptBuilder);
 
     // ModelResolver service is mocked at module level
-    mockModelResolver = createMockModelResolver();
 
     // Setup WorkflowDetector default behavior
     vi.spyOn(WorkflowDetector, 'detectModelType').mockImplementation((modelFileName: string) => {
@@ -245,7 +242,7 @@ describe('LobeComfyUI - Core Functionality', () => {
 
     // Setup processModelList default behavior
     vi.mocked(processModelList).mockImplementation(
-      async (modelList: any, _config: any, _provider: any) => {
+      async (modelList: any) => {
         return modelList.map((model: any) => ({
           ...model,
           contextWindowTokens: undefined,
@@ -312,7 +309,6 @@ describe('LobeComfyUI - Core Functionality', () => {
         params: {
           cfg: 7,
           height: 512,
-          negativePrompt: 'blurry, low quality',
           prompt: 'A beautiful landscape',
           steps: 20,
           width: 512,

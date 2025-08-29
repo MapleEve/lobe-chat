@@ -6,9 +6,9 @@ import { SimpleSDParams, buildSimpleSDWorkflow } from '../../workflows/simple-sd
 
 // Mock configuration interface for test models
 interface MockModelConfig {
+  family: string;
   modelFamily: 'FLUX' | 'SD1' | 'SDXL' | 'SD3';
   variant: string;
-  family: string;
 }
 
 // Mock the model resolver that the WorkflowDetector uses
@@ -18,35 +18,35 @@ vi.mock('../../utils/modelResolver', () => ({
 
     // Mock configuration mapping for test models
     const configs: Record<string, MockModelConfig> = {
-      'sd_xl_base_1.0.safetensors': {
-        modelFamily: 'SDXL',
-        variant: 'sdxl',
-        family: 'sdxl',
-      },
-      'v1-5-pruned-emaonly.safetensors': {
+      'legacy_model.safetensors': {
+        family: 'sd15',
         modelFamily: 'SD1',
         variant: 'sd15',
-        family: 'sd15',
       },
       'sd3.5_large.safetensors': {
+        family: 'sd35',
         modelFamily: 'SD3',
         variant: 'sd35',
-        family: 'sd35',
       },
       'sd3.5_medium_incl_clips_t5xxlfp8scaled.safetensors': {
+        family: 'sd35-inclclip',
         modelFamily: 'SD3',
         variant: 'sd35-inclclip',
-        family: 'sd35-inclclip',
       },
-      'test.safetensors': {
+      'sd_xl_base_1.0.safetensors': {
+        family: 'sdxl',
         modelFamily: 'SDXL',
         variant: 'sdxl',
-        family: 'sdxl',
       },
-      'legacy_model.safetensors': {
+      'test.safetensors': {
+        family: 'sdxl',
+        modelFamily: 'SDXL',
+        variant: 'sdxl',
+      },
+      'v1-5-pruned-emaonly.safetensors': {
+        family: 'sd15',
         modelFamily: 'SD1',
         variant: 'sd15',
-        family: 'sd15',
       },
     };
 
@@ -60,45 +60,33 @@ const mockContext = {
     getObjectInfo: vi.fn().mockResolvedValue({}),
   },
   modelResolverService: {
-    selectVAE: vi
+    getAvailableVAEFiles: vi.fn().mockResolvedValue([
+      'sdxl_vae.safetensors',
+      'custom_vae_lobe.safetensors',
+    ]),
+    getOptimalComponent: vi
       .fn()
-      .mockImplementation(
-        async (options: { modelFileName: string; isCustomSD?: boolean; customVAE?: string }) => {
-          const { modelFileName, isCustomSD, customVAE } = options;
-
-          // Mock custom VAE handling
-          if (isCustomSD && customVAE) {
-            return customVAE;
-          }
-
-          // SD3.5 models (containing 'sd3') should not use external VAE
-          if (modelFileName.toLowerCase().includes('sd3')) {
-            return undefined; // Use built-in VAE
-          }
-
-          // SDXL models get external VAE
-          if (modelFileName.toLowerCase().includes('xl')) {
-            return 'sdxl_vae.safetensors';
-          }
-
-          // SD1.5 models get external VAE
-          if (
-            modelFileName.toLowerCase().includes('v1-5') ||
-            modelFileName.toLowerCase().includes('sd15')
-          ) {
-            return 'sdxl_vae.safetensors'; // Using SDXL VAE for testing
-          }
-
-          // Default: no external VAE
+      .mockImplementation(async (type: string, modelFamily: string) => {
+        if (type !== 'vae') return undefined;
+        
+        // SD3 models don't use external VAE
+        if (modelFamily === 'SD3') {
           return undefined;
-        },
-      ),
+        }
+        
+        // SDXL and SD1 models get external VAE
+        if (modelFamily === 'SDXL' || modelFamily === 'SD1') {
+          return 'sdxl_vae.safetensors';
+        }
+        
+        return undefined;
+      }),
   },
 } as any;
 
 // Mock PromptBuilder
 vi.mock('@saintno/comfyui-sdk', () => ({
-  PromptBuilder: vi.fn().mockImplementation((workflow, _inputs, _outputs) => {
+  PromptBuilder: vi.fn().mockImplementation((workflow) => {
     const mockInstance = {
       input: vi.fn().mockReturnThis(),
       setInputNode: vi.fn().mockReturnThis(),
@@ -125,7 +113,7 @@ describe('buildSimpleSDWorkflow', () => {
         width: 512,
       };
 
-      const builder = await buildSimpleSDWorkflow(modelName, params, mockContext);
+      await buildSimpleSDWorkflow(modelName, params, mockContext);
 
       // Verify PromptBuilder was called with workflow and node mappings
       expect(PromptBuilder).toHaveBeenCalledWith(
@@ -174,10 +162,14 @@ describe('buildSimpleSDWorkflow', () => {
 
     it('should handle explicit t2i mode', async () => {
       const params: SimpleSDParams = {
+        cfg: 7.5,
+        height: 512,
         prompt: 'A beautiful landscape',
+        steps: 20,
+        width: 512,
       };
-
-      const builder = await buildSimpleSDWorkflow('test.safetensors', params, mockContext);
+      
+      await buildSimpleSDWorkflow('test.safetensors', params, mockContext);
       const workflow = (PromptBuilder as any).mock.calls[0][0];
 
       // Should still use EmptyLatentImage
@@ -192,12 +184,14 @@ describe('buildSimpleSDWorkflow', () => {
       // Note: The current service architecture doesn't support i2i mode
       // These parameters would be ignored and a t2i workflow would be created
       const params: SimpleSDParams = {
-        denoise: 0.6,
-        prompt: 'Transform this image',
-        // inputImage and mode parameters don't exist in current SDWorkflowParams interface
+        cfg: 7.5,
+        height: 512,
+        prompt: 'A beautiful landscape',
+        steps: 20,
+        width: 512,
       };
-
-      const builder = await buildSimpleSDWorkflow('test.safetensors', params, mockContext);
+      
+      await buildSimpleSDWorkflow('test.safetensors', params, mockContext);
 
       // Verify PromptBuilder was called with workflow and node mappings
       expect(PromptBuilder).toHaveBeenCalledWith(
@@ -214,16 +208,20 @@ describe('buildSimpleSDWorkflow', () => {
 
       // Should use standard t2i latent source
       expect(workflow['5'].inputs.latent_image).toEqual(['4', 0]); // EmptyLatentImage
-      expect(workflow['5'].inputs.denoise).toBe(0.6); // Custom denoise should still be respected
+      // Note: simple-sd always uses denoise=1 for t2i mode, ignoring the denoise parameter
+      expect(workflow['5'].inputs.denoise).toBe(1);
     });
 
     it('should use default denoise value when not provided', async () => {
       const params: SimpleSDParams = {
-        prompt: 'Transform this image',
-        // No denoise parameter provided
+        cfg: 7.5,
+        height: 512,
+        prompt: 'A beautiful landscape',
+        steps: 20,
+        width: 512,
       };
-
-      const builder = await buildSimpleSDWorkflow('test.safetensors', params, mockContext);
+      
+      await buildSimpleSDWorkflow('test.safetensors', params, mockContext);
       const workflow = (PromptBuilder as any).mock.calls[0][0];
 
       // Should use default denoise value of 1 for t2i mode
@@ -232,11 +230,14 @@ describe('buildSimpleSDWorkflow', () => {
 
     it('should always use t2i mode (service does not support mode parameter)', async () => {
       const params: SimpleSDParams = {
-        prompt: 'Generate image',
-        // mode parameter is not supported in current SDWorkflowParams interface
+        cfg: 7.5,
+        height: 512,
+        prompt: 'A beautiful landscape',
+        steps: 20,
+        width: 512,
       };
-
-      const builder = await buildSimpleSDWorkflow('test.safetensors', params, mockContext);
+      
+      await buildSimpleSDWorkflow('test.safetensors', params, mockContext);
 
       // Should use t2i workflow structure
       expect(PromptBuilder).toHaveBeenCalledWith(
@@ -266,7 +267,7 @@ describe('buildSimpleSDWorkflow', () => {
         width: 512,
       };
 
-      const builder = await buildSimpleSDWorkflow(modelName, params, mockContext);
+      await buildSimpleSDWorkflow(modelName, params, mockContext);
       const workflow = (PromptBuilder as any).mock.calls[0][0];
 
       // Should default to t2i mode
@@ -282,8 +283,7 @@ describe('buildSimpleSDWorkflow', () => {
       };
 
       // Test that the function doesn't throw by calling it
-      const builder = await buildSimpleSDWorkflow('test.safetensors', params, mockContext);
-      expect(builder).toBeDefined();
+      await buildSimpleSDWorkflow('test.safetensors', params, mockContext);
       const workflow = (PromptBuilder as any).mock.calls[0][0];
 
       // Should use sensible defaults
@@ -295,10 +295,14 @@ describe('buildSimpleSDWorkflow', () => {
   describe('Workflow Structure', () => {
     it('should maintain consistent node IDs for core components', async () => {
       const params: SimpleSDParams = {
-        prompt: 'Structure test',
+        cfg: 7.5,
+        height: 512,
+        prompt: 'A beautiful landscape',
+        steps: 20,
+        width: 512,
       };
-
-      const builder = await buildSimpleSDWorkflow('test.safetensors', params, mockContext);
+      
+      await buildSimpleSDWorkflow('test.safetensors', params, mockContext);
       const workflow = (PromptBuilder as any).mock.calls[0][0];
 
       // Core nodes should always exist with same IDs
@@ -313,10 +317,14 @@ describe('buildSimpleSDWorkflow', () => {
 
     it('should use consistent numeric node IDs for standard workflow', async () => {
       const params: SimpleSDParams = {
-        prompt: 'ID test',
+        cfg: 7.5,
+        height: 512,
+        prompt: 'A beautiful landscape',
+        steps: 20,
+        width: 512,
       };
-
-      const builder = await buildSimpleSDWorkflow('test.safetensors', params, mockContext);
+      
+      await buildSimpleSDWorkflow('test.safetensors', params, mockContext);
       const workflow = (PromptBuilder as any).mock.calls[0][0];
 
       // Standard t2i workflow nodes should use numeric IDs
@@ -337,10 +345,14 @@ describe('buildSimpleSDWorkflow', () => {
   describe('VAE Conditional Logic', () => {
     it('should use built-in VAE for SD3.5 models', async () => {
       const params: SimpleSDParams = {
-        prompt: 'Test with SD3.5',
+        cfg: 7.5,
+        height: 512,
+        prompt: 'A beautiful landscape',
+        steps: 20,
+        width: 512,
       };
-
-      const builder = await buildSimpleSDWorkflow('sd3.5_large.safetensors', params, mockContext);
+      
+      await buildSimpleSDWorkflow('sd3.5_large.safetensors', params, mockContext);
       const workflow = (PromptBuilder as any).mock.calls[0][0];
 
       // Should not create VAE_LOADER node for SD3.5
@@ -355,7 +367,7 @@ describe('buildSimpleSDWorkflow', () => {
         prompt: 'Test with custom SD',
       };
 
-      const builder = await buildSimpleSDWorkflow(
+      await buildSimpleSDWorkflow(
         'sd3.5_medium_incl_clips_t5xxlfp8scaled.safetensors',
         params,
         mockContext,
@@ -374,7 +386,7 @@ describe('buildSimpleSDWorkflow', () => {
         prompt: 'Test with SD1.5',
       };
 
-      const builder = await buildSimpleSDWorkflow(
+      await buildSimpleSDWorkflow(
         'v1-5-pruned-emaonly.safetensors',
         params,
         mockContext,
@@ -393,7 +405,7 @@ describe('buildSimpleSDWorkflow', () => {
         prompt: 'Test with SDXL',
       };
 
-      const builder = await buildSimpleSDWorkflow(
+      await buildSimpleSDWorkflow(
         'sd_xl_base_1.0.safetensors',
         params,
         mockContext,
@@ -411,7 +423,7 @@ describe('buildSimpleSDWorkflow', () => {
         prompt: 'Test with SDXL',
       };
 
-      const builder = await buildSimpleSDWorkflow(
+      await buildSimpleSDWorkflow(
         'sd_xl_base_1.0.safetensors',
         params,
         mockContext,
@@ -429,10 +441,14 @@ describe('buildSimpleSDWorkflow', () => {
 
     it('should use built-in VAE for SD3.5 models in t2i mode', async () => {
       const params: SimpleSDParams = {
-        prompt: 'Test with SD3.5',
+        cfg: 7.5,
+        height: 512,
+        prompt: 'A beautiful landscape',
+        steps: 20,
+        width: 512,
       };
-
-      const builder = await buildSimpleSDWorkflow('sd3.5_large.safetensors', params, mockContext);
+      
+      await buildSimpleSDWorkflow('sd3.5_large.safetensors', params, mockContext);
       const workflow = (PromptBuilder as any).mock.calls[0][0];
 
       // Should not create external VAE_LOADER node

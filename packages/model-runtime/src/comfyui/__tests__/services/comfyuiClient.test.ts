@@ -3,18 +3,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ComfyUIKeyVault } from '@/types/user/settings/keyVaults';
 
-import { AgentRuntimeErrorType } from '../../../error';
 import { ServicesError } from '../../errors';
 import { ModelResolverError } from '../../errors/modelResolverError';
 import { ComfyUIClientService } from '../../services/comfyuiClient';
 
-// Import for mocking
-import { ComfyApi } from '@saintno/comfyui-sdk';
-
 // Mock the SDK
 vi.mock('@saintno/comfyui-sdk', () => ({
-  ComfyApi: vi.fn(),
   CallWrapper: vi.fn(),
+  ComfyApi: vi.fn(),
 }));
 
 describe('ComfyUIClientService', () => {
@@ -26,10 +22,10 @@ describe('ComfyUIClientService', () => {
 
     // Create mock client
     mockClient = {
-      init: vi.fn(),
       fetchApi: vi.fn(),
-      uploadImage: vi.fn(),
       getPathImage: vi.fn(),
+      init: vi.fn(),
+      uploadImage: vi.fn(),
     };
 
     // Mock ComfyApi constructor
@@ -67,33 +63,33 @@ describe('ComfyUIClientService', () => {
     it('should create basic credentials correctly', () => {
       const options: ComfyUIKeyVault = {
         authType: 'basic',
-        username: 'user',
         password: 'pass',
+        username: 'user',
       };
 
       service = new ComfyUIClientService(options);
 
       expect(ComfyApi).toHaveBeenCalledWith(expect.any(String), undefined, {
         credentials: {
+          password: 'pass',
           type: 'basic',
           username: 'user',
-          password: 'pass',
         },
       });
     });
 
     it('should create bearer credentials correctly', () => {
       const options: ComfyUIKeyVault = {
-        authType: 'bearer',
         apiKey: 'test-key',
+        authType: 'bearer',
       };
 
       service = new ComfyUIClientService(options);
 
       expect(ComfyApi).toHaveBeenCalledWith(expect.any(String), undefined, {
         credentials: {
-          type: 'bearer_token',
           token: 'test-key',
+          type: 'bearer_token',
         },
       });
     });
@@ -110,8 +106,8 @@ describe('ComfyUIClientService', () => {
 
       expect(ComfyApi).toHaveBeenCalledWith(expect.any(String), undefined, {
         credentials: {
-          type: 'custom',
           headers: { 'X-Custom': 'header' },
+          type: 'custom',
         },
       });
     });
@@ -267,8 +263,8 @@ describe('ComfyUIClientService', () => {
 
       // Create CallWrapper mock instance
       const mockCallWrapper = {
-        onFinished: vi.fn().mockReturnThis(),
         onFailed: vi.fn().mockReturnThis(),
+        onFinished: vi.fn().mockReturnThis(),
         onProgress: vi.fn().mockReturnThis(),
         run: vi.fn(),
       };
@@ -297,8 +293,8 @@ describe('ComfyUIClientService', () => {
       const mockError = new Error('Workflow failed');
 
       const mockCallWrapper = {
-        onFinished: vi.fn().mockReturnThis(),
         onFailed: vi.fn().mockReturnThis(),
+        onFinished: vi.fn().mockReturnThis(),
         onProgress: vi.fn().mockReturnThis(),
         run: vi.fn(),
       };
@@ -325,8 +321,8 @@ describe('ComfyUIClientService', () => {
       const progressCallback = vi.fn();
 
       const mockCallWrapper = {
-        onFinished: vi.fn().mockReturnThis(),
         onFailed: vi.fn().mockReturnThis(),
+        onFinished: vi.fn().mockReturnThis(),
         onProgress: vi.fn().mockReturnThis(),
         run: vi.fn(),
       };
@@ -453,6 +449,29 @@ describe('ComfyUIClientService', () => {
 
       await expect(service.getCheckpoints()).rejects.toThrow();
     });
+
+    it('should cache checkpoints for 1 minute TTL', async () => {
+      const mockCheckpoints = ['flux1-dev.safetensors', 'sd3.5_large.safetensors'];
+      mockClient.getCheckpoints.mockResolvedValue(mockCheckpoints);
+
+      // First call
+      const result1 = await service.getCheckpoints();
+      expect(result1).toEqual(mockCheckpoints);
+      expect(mockClient.getCheckpoints).toHaveBeenCalledTimes(1);
+
+      // Second call within TTL - should use cache
+      const result2 = await service.getCheckpoints();
+      expect(result2).toEqual(mockCheckpoints);
+      expect(mockClient.getCheckpoints).toHaveBeenCalledTimes(1); // Still only 1 call
+
+      // Mock time passing (simulate cache expiry)
+      vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 61 * 1000); // 61 seconds later
+
+      // Third call after TTL expired - should make new SDK call
+      const result3 = await service.getCheckpoints();
+      expect(result3).toEqual(mockCheckpoints);
+      expect(mockClient.getCheckpoints).toHaveBeenCalledTimes(2); // Now 2 calls
+    });
   });
 
   describe('getLoras', () => {
@@ -475,6 +494,29 @@ describe('ComfyUIClientService', () => {
       mockClient.getLoras.mockRejectedValue(new Error('Failed to fetch'));
 
       await expect(service.getLoras()).rejects.toThrow();
+    });
+
+    it('should cache LoRAs for 1 minute TTL', async () => {
+      const mockLoras = ['lora1.safetensors', 'lora2.safetensors'];
+      mockClient.getLoras.mockResolvedValue(mockLoras);
+
+      // First call
+      const result1 = await service.getLoras();
+      expect(result1).toEqual(mockLoras);
+      expect(mockClient.getLoras).toHaveBeenCalledTimes(1);
+
+      // Second call within TTL - should use cache
+      const result2 = await service.getLoras();
+      expect(result2).toEqual(mockLoras);
+      expect(mockClient.getLoras).toHaveBeenCalledTimes(1); // Still only 1 call
+
+      // Mock time passing (simulate cache expiry)
+      vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 61 * 1000); // 61 seconds later
+
+      // Third call after TTL expired - should make new SDK call
+      const result3 = await service.getLoras();
+      expect(result3).toEqual(mockLoras);
+      expect(mockClient.getLoras).toHaveBeenCalledTimes(2); // Now 2 calls
     });
   });
 
@@ -525,7 +567,7 @@ describe('ComfyUIClientService', () => {
 
       // Simulate time passing (more than 1 minute)
       const originalNow = Date.now;
-      Date.now = vi.fn(() => originalNow() + 61000);
+      Date.now = vi.fn(() => originalNow() + 61_000);
 
       // Second call after TTL - should fetch again
       const result2 = await service.getNodeDefs();

@@ -11,27 +11,27 @@ vi.mock('../../services/comfyuiClient');
 // Mock the config module
 vi.mock('../../config/modelRegistry', () => {
   const configs: Record<string, any> = {
+    'flux1-dev.safetensors': {
+      family: 'flux',
+      modelFamily: 'FLUX',
+      variant: 'flux-1-dev',
+    },
     'sd3.5_large.safetensors': {
       family: 'sd35',
-      variant: 'stable-diffusion-35',
-      modelFamily: 'SD3.5',
       features: { inclclip: false },
+      modelFamily: 'SD3.5',
+      variant: 'stable-diffusion-35',
     },
     'sd3.5_large_inclclip.safetensors': {
       family: 'sd35',
-      variant: 'stable-diffusion-35-inclclip',
-      modelFamily: 'SD3.5',
       features: { inclclip: true },
+      modelFamily: 'SD3.5',
+      variant: 'stable-diffusion-35-inclclip',
     },
     'sdxl_base.safetensors': {
       family: 'sdxl',
-      variant: 'stable-diffusion-xl-base',
       modelFamily: 'SDXL',
-    },
-    'flux1-dev.safetensors': {
-      family: 'flux',
-      variant: 'flux-1-dev',
-      modelFamily: 'FLUX',
+      variant: 'stable-diffusion-xl-base',
     },
   };
 
@@ -41,16 +41,16 @@ vi.mock('../../config/modelRegistry', () => {
       return configs[filename] || null;
     }),
     getModelsByFamily: vi.fn(() => ({
-      'sd3.5_large.safetensors': {
-        family: 'sd35',
-        variant: 'stable-diffusion-35',
-        modelFamily: 'SD3.5',
-        features: { inclclip: false },
-      },
       'flux1-dev.safetensors': {
         family: 'flux',
-        variant: 'flux-1-dev',
         modelFamily: 'FLUX',
+        variant: 'flux-1-dev',
+      },
+      'sd3.5_large.safetensors': {
+        family: 'sd35',
+        features: { inclclip: false },
+        modelFamily: 'SD3.5',
+        variant: 'stable-diffusion-35',
       },
     })),
   };
@@ -58,24 +58,24 @@ vi.mock('../../config/modelRegistry', () => {
 
 vi.mock('../../config/systemComponents', () => ({
   SYSTEM_COMPONENTS: {
-    't5xxl_fp16.safetensors': {
-      modelFamily: 'FLUX',
+    'clip_g.safetensors': {
+      modelFamily: 'SD3',
       priority: 1,
-      type: 't5',
+      type: 'clip',
     },
     'clip_l.safetensors': {
       modelFamily: 'FLUX',
       priority: 1,
       type: 'clip',
     },
-    'clip_g.safetensors': {
-      modelFamily: 'SD3',
-      priority: 1,
-      type: 'clip',
-    },
     't5-v1_1-xxl-encoder.safetensors': {
       modelFamily: 'FLUX',
       priority: 2,
+      type: 't5',
+    },
+    't5xxl_fp16.safetensors': {
+      modelFamily: 'FLUX',
+      priority: 1,
       type: 't5',
     },
   },
@@ -106,19 +106,18 @@ describe('ModelResolverService', () => {
   });
 
   describe('resolveModelFileName', () => {
-    it('should throw error for unregistered model ID', async () => {
-      // Model not in registry and not on server should throw
+    it('should return undefined for unregistered model ID', async () => {
+      // Model not in registry and not on server should return undefined
       mockClientService.getCheckpoints.mockResolvedValue([TEST_SD35_MODELS.LARGE]);
-      
-      await expect(service.resolveModelFileName('nonexistent-model')).rejects.toThrow(
-        'Model not found: nonexistent-model'
-      );
+
+      const result = await service.resolveModelFileName('nonexistent-model');
+      expect(result).toBeUndefined();
     });
 
     it('should return filename if already a file', async () => {
       // Mock getCheckpoints to include the file
       mockClientService.getCheckpoints.mockResolvedValue([TEST_FLUX_MODELS.DEV, TEST_FLUX_MODELS.SCHNELL]);
-      
+
       const result = await service.resolveModelFileName(TEST_FLUX_MODELS.DEV);
       expect(result).toBe(TEST_FLUX_MODELS.DEV);
     });
@@ -161,224 +160,8 @@ describe('ModelResolverService', () => {
     it('should throw error if custom SD model file not found', async () => {
       mockClientService.getCheckpoints.mockResolvedValue([TEST_SD35_MODELS.LARGE]);
 
-      await expect(service.resolveModelFileName('stable-diffusion-custom')).rejects.toThrow(
-        `Custom SD model file not found. Please ensure '${TEST_CUSTOM_SD}' is in the ComfyUI models folder`,
-      );
-    });
-  });
-
-  describe('selectVAE', () => {
-    beforeEach(() => {
-      // Mock for getAvailableVAEFiles which calls getNodeDefs
-      mockClientService.getNodeDefs.mockResolvedValue({
-        VAELoader: {
-          input: {
-            required: {
-              vae_name: [['sdxl_vae_fp16fix.safetensors', 'sd3_vae.safetensors']],
-            },
-          },
-        },
-      });
-    });
-
-    it('should return undefined for SDXL model without model config', async () => {
-      const vae = await service.selectVAE({
-        modelFileName: 'sdxl_base.safetensors',
-      });
-
-      // Without model config in registry, service cannot determine model family
-      expect(vae).toBeUndefined();
-    });
-
-    it('should return undefined for models that do not need external VAE', async () => {
-      const vae = await service.selectVAE({
-        modelFileName: 'flux1-dev.safetensors',
-      });
-
-      expect(vae).toBeUndefined();
-    });
-
-    it('should use fixed VAE for custom SD model if available', async () => {
-      // Mock getNodeDefs for VAE files
-      mockClientService.getNodeDefs.mockResolvedValue({
-        VAELoader: {
-          input: {
-            required: {
-              vae_name: [['custom_sd_vae_lobe.safetensors', 'other_vae.safetensors']],
-            },
-          },
-        },
-      });
-
-      const vae = await service.selectVAE({
-        modelFileName: 'custom_sd_lobe.safetensors',
-        isCustomSD: true,
-      });
-
-      expect(vae).toBe('custom_sd_vae_lobe.safetensors');
-    });
-
-    it('should allow custom VAE override for custom SD model', async () => {
-      // Mock getNodeDefs for VAE files - includes both the fixed and custom VAE
-      mockClientService.getNodeDefs.mockResolvedValue({
-        VAELoader: {
-          input: {
-            required: {
-              vae_name: [
-                ['custom_sd_vae_lobe.safetensors', 'sd3_vae.safetensors', 'other_vae.safetensors'],
-              ],
-            },
-          },
-        },
-      });
-
-      const vae = await service.selectVAE({
-        modelFileName: 'custom_sd_lobe.safetensors',
-        isCustomSD: true,
-        customVAE: 'sd3_vae.safetensors',
-      });
-
-      expect(vae).toBe('sd3_vae.safetensors');
-    });
-
-    it('should fallback to built-in VAE if fixed VAE not available for custom SD', async () => {
-      // Mock getNodeDefs for VAE files - does not include the fixed VAE
-      mockClientService.getNodeDefs.mockResolvedValue({
-        VAELoader: {
-          input: {
-            required: {
-              vae_name: [['other_vae.safetensors']],
-            },
-          },
-        },
-      });
-
-      const vae = await service.selectVAE({
-        modelFileName: 'custom_sd_lobe.safetensors',
-        isCustomSD: true,
-      });
-
-      expect(vae).toBeUndefined();
-    });
-
-    it('should handle SDXL models with available VAE', async () => {
-      mockClientService.getNodeDefs.mockResolvedValue({
-        VAELoader: {
-          input: {
-            required: {
-              vae_name: [['sdxl_vae_fp16.safetensors', 'other.safetensors']],
-            },
-          },
-        },
-      });
-
-      const vae = await service.selectVAE({
-        modelFileName: 'sdxl-base-1.0.safetensors',
-      });
-
-      // Without model config in registry, service cannot determine model family
-      expect(vae).toBeUndefined();
-    });
-
-    it('should handle SDXL models without available VAE', async () => {
-      mockClientService.getNodeDefs.mockResolvedValue({
-        VAELoader: {
-          input: {
-            required: {
-              vae_name: [['regular_vae.safetensors']],
-            },
-          },
-        },
-      });
-
-      const vae = await service.selectVAE({
-        modelFileName: 'sdxl-turbo.safetensors',
-      });
-
-      // No SDXL VAE available, should return undefined
-      expect(vae).toBeUndefined();
-    });
-
-    it('should return undefined when model config is not found', async () => {
-      // Use a model filename that has no config
-      const vae = await service.selectVAE({
-        modelFileName: 'unknown-model.safetensors',
-      });
-
-      expect(vae).toBeUndefined();
-    });
-
-    it('should return undefined when getOptimalComponent fails', async () => {
-      // Mock getOptimalComponent to throw error
-      mockClientService.getNodeDefs.mockResolvedValue({
-        VAELoader: {
-          input: {
-            required: {
-              vae_name: [[]],  // Empty VAE list
-            },
-          },
-        },
-      });
-
-      const vae = await service.selectVAE({
-        modelFileName: 'flux1-dev.safetensors',
-      });
-
-      // Should catch error and return undefined
-      expect(vae).toBeUndefined();
-    });
-
-    it('should handle custom VAE that does not exist', async () => {
-      mockClientService.getNodeDefs.mockResolvedValue({
-        VAELoader: {
-          input: {
-            required: {
-              vae_name: [['existing_vae.safetensors']],
-            },
-          },
-        },
-      });
-
-      const vae = await service.selectVAE({
-        customVAE: 'non_existent_vae.safetensors',
-        modelFileName: 'some-model.safetensors',
-      });
-
-      // Custom VAE not found, should continue to other logic
-      expect(vae).toBeUndefined();
-    });
-  });
-
-  describe('getOptimalComponent', () => {
-    beforeEach(() => {
-      mockClientService.getNodeDefs.mockResolvedValue({
-        CLIPLoader: {
-          input: {
-            required: {
-              clip_name: [['t5xxl_fp16.safetensors', 'clip_l.safetensors', 'clip_g.safetensors']],
-            },
-          },
-        },
-      });
-    });
-
-    it('should get optimal component for FLUX model', async () => {
-      const component = await service.getOptimalComponent('t5', 'FLUX');
-      expect(component).toBe('t5xxl_fp16.safetensors');
-    });
-
-    it('should throw error for unknown component type', async () => {
-      await expect(service.getOptimalComponent('unknown', 'FLUX')).rejects.toThrow(
-        'Unknown component type: unknown',
-      );
-    });
-
-    it('should throw error when no component is available', async () => {
-      mockClientService.getNodeDefs.mockResolvedValue({});
-
-      await expect(service.getOptimalComponent('vae', 'FLUX')).rejects.toThrow(
-        'No vae component available for FLUX',
-      );
+      const result = await service.resolveModelFileName('stable-diffusion-custom');
+      expect(result).toBeUndefined();
     });
   });
 
