@@ -1,11 +1,11 @@
 import { generateUniqueSeeds } from '@lobechat/utils';
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { getWorkflowFilenamePrefix } from '../config/workflowRegistry';
 import { WORKFLOW_DEFAULTS } from '../constants';
 import type { WorkflowContext } from '../services/workflowBuilder';
 import { splitPromptForDualCLIP } from '../utils/promptSplitter';
 import { selectOptimalWeightDtype } from '../utils/weightDType';
+import { getWorkflowFilenamePrefix } from '../utils/workflowUtils';
 
 /**
  * FLUX Schnell Workflow Builder

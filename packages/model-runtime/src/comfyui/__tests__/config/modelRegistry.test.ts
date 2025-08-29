@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import { MODEL_REGISTRY } from '../../config/modelRegistry';
 import {
-  MODEL_REGISTRY,
   getAllModelNames,
   getModelConfig,
   getModelsByVariant,
-} from '../../config/modelRegistry';
+} from '../../utils/staticModelLookup';
 
 describe('ModelRegistry', () => {
   describe('MODEL_REGISTRY', () => {
@@ -19,7 +19,11 @@ describe('ModelRegistry', () => {
         expect(config.modelFamily).toBeDefined();
         expect(config.priority).toBeTypeOf('number');
         if (config.recommendedDtype) {
-          expect(['default', 'fp8_e4m3fn', 'fp8_e4m3fn_fast', 'fp8_e5m2'].includes(config.recommendedDtype)).toBe(true);
+          expect(
+            ['default', 'fp8_e4m3fn', 'fp8_e4m3fn_fast', 'fp8_e5m2'].includes(
+              config.recommendedDtype,
+            ),
+          ).toBe(true);
         }
       });
     });
@@ -72,7 +76,7 @@ describe('ModelRegistry', () => {
       const modelNames = getModelsByVariant('dev');
       expect(modelNames.length).toBeGreaterThan(0);
       expect(Array.isArray(modelNames)).toBe(true);
-      
+
       // Verify all returned names are strings and correspond to dev variant models
       modelNames.forEach((name) => {
         expect(typeof name).toBe('string');
@@ -85,7 +89,7 @@ describe('ModelRegistry', () => {
     it('should return models sorted by priority', () => {
       const modelNames = getModelsByVariant('dev');
       expect(modelNames.length).toBeGreaterThan(1);
-      
+
       // Verify priority sorting (lower priority number = higher priority)
       for (let i = 0; i < modelNames.length - 1; i++) {
         const config1 = getModelConfig(modelNames[i]);
@@ -107,7 +111,7 @@ describe('ModelRegistry', () => {
       expect(config).toBeDefined();
       expect(config?.modelFamily).toBe('FLUX');
       expect(config?.variant).toBe('dev');
-      
+
       // 测试其他大小写变体
       const config2 = getModelConfig('flux1-DEV.safetensors', { caseInsensitive: true });
       expect(config2).toBeDefined();
@@ -153,12 +157,17 @@ describe('ModelRegistry', () => {
 
     it('should filter by recommendedDtype', () => {
       // flux_shakker_labs_union_pro-fp8_e4m3fn 有 fp8_e4m3fn
-      const config = getModelConfig('flux_shakker_labs_union_pro-fp8_e4m3fn.safetensors', { recommendedDtype: 'fp8_e4m3fn' });
+      const config = getModelConfig('flux_shakker_labs_union_pro-fp8_e4m3fn.safetensors', {
+        recommendedDtype: 'fp8_e4m3fn',
+      });
       expect(config).toBeDefined();
       expect(config?.recommendedDtype).toBe('fp8_e4m3fn');
 
       // 测试不匹配的 recommendedDtype
-      const nonMatchingConfig = getModelConfig('flux_shakker_labs_union_pro-fp8_e4m3fn.safetensors', { recommendedDtype: 'default' });
+      const nonMatchingConfig = getModelConfig(
+        'flux_shakker_labs_union_pro-fp8_e4m3fn.safetensors',
+        { recommendedDtype: 'default' },
+      );
       expect(nonMatchingConfig).toBeUndefined();
     });
 
@@ -167,7 +176,7 @@ describe('ModelRegistry', () => {
       const config = getModelConfig('flux1-dev.safetensors', {
         modelFamily: 'FLUX',
         priority: 1,
-        variant: 'dev'
+        variant: 'dev',
       });
       expect(config).toBeDefined();
 
@@ -175,7 +184,7 @@ describe('ModelRegistry', () => {
       const nonMatchingConfig = getModelConfig('flux1-dev.safetensors', {
         modelFamily: 'FLUX',
         priority: 5,
-        variant: 'dev'  // 错误的 priority
+        variant: 'dev', // 错误的 priority
       });
       expect(nonMatchingConfig).toBeUndefined();
     });
@@ -184,7 +193,7 @@ describe('ModelRegistry', () => {
       const config = getModelConfig('FLUX1-DEV.safetensors', {
         caseInsensitive: true,
         modelFamily: 'FLUX',
-        variant: 'dev'
+        variant: 'dev',
       });
       expect(config).toBeDefined();
     });

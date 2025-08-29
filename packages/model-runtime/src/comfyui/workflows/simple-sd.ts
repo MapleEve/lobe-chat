@@ -13,10 +13,11 @@
 import { generateUniqueSeeds } from '@lobechat/utils';
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { type ModelConfig, getModelConfig } from '../config/modelRegistry';
-import { getWorkflowFilenamePrefix } from '../config/workflowRegistry';
+import { type ModelConfig } from '../config/modelRegistry';
 import { CUSTOM_SD_CONFIG, DEFAULT_NEGATIVE_PROMPT, WORKFLOW_DEFAULTS } from '../constants';
 import type { WorkflowContext } from '../services/workflowBuilder';
+import { getModelConfig } from '../utils/staticModelLookup';
+import { getWorkflowFilenamePrefix } from '../utils/workflowUtils';
 
 /**
  * Parameters for SimpleSD workflow

@@ -2,8 +2,9 @@
  * Real configuration data helper for tests
  * Uses actual data from configuration files instead of mock data
  */
-import { MODEL_REGISTRY, getModelConfig } from '../../config/modelRegistry';
+import { MODEL_REGISTRY } from '../../config/modelRegistry';
 import { SYSTEM_COMPONENTS } from '../../config/systemComponents';
+import { getModelConfig } from '../../utils/staticModelLookup';
 
 // Export real model entries for tests
 export const REAL_MODEL_ENTRIES = Object.entries(MODEL_REGISTRY);

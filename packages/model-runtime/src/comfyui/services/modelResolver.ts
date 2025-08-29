@@ -6,10 +6,11 @@
  */
 import debug from 'debug';
 
-import { MODEL_ID_VARIANT_MAP, MODEL_REGISTRY, getModelsByVariant } from '../config/modelRegistry';
+import { MODEL_ID_VARIANT_MAP, MODEL_REGISTRY } from '../config/modelRegistry';
 import { SYSTEM_COMPONENTS } from '../config/systemComponents';
 import { COMPONENT_NODE_MAPPINGS, CUSTOM_SD_CONFIG, SUPPORTED_MODEL_FORMATS } from '../constants';
 import { ModelResolverError } from '../errors/modelResolverError';
+import { getModelsByVariant } from '../utils/staticModelLookup';
 import { ComfyUIClientService } from './comfyuiClient';
 
 const log = debug('lobe-image:comfyui:model-resolver');

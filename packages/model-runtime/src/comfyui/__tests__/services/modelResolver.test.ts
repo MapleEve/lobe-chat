@@ -47,22 +47,40 @@ vi.mock('../../config/modelRegistry', () => {
       'stable-diffusion-35': 'sd35',
     },
     MODEL_REGISTRY: configs,
+  };
+});
+
+// Mock the staticModelLookup module
+vi.mock('../../utils/staticModelLookup', () => {
+  const configs: Record<string, any> = {
+    'flux1-dev.safetensors': {
+      family: 'flux',
+      modelFamily: 'FLUX',
+      variant: 'flux-1-dev',
+    },
+    'sd3.5_large.safetensors': {
+      family: 'sd35',
+      features: { inclclip: false },
+      modelFamily: 'SD3.5',
+      variant: 'stable-diffusion-35',
+    },
+    'sd3.5_large_inclclip.safetensors': {
+      family: 'sd35',
+      features: { inclclip: true },
+      modelFamily: 'SD3.5',
+      variant: 'stable-diffusion-35-inclclip',
+    },
+    'sdxl_base.safetensors': {
+      family: 'sdxl',
+      modelFamily: 'SDXL',
+      variant: 'stable-diffusion-xl-base',
+    },
+  };
+
+  return {
     getModelConfig: vi.fn((filename: string) => {
       return configs[filename] || null;
     }),
-    getModelsByFamily: vi.fn(() => ({
-      'flux1-dev.safetensors': {
-        family: 'flux',
-        modelFamily: 'FLUX',
-        variant: 'flux-1-dev',
-      },
-      'sd3.5_large.safetensors': {
-        family: 'sd35',
-        features: { inclclip: false },
-        modelFamily: 'SD3.5',
-        variant: 'stable-diffusion-35',
-      },
-    })),
     getModelsByVariant: vi.fn((variant: string) => {
       // Return models sorted by priority (mock implementation)
       const models = Object.entries(configs)

@@ -9,10 +9,10 @@
 import { generateUniqueSeeds } from '@lobechat/utils';
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { getWorkflowFilenamePrefix } from '../config/workflowRegistry';
 import { DEFAULT_NEGATIVE_PROMPT, WORKFLOW_DEFAULTS } from '../constants';
 import { WorkflowError } from '../errors';
 import type { WorkflowContext } from '../services/workflowBuilder';
+import { getWorkflowFilenamePrefix } from '../utils/workflowUtils';
 
 /**
  * Detect available encoder configuration using service layer
