@@ -104,10 +104,11 @@ export const fluxKontextDevParamsSchema: ModelParamsSchema = {
     enum: FLUX_ASPECT_RATIOS,
   },
   cfg: { default: 3.5, max: 10, min: 1, step: 0.5 },
-  denoise: { default: 0.75, max: 1, min: 0, step: 0.05 }, // Denoising strength for workflow (backend parameter)
   height: { default: 1024, max: 2048, min: 512, step: 8 },
   imageUrl: { default: '' }, // Input image URL (supports text-to-image and image-to-image)
   prompt: { default: '' },
+  samplerName: { default: 'dpmpp_2m' },
+  scheduler: { default: 'karras' },
   seed: { default: null },
   steps: { default: 28, max: 50, min: 10, step: 1 }, // Kontext defaults to 28 steps
   strength: { default: 0.75, max: 1, min: 0, step: 0.05 }, // Image editing strength control (frontend parameter)
@@ -125,7 +126,6 @@ export const sd35ParamsSchema: ModelParamsSchema = {
   },
   cfg: { default: 4, max: 20, min: 1, step: 0.5 },
   height: { default: 1024, max: 2048, min: 512, step: 8 },
-  negativePrompt: { default: '' },
   prompt: { default: '' },
   samplerName: { default: 'euler' },
   scheduler: { default: 'sgm_uniform' },
@@ -145,7 +145,6 @@ export const sd15T2iParamsSchema: ModelParamsSchema = {
   },
   cfg: { default: 7, max: 20, min: 1, step: 0.5 },
   height: { default: 512, max: 1024, min: 256, step: 8 },
-  negativePrompt: { default: '' },
   prompt: { default: '' },
   samplerName: { default: 'euler' },
   scheduler: { default: 'normal' },
@@ -165,7 +164,6 @@ export const sdxlT2iParamsSchema: ModelParamsSchema = {
   },
   cfg: { default: 8, max: 20, min: 1, step: 0.5 },
   height: { default: 1024, max: 2048, min: 512, step: 8 },
-  negativePrompt: { default: '' },
   prompt: { default: '' },
   samplerName: { default: 'euler' },
   scheduler: { default: 'normal' },
@@ -184,10 +182,8 @@ export const sdxlI2iParamsSchema: ModelParamsSchema = {
     enum: SDXL_ASPECT_RATIOS,
   },
   cfg: { default: 8, max: 20, min: 1, step: 0.5 },
-  denoise: { default: 0.75, max: 1, min: 0, step: 0.05 }, // Denoising strength for workflow (backend parameter)
   height: { default: 1024, max: 2048, min: 512, step: 8 },
   imageUrl: { default: '' }, // Input image URL
-  negativePrompt: { default: '' },
   prompt: { default: '' },
   samplerName: { default: 'euler' },
   scheduler: { default: 'normal' },
@@ -208,7 +204,6 @@ export const customSdT2iParamsSchema: ModelParamsSchema = {
   },
   cfg: { default: 7, max: 30, min: 1, step: 0.5 },
   height: { default: 768, max: 2048, min: 256, step: 8 },
-  negativePrompt: { default: '' },
   prompt: { default: '' },
   samplerName: { default: 'euler' }, // Use SDXL common parameters
   scheduler: { default: 'normal' }, // Use SDXL common parameters
@@ -227,10 +222,8 @@ export const customSdI2iParamsSchema: ModelParamsSchema = {
     enum: SDXL_ASPECT_RATIOS, // Use broader aspect ratio support
   },
   cfg: { default: 7, max: 30, min: 1, step: 0.5 },
-  denoise: { default: 0.75, max: 1, min: 0, step: 0.05 }, // Denoising strength for workflow (backend parameter)
   height: { default: 768, max: 2048, min: 256, step: 8 },
   imageUrl: { default: '' }, // Input image URL
-  negativePrompt: { default: '' },
   prompt: { default: '' },
   samplerName: { default: 'euler' }, // Use SDXL common parameters
   scheduler: { default: 'normal' }, // Use SDXL common parameters
