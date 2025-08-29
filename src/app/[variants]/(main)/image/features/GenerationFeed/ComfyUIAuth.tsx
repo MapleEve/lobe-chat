@@ -4,6 +4,7 @@ import { ComfyUI } from '@lobehub/icons';
 import { Button, Icon, Select } from '@lobehub/ui';
 import { useTheme } from 'antd-style';
 import { Loader2Icon, Network } from 'lucide-react';
+import Image from 'next/image';
 import { memo, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Center, Flexbox } from 'react-layout-kit';
@@ -141,7 +142,9 @@ const ComfyUIAuth = memo<ComfyUIAuthProps>(({ onClose, onRecreate }) => {
       <Center gap={16} paddingBlock={32} style={{ width: '100%' }}>
         <ComfyUI.Combine size={64} type={'color'} />
         <FormAction
-          avatar={<img src="https://lobehub.com/favicon.ico" style={{ height: 48, width: 48 }} />}
+          avatar={
+            <Image alt="LobeHub" height={48} src="https://lobehub.com/favicon.ico" width={48} />
+          }
           description={t('unlock.comfyui.description', { name: 'ComfyUI' })}
           title={t('unlock.comfyui.title', { name: 'ComfyUI' })}
         >
