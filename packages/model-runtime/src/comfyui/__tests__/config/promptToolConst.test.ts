@@ -41,7 +41,7 @@ describe('promptToolConst', () => {
     });
 
     it('should not have duplicate keywords within categories', () => {
-      Object.entries(STYLE_KEYWORDS).forEach(([category, keywords]) => {
+      Object.entries(STYLE_KEYWORDS).forEach(([, keywords]) => {
         const uniqueKeywords = [...new Set(keywords)];
         expect(keywords.length).toBe(uniqueKeywords.length);
       });
@@ -76,7 +76,7 @@ describe('promptToolConst', () => {
     });
 
     it('should have unique synonyms for each key', () => {
-      Object.entries(STYLE_SYNONYMS).forEach(([key, synonyms]) => {
+      Object.entries(STYLE_SYNONYMS).forEach(([, synonyms]) => {
         const uniqueSynonyms = [...new Set(synonyms)];
         expect(synonyms.length).toBe(uniqueSynonyms.length);
       });
@@ -333,9 +333,9 @@ describe('promptToolConst', () => {
 
     it('should not have keywords that are also synonyms', () => {
       const allKeywords = getAllStyleKeywords();
-      const allSynonyms = Object.values(STYLE_SYNONYMS).flat();
+      const allSynonyms = new Set(Object.values(STYLE_SYNONYMS).flat());
 
-      const overlap = allKeywords.filter((keyword) => allSynonyms.includes(keyword));
+      const overlap = allKeywords.filter((keyword) => allSynonyms.has(keyword));
 
       // Strict: expect exactly 13 overlaps (known and acceptable)
       expect(overlap.length).toBe(13); // Exact count of acceptable overlaps

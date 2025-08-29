@@ -648,7 +648,8 @@ describe('ComfyUIErrorParser', () => {
         };
         const result = parseComfyUIErrorMessage(error);
 
-        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
+        // Status code takes priority - 400 should return InvalidProviderAPIKey
+        expect(result.errorType).toBe(AgentRuntimeErrorType.InvalidProviderAPIKey);
         expect(result.error.message).toBe('Structured error message');
         expect(result.error.code).toBe('WORKFLOW_ERROR');
         expect(result.error.status).toBe(400);
@@ -679,7 +680,8 @@ describe('ComfyUIErrorParser', () => {
 
         const result = parseComfyUIErrorMessage(error);
 
-        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
+        // Status code takes priority - 400 should return InvalidProviderAPIKey
+        expect(result.errorType).toBe(AgentRuntimeErrorType.InvalidProviderAPIKey);
         expect(result.error.message).toBe('Error instance message');
         expect(result.error.code).toBe('CUSTOM_CODE');
         expect(result.error.status).toBe(400);

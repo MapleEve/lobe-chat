@@ -41,19 +41,12 @@ vi.mock('../../config/modelRegistry', () => {
   };
 
   return {
-    MODEL_REGISTRY: configs,
     MODEL_ID_VARIANT_MAP: {
       'flux-dev': 'flux-1-dev',
       'flux-schnell': 'flux-1-schnell',
       'stable-diffusion-35': 'sd35',
     },
-    getModelsByVariant: vi.fn((variant: string) => {
-      // Return models sorted by priority (mock implementation)
-      const models = Object.entries(configs)
-        .filter(([, config]) => config.variant === variant)
-        .map(([filename]) => filename);
-      return models;
-    }),
+    MODEL_REGISTRY: configs,
     getModelConfig: vi.fn((filename: string) => {
       return configs[filename] || null;
     }),
@@ -70,6 +63,13 @@ vi.mock('../../config/modelRegistry', () => {
         variant: 'stable-diffusion-35',
       },
     })),
+    getModelsByVariant: vi.fn((variant: string) => {
+      // Return models sorted by priority (mock implementation)
+      const models = Object.entries(configs)
+        .filter(([, config]) => config.variant === variant)
+        .map(([filename]) => filename);
+      return models;
+    }),
   };
 });
 
