@@ -31,11 +31,14 @@ export class ErrorHandlerService {
     if (isComfyUIInternalError(error)) {
       const errorType = this.mapInternalErrorToRuntimeError(error);
 
+      // If we have a parsed error in details, use it for better error messages
+      const errorInfo = error.details?.parsedError || {
+        details: error.details || {},
+        message: error.message,
+      };
+
       throw AgentRuntimeError.createImage({
-        error: {
-          details: error.details || {},
-          message: error.message,
-        },
+        error: errorInfo,
         errorType: errorType as ILobeAgentRuntimeErrorType,
         provider: 'comfyui',
       });
