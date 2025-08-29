@@ -90,6 +90,22 @@ const categorizeError = (
     };
   }
 
+  if (error.errorType === AgentRuntimeErrorType.ComfyUIWorkflowError) {
+    return {
+      errorMessage:
+        error.error?.message || error.message || AgentRuntimeErrorType.ComfyUIWorkflowError,
+      errorType: AsyncTaskErrorType.ServerError,
+    };
+  }
+
+  if (error.errorType === AgentRuntimeErrorType.ComfyUIModelError) {
+    return {
+      errorMessage:
+        error.error?.message || error.message || AgentRuntimeErrorType.ComfyUIModelError,
+      errorType: AsyncTaskErrorType.ModelNotFound,
+    };
+  }
+
   if (error.errorType === AgentRuntimeErrorType.ConnectionCheckFailed) {
     return {
       errorMessage: error.message || AgentRuntimeErrorType.ConnectionCheckFailed,
