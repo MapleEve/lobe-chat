@@ -110,8 +110,6 @@ export const fluxKontextDevParamsSchema: ModelParamsSchema = {
   height: { default: 1024, max: 2048, min: 512, step: 8 },
   imageUrl: { default: '' }, // Input image URL (supports text-to-image and image-to-image)
   prompt: { default: '' },
-  samplerName: { default: 'dpmpp_2m' },
-  scheduler: { default: 'karras' },
   seed: { default: null },
   steps: { default: 28, max: 50, min: 10, step: 1 }, // Kontext defaults to 28 steps
   strength: { default: 0.75, max: 1, min: 0, step: 0.05 }, // Image editing strength control (frontend parameter)

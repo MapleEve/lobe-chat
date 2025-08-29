@@ -49,17 +49,22 @@ export const SD_MODEL_CONFIG = {
  * These are hardcoded values used by workflow internals, not user-configurable parameters
  */
 export const WORKFLOW_DEFAULTS = {
+  // FLUX specific settings
+  FLUX: {
+    BASE_SHIFT: 0.5,
+    CLIP_GUIDANCE: 1,
+    SAMPLER: 'euler',
+    SCHEDULER: 'simple', // Higher denoise for Kontext img2img
+  },
   // Image dimensions and batch settings
   IMAGE: {
     BATCH_SIZE: 1, // workflow internal use
   },
-
   // Internal noise and sampling settings
   SAMPLING: {
     DENOISE: 1, // t2i mode internal use
     MAX_SHIFT: 1.15, // FLUX internal parameter
   },
-
   // SD3.5 specific internal settings
   SD3: {
     SHIFT: 3, // SD3.5 ModelSamplingSD3 internal parameter

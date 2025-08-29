@@ -68,7 +68,7 @@ export async function buildFluxKontextWorkflow(
       },
       class_type: 'ModelSamplingFlux',
       inputs: {
-        base_shift: 0.5, // Required parameter for FLUX models
+        base_shift: WORKFLOW_DEFAULTS.FLUX.BASE_SHIFT, // Official: 0.5
         height: params.height,
         max_shift: WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT,
         model: ['2', 0],
@@ -83,7 +83,7 @@ export async function buildFluxKontextWorkflow(
       inputs: {
         clip: ['1', 0],
         clip_l: '',
-        guidance: params.cfg,
+        guidance: WORKFLOW_DEFAULTS.FLUX.CLIP_GUIDANCE, // Fixed: 1.0
         t5xxl: '',
       },
     },
@@ -104,7 +104,7 @@ export async function buildFluxKontextWorkflow(
       },
       class_type: 'KSamplerSelect',
       inputs: {
-        sampler_name: 'dpmpp_2m', // Use regular DPM++ (no SDE) for i2i
+        sampler_name: WORKFLOW_DEFAULTS.FLUX.SAMPLER, // Official: euler
       },
     },
     '9': {
@@ -115,7 +115,7 @@ export async function buildFluxKontextWorkflow(
       inputs: {
         denoise: params.strength,
         model: ['4', 0],
-        scheduler: 'karras',
+        scheduler: WORKFLOW_DEFAULTS.FLUX.SCHEDULER, // Official: simple
         steps: params.steps,
       },
     },
@@ -219,8 +219,8 @@ export async function buildFluxKontextWorkflow(
   workflow['5'].inputs.t5xxl = t5xxlPrompt;
 
   // Apply input values to workflow - directly set parameters without intermediate variables
-  workflow['5'].inputs.guidance = params.cfg; // CLIPTextEncodeFlux needs guidance
-  workflow['6'].inputs.guidance = params.cfg; // FluxGuidance needs guidance
+  workflow['5'].inputs.guidance = WORKFLOW_DEFAULTS.FLUX.CLIP_GUIDANCE; // Fixed: 1.0
+  workflow['6'].inputs.guidance = params.cfg; // FluxGuidance uses user's cfg parameter
   workflow['9'].inputs.steps = params.steps; // BasicScheduler needs steps
   workflow['13'].inputs.noise_seed = params.seed ?? generateUniqueSeeds(1)[0]; // RandomNoise needs seed
 
@@ -281,6 +281,7 @@ export async function buildFluxKontextWorkflow(
     .input('seed', params.seed ?? generateUniqueSeeds(1)[0]);
 
   if (hasInputImage) {
+    // FLUX kontext img2img requires higher denoise values (0.8-0.95) to see changes
     builder
       .input('imageUrl', params.imageUrl || params.imageUrls?.[0] || '')
       .input('denoise', params.strength);
