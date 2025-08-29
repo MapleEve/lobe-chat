@@ -10,12 +10,12 @@
  * - Automatic node connection based on input parameters
  * - Backward compatibility with existing API calls
  */
+import { generateUniqueSeeds } from '@lobechat/utils';
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { generateUniqueSeeds } from '@/utils/number';
 import { type ModelConfig, getModelConfig } from '../config/modelRegistry';
-import { CUSTOM_SD_CONFIG, DEFAULT_NEGATIVE_PROMPT, WORKFLOW_DEFAULTS } from '../constants';
 import { getWorkflowFilenamePrefix } from '../config/workflowRegistry';
+import { CUSTOM_SD_CONFIG, DEFAULT_NEGATIVE_PROMPT, WORKFLOW_DEFAULTS } from '../constants';
 import type { WorkflowContext } from '../services/workflowBuilder';
 
 /**
@@ -63,7 +63,6 @@ function shouldAttachVAE(modelConfig: ModelConfig | null): boolean {
   return modelConfig.modelFamily === 'SD1' || modelConfig.modelFamily === 'SDXL';
 }
 
-
 /**
  * Build Simple SD workflow for models with CheckpointLoaderSimple compatibility
  * Universal workflow supporting SD1.5, SDXL, SD3.5 and other Stable Diffusion variants
@@ -104,7 +103,10 @@ export async function buildSimpleSDWorkflow(
   }
   // 2. Non-custom models: Try to find optimal VAE based on model family
   else if (shouldAttachVAE(modelConfig) && context?.modelResolverService) {
-    selectedVAE = await context.modelResolverService.getOptimalComponent('vae', modelConfig!.modelFamily);
+    selectedVAE = await context.modelResolverService.getOptimalComponent(
+      'vae',
+      modelConfig!.modelFamily,
+    );
   }
   // If no VAE found or it's SD3, use built-in VAE (selectedVAE remains undefined)
 

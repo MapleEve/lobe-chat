@@ -237,19 +237,23 @@ describe('WorkflowBuilderService', () => {
       // Mock no components available
       mockModelResolver.getOptimalComponent.mockResolvedValue(undefined);
 
-      await expect(service.buildWorkflow(
-        'stable-diffusion-35',
-        { architecture: 'SD3', isSupported: true, variant: 'sd35' },
-        TEST_MODELS.sd35,
-        { prompt: 'test' },
-      )).rejects.toThrow(WorkflowError);
+      await expect(
+        service.buildWorkflow(
+          'stable-diffusion-35',
+          { architecture: 'SD3', isSupported: true, variant: 'sd35' },
+          TEST_MODELS.sd35,
+          { prompt: 'test' },
+        ),
+      ).rejects.toThrow(WorkflowError);
 
-      await expect(service.buildWorkflow(
-        'stable-diffusion-35',
-        { architecture: 'SD3', isSupported: true, variant: 'sd35' },
-        TEST_MODELS.sd35,
-        { prompt: 'test' },
-      )).rejects.toThrow('SD3.5 models require external CLIP/T5 encoder files');
+      await expect(
+        service.buildWorkflow(
+          'stable-diffusion-35',
+          { architecture: 'SD3', isSupported: true, variant: 'sd35' },
+          TEST_MODELS.sd35,
+          { prompt: 'test' },
+        ),
+      ).rejects.toThrow('SD3.5 models require external CLIP/T5 encoder files');
     });
 
     it('should use default shift parameter', async () => {
@@ -267,8 +271,8 @@ describe('WorkflowBuilderService', () => {
         { architecture: 'SD3', isSupported: true, variant: 'sd35' },
         TEST_MODELS.sd35,
         {
-          prompt: 'test',
           cfg: 4.5,
+          prompt: 'test',
           steps: 28,
         },
       );

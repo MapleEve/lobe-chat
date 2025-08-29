@@ -6,22 +6,18 @@
  * 2. Dual CLIP: CLIP L + CLIP G only
  * 3. T5 only: T5XXL encoder only
  */
+import { generateUniqueSeeds } from '@lobechat/utils';
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { generateUniqueSeeds } from '@/utils/number';
-import { DEFAULT_NEGATIVE_PROMPT, WORKFLOW_DEFAULTS } from '../constants';
 import { getWorkflowFilenamePrefix } from '../config/workflowRegistry';
+import { DEFAULT_NEGATIVE_PROMPT, WORKFLOW_DEFAULTS } from '../constants';
 import { WorkflowError } from '../errors';
 import type { WorkflowContext } from '../services/workflowBuilder';
-
-
 
 /**
  * Detect available encoder configuration using service layer
  */
-async function detectAvailableEncoder(
-  context: WorkflowContext,
-): Promise<{
+async function detectAvailableEncoder(context: WorkflowContext): Promise<{
   clipG?: string;
   clipL?: string;
   t5?: string;
@@ -70,7 +66,6 @@ export async function buildSD35Workflow(
   params: Record<string, any>,
   context: WorkflowContext,
 ): Promise<PromptBuilder<any, any, any>> {
-
   // Detect available encoders using service layer
   const encoderConfig = await detectAvailableEncoder(context);
 
@@ -197,16 +192,7 @@ export async function buildSD35Workflow(
   // Create PromptBuilder
   const builder = new PromptBuilder(
     workflow,
-    [
-      'prompt',
-      'width',
-      'height',
-      'steps',
-      'seed',
-      'cfg',
-      'samplerName',
-      'scheduler',
-    ],
+    ['prompt', 'width', 'height', 'steps', 'seed', 'cfg', 'samplerName', 'scheduler'],
     ['images'],
   );
 
@@ -232,7 +218,7 @@ export async function buildSD35Workflow(
     .input('cfg', params.cfg)
     .input('seed', params.seed ?? generateUniqueSeeds(1)[0])
     .input('samplerName', params.samplerName)
-    .input('scheduler', params.scheduler)
+    .input('scheduler', params.scheduler);
 
   return builder;
 }

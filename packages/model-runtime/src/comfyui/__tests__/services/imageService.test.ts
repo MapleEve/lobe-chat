@@ -366,7 +366,7 @@ describe('ImageService', () => {
         throw error;
       });
 
-      // Execute and verify  
+      // Execute and verify
       await expect(imageService.createImage(payload)).rejects.toThrow(/Unable to fetch image/);
     });
 
@@ -445,7 +445,6 @@ describe('ImageService', () => {
         model: 'sd3.5-large',
         params: {
           height: 768,
-          negativePrompt: 'bad',
           prompt: 'test',
           width: 1024,
         },

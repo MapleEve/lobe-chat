@@ -528,13 +528,13 @@ describe('ComfyUIClientService', () => {
 
     it('should get node definitions with caching', async () => {
       const mockNodeDefs = {
-        CheckpointLoaderSimple: { 
-          input: { 
-            required: { 
-              ckpt_name: [['flux1-dev.safetensors']] 
-            } 
-          } 
-        }
+        CheckpointLoaderSimple: {
+          input: {
+            required: {
+              ckpt_name: [['flux1-dev.safetensors']],
+            },
+          },
+        },
       };
       mockClient.getNodeDefs.mockResolvedValue(mockNodeDefs);
 
@@ -557,9 +557,10 @@ describe('ComfyUIClientService', () => {
     it('should refresh cache after TTL expires', async () => {
       const mockNodeDefs1 = { node1: {} };
       const mockNodeDefs2 = { node2: {} };
-      
-      mockClient.getNodeDefs.mockResolvedValueOnce(mockNodeDefs1)
-                             .mockResolvedValueOnce(mockNodeDefs2);
+
+      mockClient.getNodeDefs
+        .mockResolvedValueOnce(mockNodeDefs1)
+        .mockResolvedValueOnce(mockNodeDefs2);
 
       // First call
       const result1 = await service.getNodeDefs();
@@ -594,7 +595,7 @@ describe('ComfyUIClientService', () => {
     it('should get sampler info successfully', async () => {
       const mockSamplerInfo = {
         sampler: ['euler', 'ddim'],
-        scheduler: ['normal', 'karras']
+        scheduler: ['normal', 'karras'],
       };
       mockClient.getSamplerInfo.mockResolvedValue(mockSamplerInfo);
 
@@ -619,27 +620,27 @@ describe('ComfyUIClientService', () => {
 
     it('should upload image successfully', async () => {
       const mockFile = new File(['test'], 'test.png', { type: 'image/png' });
-      const mockResponse = { 
-        info: { 
+      const mockResponse = {
+        info: {
           filename: 'uploaded.png',
-          type: 'input' 
-        } 
+          type: 'input',
+        },
       };
-      
+
       mockClient.uploadImage.mockResolvedValue(mockResponse);
 
-      const result = await service.uploadImage(mockFile);
+      const result = await service.uploadImage(mockFile, 'test.png');
 
       expect(result).toEqual('uploaded.png');
-      expect(mockClient.uploadImage).toHaveBeenCalledWith(mockFile, undefined);
+      expect(mockClient.uploadImage).toHaveBeenCalledWith(mockFile, 'test.png');
     });
 
     it('should handle upload error', async () => {
       const mockFile = new File(['test'], 'test.png', { type: 'image/png' });
-      
+
       mockClient.uploadImage.mockRejectedValue(new Error('Upload failed'));
 
-      await expect(service.uploadImage(mockFile)).rejects.toThrow();
+      await expect(service.uploadImage(mockFile, 'test.png')).rejects.toThrow();
     });
   });
 });

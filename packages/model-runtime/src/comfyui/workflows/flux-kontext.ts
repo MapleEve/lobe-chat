@@ -1,8 +1,8 @@
+import { generateUniqueSeeds } from '@lobechat/utils';
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 
-import { generateUniqueSeeds } from '@/utils/number';
-import {  WORKFLOW_DEFAULTS } from '../constants';
 import { getWorkflowFilenamePrefix } from '../config/workflowRegistry';
+import { WORKFLOW_DEFAULTS } from '../constants';
 import type { WorkflowContext } from '../services/workflowBuilder';
 import { splitPromptForDualCLIP } from '../utils/promptSplitter';
 import { selectOptimalWeightDtype } from '../utils/weightDType';
