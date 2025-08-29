@@ -6,7 +6,7 @@
  */
 import debug from 'debug';
 
-import { MODEL_ID_VARIANT_MAP, MODEL_REGISTRY } from '../config/modelRegistry';
+import { MODEL_ID_VARIANT_MAP, MODEL_REGISTRY, getModelsByVariant } from '../config/modelRegistry';
 import { SYSTEM_COMPONENTS } from '../config/systemComponents';
 import { COMPONENT_NODE_MAPPINGS, CUSTOM_SD_CONFIG, SUPPORTED_MODEL_FORMATS } from '../constants';
 import { ModelResolverError } from '../errors/modelResolverError';
@@ -34,10 +34,12 @@ export interface ModelValidationResult {
 /**
  * Model Resolver Service
  * Provides model resolution, validation, and component selection
+ *
+ * Caching strategy:
+ * - Model name resolution: Cached locally (business logic)
+ * - Component lists (VAE, CLIP, etc.): Cached in ComfyUIClientService
+ *
  * @params clientService - The ComfyUI client service instance
- * @params modelCache - Cache for resolved model filenames
- * @params vaeCache - Cache for available VAE files
- * @params componentCache - Cache for available component files
  * @returns The resolved model filename or undefined if not found
  * @throws ModelResolverError for any resolution or validation issues
  * @note This service does not handle workflow building or execution
@@ -45,8 +47,6 @@ export interface ModelValidationResult {
 export class ModelResolverService {
   private clientService: ComfyUIClientService;
   private modelCache: Map<string, { timestamp: number; value: string }> = new Map();
-  private vaeCache: { timestamp: number; value: string[] } | null = null;
-  private componentCache: Map<string, { timestamp: number; value: string[] }> = new Map();
   private readonly CACHE_TTL = 60 * 1000; // 1 minute
 
   constructor(clientService: ComfyUIClientService) {
@@ -100,15 +100,21 @@ export class ModelResolverService {
     if (mappedVariant) {
       log('Found model ID mapping:', cleanId, '->', mappedVariant);
 
-      // Find first model with this variant
-      for (const [filename, modelConfig] of Object.entries(MODEL_REGISTRY)) {
-        if (modelConfig.variant === mappedVariant) {
-          log('Found by mapped variant:', filename);
+      const prioritizedModels = getModelsByVariant(mappedVariant);
+      log('Prioritized models for variant', mappedVariant, ':', prioritizedModels);
+
+      const serverModels = await this.getAvailableModelFiles();
+
+      // Find first available model from prioritized list
+      for (const filename of prioritizedModels) {
+        if (serverModels.includes(filename)) {
+          log('Found available model by variant:', filename);
           this.modelCache.set(modelId, { timestamp: now, value: filename });
           return filename;
         }
       }
-      log('No registry entry found with variant:', mappedVariant);
+
+      log('No prioritized models available on server for variant:', mappedVariant);
     } else {
       log('No mapping found for cleanId:', cleanId);
     }
@@ -145,69 +151,45 @@ export class ModelResolverService {
 
   /**
    * Get available VAE files from server
+   * Note: Results are cached in ComfyUIClientService.getNodeDefs()
    */
   async getAvailableVAEFiles(): Promise<string[]> {
-    // Use cache if available and not expired
-    const now = Date.now();
-    if (this.vaeCache && now - this.vaeCache.timestamp < this.CACHE_TTL) {
-      return this.vaeCache.value;
-    }
-
-    // Use SDK's getNodeDefs method
+    // Use SDK's getNodeDefs method (already includes caching)
     const nodeDefs = await this.clientService.getNodeDefs('VAELoader');
 
     if (!nodeDefs?.VAELoader?.input?.required?.vae_name?.[0]) {
-      this.vaeCache = { timestamp: now, value: [] };
       return [];
     }
 
     const vaeList = nodeDefs.VAELoader.input.required.vae_name[0];
     if (!Array.isArray(vaeList)) {
-      this.vaeCache = { timestamp: now, value: [] };
       return [];
     }
 
-    this.vaeCache = { timestamp: now, value: vaeList };
     return vaeList;
   }
 
   /**
    * Get available component files from ComfyUI node
    * Generic method that queries ComfyUI for any node type's available files
+   * Note: Results are cached in ComfyUIClientService.getNodeDefs()
    * @param loaderNode - The ComfyUI node name (e.g., 'CLIPLoader', 'VAELoader')
    * @param inputKey - The input field name to query (e.g., 'clip_name', 'vae_name')
    */
   async getAvailableComponentFiles(loaderNode: string, inputKey: string): Promise<string[]> {
-    const cacheKey = `${loaderNode}:${inputKey}`;
-    const now = Date.now();
-
-    if (this.componentCache.has(cacheKey)) {
-      const cached = this.componentCache.get(cacheKey)!;
-      if (now - cached.timestamp < this.CACHE_TTL) {
-        return cached.value;
-      } else {
-        // Cache expired, remove it
-        this.componentCache.delete(cacheKey);
-      }
-    }
-
-    // Use SDK's getNodeDefs method
     const nodeDefs = await this.clientService.getNodeDefs(loaderNode);
     const loader = nodeDefs?.[loaderNode];
 
     if (!loader?.input?.required?.[inputKey]?.[0]) {
       // Node doesn't exist or no files available - normal case
-      this.componentCache.set(cacheKey, { timestamp: now, value: [] });
       return [];
     }
 
     const componentList = loader.input.required[inputKey][0];
     if (!Array.isArray(componentList)) {
-      this.componentCache.set(cacheKey, { timestamp: now, value: [] });
       return [];
     }
 
-    this.componentCache.set(cacheKey, { timestamp: now, value: componentList });
     return componentList;
   }
 
@@ -248,12 +230,11 @@ export class ModelResolverService {
    * Validate if a model exists
    */
   /**
-   * Clear all caches
+   * Clear model name cache
+   * Note: Component caches are managed by ComfyUIClientService
    */
   clearCaches(): void {
     this.modelCache.clear();
-    this.vaeCache = null;
-    this.componentCache.clear();
   }
 
   async validateModel(modelId: string): Promise<ModelValidationResult> {

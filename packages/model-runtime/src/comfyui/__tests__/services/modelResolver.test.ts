@@ -3,7 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ModelResolverError } from '../../errors/modelResolverError';
 import { ComfyUIClientService } from '../../services/comfyuiClient';
 import { ModelResolverService } from '../../services/modelResolver';
-import { TEST_FLUX_MODELS, TEST_SD35_MODELS, TEST_CUSTOM_SD, TEST_MODEL_SETS } from '../constants/testModels';
+import {
+  TEST_CUSTOM_SD,
+  TEST_FLUX_MODELS,
+  TEST_MODEL_SETS,
+  TEST_SD35_MODELS,
+} from '../constants/testModels';
 
 // Mock the client service
 vi.mock('../../services/comfyuiClient');
@@ -37,6 +42,18 @@ vi.mock('../../config/modelRegistry', () => {
 
   return {
     MODEL_REGISTRY: configs,
+    MODEL_ID_VARIANT_MAP: {
+      'flux-dev': 'flux-1-dev',
+      'flux-schnell': 'flux-1-schnell',
+      'stable-diffusion-35': 'sd35',
+    },
+    getModelsByVariant: vi.fn((variant: string) => {
+      // Return models sorted by priority (mock implementation)
+      const models = Object.entries(configs)
+        .filter(([, config]) => config.variant === variant)
+        .map(([filename]) => filename);
+      return models;
+    }),
     getModelConfig: vi.fn((filename: string) => {
       return configs[filename] || null;
     }),
@@ -116,7 +133,10 @@ describe('ModelResolverService', () => {
 
     it('should return filename if already a file', async () => {
       // Mock getCheckpoints to include the file
-      mockClientService.getCheckpoints.mockResolvedValue([TEST_FLUX_MODELS.DEV, TEST_FLUX_MODELS.SCHNELL]);
+      mockClientService.getCheckpoints.mockResolvedValue([
+        TEST_FLUX_MODELS.DEV,
+        TEST_FLUX_MODELS.SCHNELL,
+      ]);
 
       const result = await service.resolveModelFileName(TEST_FLUX_MODELS.DEV);
       expect(result).toBe(TEST_FLUX_MODELS.DEV);
@@ -138,20 +158,14 @@ describe('ModelResolverService', () => {
     });
 
     it('should resolve custom SD model to fixed filename', async () => {
-      mockClientService.getCheckpoints.mockResolvedValue([
-        TEST_CUSTOM_SD,
-        TEST_SD35_MODELS.LARGE,
-      ]);
+      mockClientService.getCheckpoints.mockResolvedValue([TEST_CUSTOM_SD, TEST_SD35_MODELS.LARGE]);
 
       const result = await service.resolveModelFileName('stable-diffusion-custom');
       expect(result).toBe(TEST_CUSTOM_SD);
     });
 
     it('should resolve custom SD refiner model to same fixed filename', async () => {
-      mockClientService.getCheckpoints.mockResolvedValue([
-        TEST_CUSTOM_SD,
-        TEST_SD35_MODELS.LARGE,
-      ]);
+      mockClientService.getCheckpoints.mockResolvedValue([TEST_CUSTOM_SD, TEST_SD35_MODELS.LARGE]);
 
       const result = await service.resolveModelFileName('stable-diffusion-custom-refiner');
       expect(result).toBe(TEST_CUSTOM_SD);
@@ -167,7 +181,10 @@ describe('ModelResolverService', () => {
 
   describe('validateModel', () => {
     it('should validate existing model file on server', async () => {
-      mockClientService.getCheckpoints.mockResolvedValue([TEST_FLUX_MODELS.DEV, TEST_FLUX_MODELS.SCHNELL]);
+      mockClientService.getCheckpoints.mockResolvedValue([
+        TEST_FLUX_MODELS.DEV,
+        TEST_FLUX_MODELS.SCHNELL,
+      ]);
 
       const result = await service.validateModel(TEST_FLUX_MODELS.DEV);
 
@@ -179,7 +196,7 @@ describe('ModelResolverService', () => {
       mockClientService.getCheckpoints.mockResolvedValue([TEST_SD35_MODELS.LARGE]);
 
       await expect(service.validateModel(TEST_MODEL_SETS.NON_EXISTENT[0])).rejects.toThrow(
-        `Model not found: ${TEST_MODEL_SETS.NON_EXISTENT[0]}`
+        `Model not found: ${TEST_MODEL_SETS.NON_EXISTENT[0]}`,
       );
     });
 
@@ -197,8 +214,6 @@ describe('ModelResolverService', () => {
         expect((error as any).reason).toBe('MODEL_NOT_FOUND');
       }
     });
-
-
   });
 
   describe('cache management', () => {
@@ -218,10 +233,10 @@ describe('ModelResolverService', () => {
       expect(result1).toEqual(['vae1.safetensors', 'vae2.safetensors']);
       expect(mockClientService.getNodeDefs).toHaveBeenCalledTimes(1);
 
-      // Second call - uses cache
+      // Second call - ModelResolverService doesn't cache, but ClientService does
       const result2 = await service.getAvailableVAEFiles();
       expect(result2).toEqual(['vae1.safetensors', 'vae2.safetensors']);
-      expect(mockClientService.getNodeDefs).toHaveBeenCalledTimes(1); // No additional call
+      expect(mockClientService.getNodeDefs).toHaveBeenCalledTimes(2); // Called again, caching is in ClientService
     });
 
     it('should use cached component data when available', async () => {
@@ -236,47 +251,38 @@ describe('ModelResolverService', () => {
       });
 
       // First call - populates cache
-      const result1 = await service.getAvailableComponentFiles('CheckpointLoaderSimple', 'ckpt_name');
+      const result1 = await service.getAvailableComponentFiles(
+        'CheckpointLoaderSimple',
+        'ckpt_name',
+      );
       expect(result1).toEqual(['model1.safetensors', 'model2.safetensors']);
       expect(mockClientService.getNodeDefs).toHaveBeenCalledTimes(1);
 
-      // Second call - uses cache
-      const result2 = await service.getAvailableComponentFiles('CheckpointLoaderSimple', 'ckpt_name');
+      // Second call - ModelResolverService doesn't cache, but ClientService does
+      const result2 = await service.getAvailableComponentFiles(
+        'CheckpointLoaderSimple',
+        'ckpt_name',
+      );
       expect(result2).toEqual(['model1.safetensors', 'model2.safetensors']);
-      expect(mockClientService.getNodeDefs).toHaveBeenCalledTimes(1); // No additional call
+      expect(mockClientService.getNodeDefs).toHaveBeenCalledTimes(2); // Called again, caching is in ClientService
     });
-    it('should clear all caches', async () => {
+    it('should clear model name cache', async () => {
       // Use a non-registry model that requires server check
       const customModel = 'custom_unregistered_model.safetensors';
       mockClientService.getCheckpoints.mockResolvedValue([customModel]);
-      mockClientService.getNodeDefs.mockResolvedValue({
-        VAELoader: {
-          input: {
-            required: {
-              vae_name: [['ae.safetensors']],
-            },
-          },
-        },
-      });
 
-      // Populate caches
+      // Populate model cache
       await service.resolveModelFileName(customModel);
-      await service.getAvailableVAEFiles();
-
-      // Verify initial calls were made
       expect(mockClientService.getCheckpoints).toHaveBeenCalledTimes(1);
-      expect(mockClientService.getNodeDefs).toHaveBeenCalledTimes(1);
 
-      // Clear all caches
+      // Clear caches (only affects model name cache)
       service.clearCaches();
 
-      // Should call API again after cache clear
+      // Should call API again after cache clear for model resolution
       await service.resolveModelFileName(customModel);
-      await service.getAvailableVAEFiles();
-
-      // Should have made additional calls after clearing cache
       expect(mockClientService.getCheckpoints).toHaveBeenCalledTimes(2);
-      expect(mockClientService.getNodeDefs).toHaveBeenCalledTimes(2);
+
+      // Note: VAE and component caches are managed by ClientService
     });
   });
 
@@ -305,7 +311,7 @@ describe('ModelResolverService', () => {
 
     it('should handle missing input in VAELoader', async () => {
       mockClientService.getNodeDefs.mockResolvedValue({
-        VAELoader: {}
+        VAELoader: {},
       });
 
       const result = await service.getAvailableVAEFiles();
@@ -315,8 +321,8 @@ describe('ModelResolverService', () => {
     it('should handle missing required in VAELoader input', async () => {
       mockClientService.getNodeDefs.mockResolvedValue({
         VAELoader: {
-          input: {}
-        }
+          input: {},
+        },
       });
 
       const result = await service.getAvailableVAEFiles();
@@ -327,9 +333,9 @@ describe('ModelResolverService', () => {
       mockClientService.getNodeDefs.mockResolvedValue({
         VAELoader: {
           input: {
-            required: {}
-          }
-        }
+            required: {},
+          },
+        },
       });
 
       const result = await service.getAvailableVAEFiles();
@@ -380,14 +386,12 @@ describe('ModelResolverService', () => {
 
     it('should re-throw ModelResolverError', async () => {
       // Mock to throw ModelResolverError
-      const modelError = new ModelResolverError(
-        'Test error',
-        'TEST_ERROR'
-      );
+      const modelError = new ModelResolverError('Test error', 'TEST_ERROR');
       mockClientService.getCheckpoints.mockRejectedValue(modelError);
 
-      await expect(service.validateModel('test-model.safetensors'))
-        .rejects.toThrow(ModelResolverError);
+      await expect(service.validateModel('test-model.safetensors')).rejects.toThrow(
+        ModelResolverError,
+      );
     });
   });
 });

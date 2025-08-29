@@ -23,11 +23,6 @@ export const MODEL_REGISTRY: Record<string, ModelConfig> = {
   ...SD_MODEL_REGISTRY,
 };
 
-// ===================================================================
-// Model ID to Variant Mapping
-// Maps common model IDs to their corresponding variants
-// ===================================================================
-
 /**
  * Model ID to Variant mapping
  * Maps actual frontend model IDs to their corresponding variants in registry
