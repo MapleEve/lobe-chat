@@ -180,10 +180,14 @@ class ConnectionManager {
  * Workflow execution result
  */
 export interface WorkflowResult {
+  // Raw output data from workflow execution, keyed by node ID
+  _raw?: Record<string, any>;
   images?: {
     images?: Array<{
       data: string;
+      height?: number;
       mimeType: string;
+      width?: number;
     }>;
   };
 }
@@ -291,6 +295,12 @@ export class ComfyUIClientService {
       new CallWrapper(this.client, workflow)
         .onFinished((result: any) => {
           log('Workflow execution finished successfully');
+          log('🔍 Raw workflow result structure:', {
+            hasImages: 'images' in result,
+            hasRaw: '_raw' in result,
+            keys: Object.keys(result),
+            rawKeys: result._raw ? Object.keys(result._raw) : null,
+          });
           resolve(result);
         })
         .onFailed((error: any) => {

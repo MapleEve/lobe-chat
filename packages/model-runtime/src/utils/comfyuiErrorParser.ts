@@ -47,6 +47,50 @@ function isModelError(error: any): boolean {
 }
 
 /**
+ * Check if the error is a ComfyUI SDK custom error
+ * @param error - Error object
+ * @returns Whether it's a SDK custom error
+ */
+function isSDKCustomError(error: any): boolean {
+  if (!error) return false;
+
+  // Check for SDK error class names
+  const errorName = error?.name || error?.constructor?.name || '';
+  const sdkErrorTypes = [
+    // Base error class
+    'CallWrapperError',
+    // Actual SDK error classes from comfyui-sdk
+    'WentMissingError',
+    'FailedCacheError',
+    'EnqueueFailedError',
+    'DisconnectedError',
+    'ExecutionFailedError',
+    'CustomEventError',
+    'ExecutionInterruptedError',
+    'MissingNodeError',
+  ];
+
+  if (sdkErrorTypes.includes(errorName)) {
+    return true;
+  }
+
+  // Check for SDK error messages patterns
+  const message = error?.message || String(error);
+  const lowerMessage = message.toLowerCase();
+
+  return (
+    lowerMessage.includes('sdk error:') ||
+    lowerMessage.includes('call wrapper') ||
+    lowerMessage.includes('execution interrupted') ||
+    lowerMessage.includes('missing node type') ||
+    lowerMessage.includes('invalid model configuration') ||
+    lowerMessage.includes('workflow validation failed') ||
+    lowerMessage.includes('sdk timeout') ||
+    lowerMessage.includes('sdk configuration error')
+  );
+}
+
+/**
  * Check if the error is a network connection error (including WebSocket)
  * @param error - Error object
  * @returns Whether it's a network connection error
@@ -269,21 +313,25 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
       }
     }
   }
-  // 3. SDK custom errors (已经是 ComfyUIBizError，无需再设置)
+  // 3. Check for more specific error types only if it's still a generic ComfyUIBizError
   if (errorType === AgentRuntimeErrorType.ComfyUIBizError) {
-    // 4. Network errors (including WebSocket)
-    if (isNetworkError(error)) {
+    // 4. SDK custom errors (keep as ComfyUIBizError)
+    if (isSDKCustomError(error)) {
+      // SDK errors remain as ComfyUIBizError
+      errorType = AgentRuntimeErrorType.ComfyUIBizError;
+    }
+    // 5. Network errors (including WebSocket)
+    else if (isNetworkError(error)) {
       errorType = AgentRuntimeErrorType.ComfyUIServiceUnavailable;
     }
-    // 5. Workflow errors
+    // 6. Workflow errors
     else if (isWorkflowError(error)) {
       errorType = AgentRuntimeErrorType.ComfyUIWorkflowError;
     }
-    // 6. Model errors - map to framework's ModelNotFound
+    // 7. Model errors - map to framework's ModelNotFound
     else if (isModelError(error)) {
       errorType = AgentRuntimeErrorType.ModelNotFound;
     }
-    // SDK errors remain as ComfyUIBizError (no need to check isSDKCustomError)
   }
 
   return {
