@@ -593,15 +593,19 @@ describe('ComfyUIClientService', () => {
     });
 
     it('should get sampler info successfully', async () => {
-      const mockSamplerInfo = {
+      const mockSDKResponse = {
         sampler: ['euler', 'ddim'],
         scheduler: ['normal', 'karras'],
       };
-      mockClient.getSamplerInfo.mockResolvedValue(mockSamplerInfo);
+      mockClient.getSamplerInfo.mockResolvedValue(mockSDKResponse);
 
       const result = await service.getSamplerInfo();
 
-      expect(result).toEqual(mockSamplerInfo);
+      // Service now returns samplerName instead of sampler for consistency
+      expect(result).toEqual({
+        samplerName: ['euler', 'ddim'],
+        scheduler: ['normal', 'karras'],
+      });
       expect(mockClient.getSamplerInfo).toHaveBeenCalled();
     });
 

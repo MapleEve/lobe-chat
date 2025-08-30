@@ -82,27 +82,31 @@ class AuthManager {
     const { authType = 'none', apiKey, username, password, customHeaders } = options;
 
     switch (authType) {
-      case 'basic':
+      case 'basic': {
         return {
+          password: password!,
           type: 'basic',
           username: username!,
-          password: password!,
         } as BasicCredentials;
+      }
 
-      case 'bearer':
+      case 'bearer': {
         return {
-          type: 'bearer_token',
           token: apiKey!,
+          type: 'bearer_token',
         } as BearerTokenCredentials;
+      }
 
-      case 'custom':
+      case 'custom': {
         return {
-          type: 'custom',
           headers: customHeaders!,
+          type: 'custom',
         } as CustomCredentials;
+      }
 
-      default:
+      default: {
         return undefined;
+      }
     }
   }
 
@@ -110,21 +114,24 @@ class AuthManager {
     const { authType = 'none', apiKey, username, password, customHeaders } = options;
 
     switch (authType) {
-      case 'basic':
+      case 'basic': {
         if (username && password) {
           const basicAuth = Buffer.from(`${username}:${password}`).toString('base64');
           return { Authorization: `Basic ${basicAuth}` };
         }
         break;
+      }
 
-      case 'bearer':
+      case 'bearer': {
         if (apiKey) {
           return { Authorization: `Bearer ${apiKey}` };
         }
         break;
+      }
 
-      case 'custom':
+      case 'custom': {
         return customHeaders;
+      }
     }
 
     return undefined;
@@ -208,7 +215,7 @@ export class ComfyUIClientService {
     try {
       // Initialize helper classes
       this.authManager = new AuthManager(options);
-      this.cacheManager = new TTLCacheManager(60000); // 1 minute TTL
+      this.cacheManager = new TTLCacheManager(60_000); // 1 minute TTL
       this.connectionManager = new ConnectionManager();
 
       // Setup base URL
@@ -300,15 +307,11 @@ export class ComfyUIClientService {
           // Parse error message and reject with ServicesError
           const parsedMessage = parseComfyUIErrorMessage(error);
           reject(
-            new ServicesError(
-              parsedMessage.error.message || 'Workflow execution failed',
-              ServicesError.Reasons.EXECUTION_FAILED,
-              {
-                errorType: parsedMessage.errorType,
-                originalError: error,
-                parsedError: parsedMessage.error,
-              },
-            ),
+            new ServicesError(parsedMessage.error.message, ServicesError.Reasons.EXECUTION_FAILED, {
+              errorType: parsedMessage.errorType,
+              originalError: error,
+              parsedError: parsedMessage.error,
+            }),
           );
         })
         .onProgress((info: any) => {
@@ -389,7 +392,7 @@ export class ComfyUIClientService {
    * Get sampler info from ComfyUI
    * Wraps SDK method to avoid Law of Demeter violation
    */
-  async getSamplerInfo(): Promise<{ sampler: string[]; scheduler: string[] }> {
+  async getSamplerInfo(): Promise<{ samplerName: string[]; scheduler: string[] }> {
     try {
       const info = await this.client.getSamplerInfo();
       // Handle both string arrays and tuple arrays like ['euler', { tooltip: 'info' }]
@@ -401,7 +404,7 @@ export class ComfyUIClientService {
       };
 
       return {
-        sampler: extractStrings(info.sampler),
+        samplerName: extractStrings(info.sampler),
         scheduler: extractStrings(info.scheduler),
       };
     } catch (error) {
