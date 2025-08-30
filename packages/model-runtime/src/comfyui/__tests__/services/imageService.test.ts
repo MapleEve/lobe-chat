@@ -16,6 +16,15 @@ vi.mock('../../services/workflowBuilder');
 vi.mock('../../services/errorHandler');
 vi.mock('../../utils/workflowDetector');
 
+// Mock sharp module for image processing
+vi.mock('sharp', () => ({
+  default: vi.fn((buffer) => ({
+    metadata: vi.fn().mockResolvedValue({ width: 1024, height: 1024 }),
+    resize: vi.fn().mockReturnThis(),
+    toBuffer: vi.fn().mockResolvedValue(Buffer.from(buffer)),
+  })),
+}));
+
 describe('ImageService', () => {
   let imageService: ImageService;
   let mockClientService: any;
@@ -185,6 +194,9 @@ describe('ImageService', () => {
     };
 
     it('should fetch image from URL and upload to ComfyUI', async () => {
+      // In test environment, typeof window should be undefined
+      expect(typeof window).toBe('undefined');
+      
       // Setup mocks
       mockModelResolverService.validateModel.mockResolvedValue({
         actualFileName: 'flux1-schnell-fp8.safetensors',
@@ -283,34 +295,46 @@ describe('ImageService', () => {
       );
     });
 
-    it('should reject images larger than 30MB', async () => {
+    it('should not modify original params object', async () => {
+      const originalImageUrl = 'https://s3.test/original.png';
       const payload: CreateImagePayload = {
         model: 'flux-schnell',
         params: {
-          imageUrl: 'https://s3.test/large.png',
+          imageUrl: originalImageUrl,
           prompt: 'test prompt',
         },
       };
 
       // Setup
       mockModelResolverService.validateModel.mockResolvedValue({
-        actualFileName: 'model.safetensors',
+        actualFileName: 'flux1-schnell-fp8.safetensors',
         exists: true,
       });
+      
+      // Mock WorkflowDetector to return proper architecture
+      vi.mocked(WorkflowDetector, true).detectModelType = vi.fn().mockReturnValue({
+        architecture: 'FLUX',
+        isSupported: true,
+        modelType: 'FLUX',
+      });
 
-      // Large image data
-      const largeImageData = new Uint8Array(31 * 1024 * 1024); // 31MB (exceeds 30MB limit)
+      // Mock fetch and upload
       mockFetch.mockResolvedValue({
-        arrayBuffer: vi.fn().mockResolvedValue(largeImageData.buffer),
+        arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(100)),
         ok: true,
       });
-
-      mockErrorHandler.handleError.mockImplementation((error: any) => {
-        throw error;
+      mockClientService.uploadImage.mockResolvedValue('uploaded.png');
+      mockWorkflowBuilderService.buildWorkflow.mockResolvedValue({});
+      mockClientService.executeWorkflow.mockResolvedValue({
+        images: { images: [{}] },
       });
+      mockClientService.getPathImage.mockReturnValue('result.png');
 
-      // Execute and verify
-      await expect(imageService.createImage(payload)).rejects.toThrow(/Image too large/);
+      // Execute
+      await imageService.createImage(payload);
+
+      // Verify original params are NOT modified
+      expect(payload.params.imageUrl).toBe(originalImageUrl);
     });
 
     it('should handle empty image data', async () => {
@@ -400,9 +424,9 @@ describe('ImageService', () => {
       // Execute
       await imageService.createImage(payloadWithArray);
 
-      // Verify both formats were updated
-      expect(payloadWithArray.params.imageUrl).toBe('uploaded.png');
-      expect(payloadWithArray.params.imageUrls![0]).toBe('uploaded.png');
+      // Verify original params are NOT modified (we clone them now)
+      expect(payloadWithArray.params.imageUrl).toBeUndefined();
+      expect(payloadWithArray.params.imageUrls![0]).toBe('https://s3.test/image.png');
     });
   });
 

@@ -6,7 +6,6 @@
  */
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import debug from 'debug';
-import sharp from 'sharp';
 
 import { nanoid } from '@/utils/uuid';
 
@@ -41,7 +40,9 @@ export class ImageService {
    * Optimized with parallel execution for independent operations
    */
   async createImage(payload: CreateImagePayload): Promise<CreateImageResponse> {
-    const { model, params } = payload;
+    const { model } = payload;
+    // Clone params to avoid modifying the original object
+    const params = { ...payload.params };
 
     try {
       // Parallel execution of independent operations
@@ -149,10 +150,24 @@ export class ImageService {
         });
       }
 
-      // Get image metadata using sharp
-      const sharpInstance = sharp(buffer);
-      const metadata = await sharpInstance.metadata();
-      const { width: originalWidth, height: originalHeight } = metadata;
+      // Get image metadata using sharp (only on server-side)
+      let originalWidth: number | undefined;
+      let originalHeight: number | undefined;
+
+      // Only use sharp on server-side (Node.js environment)
+      if (typeof window === 'undefined') {
+        const sharpModule = await import('sharp');
+        const sharp = sharpModule.default;
+        const sharpInstance = sharp(buffer);
+        const metadata = await sharpInstance.metadata();
+        originalWidth = metadata.width;
+        originalHeight = metadata.height;
+      } else {
+        // Fallback for client-side (should never happen in production)
+        log('Warning: Running in browser environment, cannot read image dimensions');
+        originalWidth = 1024;
+        originalHeight = 1024;
+      }
 
       if (!originalWidth || !originalHeight) {
         throw new ServicesError(
@@ -189,16 +204,22 @@ export class ImageService {
             target: { height: resizeResult.height, width: resizeResult.width },
           });
 
-          // Resize image using sharp (reuse the same instance)
-          buffer = Buffer.from(
-            await sharpInstance
-              .resize(resizeResult.width, resizeResult.height, {
-                fit: 'inside', // Maintain aspect ratio, fit within bounds
-                withoutEnlargement: false, // Allow enlargement if needed
-              })
-              .toBuffer(),
-          );
-          log('Image resized successfully, new size:', buffer.length);
+          // Resize image using sharp (only on server-side)
+          if (typeof window === 'undefined') {
+            const sharpModule = await import('sharp');
+            const sharp = sharpModule.default;
+            buffer = Buffer.from(
+              await sharp(buffer)
+                .resize(resizeResult.width, resizeResult.height, {
+                  fit: 'inside', // Maintain aspect ratio, fit within bounds
+                  withoutEnlargement: false, // Allow enlargement if needed
+                })
+                .toBuffer(),
+            );
+            log('Image resized successfully, new size:', buffer.length);
+          } else {
+            log('Warning: Cannot resize image in browser environment');
+          }
         } else {
           log('Image dimensions are within model limits, no resize needed');
         }
@@ -213,6 +234,8 @@ export class ImageService {
       // Replace the URL with ComfyUI filename
       params.imageUrl = uploadedFileName;
       if (params.imageUrls) {
+        // Clone the array to avoid modifying the original
+        params.imageUrls = [...params.imageUrls];
         params.imageUrls[0] = uploadedFileName;
       }
 
