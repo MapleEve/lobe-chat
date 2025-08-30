@@ -217,7 +217,7 @@ export async function buildSimpleSDWorkflow(
 
   // Create dynamic input parameters list
   const inputParams = isI2IMode
-    ? ['prompt', 'steps', 'seed', 'cfg', 'samplerName', 'scheduler', 'inputImage', 'denoise'] // i2i mode: no width/height needed
+    ? ['prompt', 'steps', 'seed', 'cfg', 'samplerName', 'scheduler', 'inputImage', 'denoise'] // i2i mode: no width/height needed (uses input image dimensions automatically)
     : ['prompt', 'width', 'height', 'steps', 'seed', 'cfg', 'samplerName', 'scheduler']; // t2i mode: width/height required
 
   // Create PromptBuilder
@@ -256,11 +256,11 @@ export async function buildSimpleSDWorkflow(
 
   // Mode-specific input values
   if (isI2IMode) {
-    // Image-to-image mode: no width/height needed (comes from input image)
+    // Image-to-image mode: no width/height needed (KSampler uses input image dimensions automatically)
     builder.input('inputImage', params.imageUrl || params.imageUrls?.[0]);
     builder.input('denoise', params.strength);
   } else {
-    // Text-to-image mode: width/height required
+    // Text-to-image mode: width/height required for EmptyLatentImage
     builder.input('width', params.width);
     builder.input('height', params.height);
   }
