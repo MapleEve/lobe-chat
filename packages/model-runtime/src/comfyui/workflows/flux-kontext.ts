@@ -126,7 +126,7 @@ export async function buildFluxKontextWorkflow(
       class_type: 'SamplerCustomAdvanced',
       inputs: {
         guider: ['14', 0], // ✅ BasicGuider provides GUIDER type (handles model/conditioning)
-        latent_image: hasInputImage ? ['img_encode', 0] : ['7', 0], // Choose latent source based on input image presence
+        latent_image: hasInputImage ? ['16', 0] : ['7', 0], // Choose latent source based on input image presence
         noise: ['13', 0], // Random noise for initialization
         sampler: ['8', 0], // Sampling algorithm
         sigmas: ['9', 0], // Noise schedule from BasicScheduler
@@ -176,7 +176,8 @@ export async function buildFluxKontextWorkflow(
 
   // If there's an input image, add image loading and encoding nodes
   if (hasInputImage) {
-    workflow['img_load'] = {
+    workflow['15'] = {
+      // Use numeric ID instead of 'img_load'
       _meta: {
         title: 'Load Image',
       },
@@ -186,13 +187,14 @@ export async function buildFluxKontextWorkflow(
       },
     };
 
-    workflow['img_encode'] = {
+    workflow['16'] = {
+      // Use numeric ID instead of 'img_encode'
       _meta: {
         title: 'VAE Encode',
       },
       class_type: 'VAEEncode',
       inputs: {
-        pixels: ['img_load', 0],
+        pixels: ['15', 0], // Reference node 15 instead of 'img_load'
         vae: ['3', 0],
       },
     };
@@ -231,16 +233,15 @@ export async function buildFluxKontextWorkflow(
     workflow['7'].inputs.width = params.width;
     workflow['7'].inputs.height = params.height;
   } else {
-    // Image-to-image mode: ModelSamplingFlux still needs width/height for proper sampling
-    workflow['4'].inputs.width = params.width;
-    workflow['4'].inputs.height = params.height;
+    // Image-to-image mode: ModelSamplingFlux gets width/height from LoadImage output
+    workflow['4'].inputs.width = ['15', 2]; // LoadImage outputs width at index 2
+    workflow['4'].inputs.height = ['15', 3]; // LoadImage outputs height at index 3
   }
 
   // Create PromptBuilder - removed prompt input parameters as they are set directly
-  const inputParams = ['width', 'height', 'steps', 'cfg', 'seed']; // Removed 'prompt_clip_l', 'prompt_t5xxl'
-  if (hasInputImage) {
-    inputParams.push('imageUrl', 'denoise');
-  }
+  const inputParams = hasInputImage
+    ? ['steps', 'cfg', 'seed', 'denoise'] // Image-to-image mode: no width/height/imageUrl needed
+    : ['width', 'height', 'steps', 'cfg', 'seed']; // Text-to-image mode: width/height required
 
   const builder = new PromptBuilder(workflow, inputParams, ['images']);
 
@@ -265,7 +266,8 @@ export async function buildFluxKontextWorkflow(
 
   // Additional mappings for image-to-image mode
   if (hasInputImage) {
-    builder.setInputNode('imageUrl', 'img_load.inputs.image');
+    // IMPORTANT: Don't map imageUrl through PromptBuilder - it's already set in the workflow
+    // builder.setInputNode('imageUrl', 'img_load.inputs.image');
     builder.setInputNode('denoise', '9.inputs.denoise');
   } else {
     // Text-to-image mode still needs denoise mapping but will use default value
@@ -282,9 +284,8 @@ export async function buildFluxKontextWorkflow(
 
   if (hasInputImage) {
     // FLUX kontext img2img requires higher denoise values (0.8-0.95) to see changes
-    builder
-      .input('imageUrl', params.imageUrl || params.imageUrls?.[0] || '')
-      .input('denoise', params.strength);
+    // Note: imageUrl is already set directly in the workflow, not through PromptBuilder
+    builder.input('denoise', params.strength);
   } else {
     // Text-to-image mode uses default denoise value 1.0
     builder.input('denoise', WORKFLOW_DEFAULTS.SAMPLING.DENOISE);

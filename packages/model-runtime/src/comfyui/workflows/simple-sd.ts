@@ -137,22 +137,13 @@ export async function buildSimpleSDWorkflow(
         text: DEFAULT_NEGATIVE_PROMPT,
       },
     },
-    '4': {
-      _meta: { title: 'Empty Latent' },
-      class_type: 'EmptyLatentImage',
-      inputs: {
-        batch_size: WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE,
-        height: params.height,
-        width: params.width,
-      },
-    },
     '5': {
       _meta: { title: 'KSampler' },
       class_type: 'KSampler',
       inputs: {
         cfg: params.cfg,
         denoise: isI2IMode ? params.strength : WORKFLOW_DEFAULTS.SAMPLING.DENOISE,
-        latent_image: isI2IMode ? ['IMG_ENCODE', 0] : ['4', 0], // Dynamic connection based on mode
+        latent_image: isI2IMode ? ['9', 0] : ['4', 0], // Dynamic connection based on mode
         model: ['1', 0],
         negative: ['3', 0],
         positive: ['2', 0],
@@ -195,7 +186,7 @@ export async function buildSimpleSDWorkflow(
   // Add dynamic nodes based on mode
   if (isI2IMode) {
     // Image-to-image mode: Add LoadImage and VAEEncode nodes
-    workflow['IMG_LOAD'] = {
+    workflow['8'] = {
       _meta: { title: 'Load Input Image' },
       class_type: 'LoadImage',
       inputs: {
@@ -203,31 +194,31 @@ export async function buildSimpleSDWorkflow(
       },
     };
 
-    workflow['IMG_ENCODE'] = {
+    workflow['9'] = {
       _meta: { title: 'VAE Encode Input' },
       class_type: 'VAEEncode',
       inputs: {
-        pixels: ['IMG_LOAD', 0],
+        pixels: ['8', 0],
         vae: selectedVAE ? ['VAE_LOADER', 0] : ['1', 2], // Use external or built-in VAE
       },
     };
+  } else {
+    // Text-to-image mode: Add EmptyLatentImage node
+    workflow['4'] = {
+      _meta: { title: 'Empty Latent' },
+      class_type: 'EmptyLatentImage',
+      inputs: {
+        batch_size: WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE,
+        height: params.height,
+        width: params.width,
+      },
+    };
   }
-  // Text-to-image mode uses the existing EmptyLatentImage node ('4')
 
   // Create dynamic input parameters list
-  const inputParams = [
-    'prompt',
-    'width',
-    'height',
-    'steps',
-    'seed',
-    'cfg',
-    'samplerName',
-    'scheduler',
-  ];
-  if (isI2IMode) {
-    inputParams.push('inputImage', 'denoise');
-  }
+  const inputParams = isI2IMode
+    ? ['prompt', 'steps', 'seed', 'cfg', 'samplerName', 'scheduler', 'inputImage', 'denoise'] // i2i mode: no width/height needed
+    : ['prompt', 'width', 'height', 'steps', 'seed', 'cfg', 'samplerName', 'scheduler']; // t2i mode: width/height required
 
   // Create PromptBuilder
   const builder = new PromptBuilder(workflow, inputParams, ['images']);
@@ -237,35 +228,41 @@ export async function buildSimpleSDWorkflow(
 
   // Set input node mappings
   builder.setInputNode('prompt', '2.inputs.text');
-  builder.setInputNode('width', '4.inputs.width');
-  builder.setInputNode('height', '4.inputs.height');
   builder.setInputNode('steps', '5.inputs.steps');
   builder.setInputNode('seed', '5.inputs.seed');
   builder.setInputNode('cfg', '5.inputs.cfg');
   builder.setInputNode('samplerName', '5.inputs.sampler_name');
   builder.setInputNode('scheduler', '5.inputs.scheduler');
 
-  // Add i2i-specific mappings
+  // Mode-specific mappings
   if (isI2IMode) {
-    builder.setInputNode('inputImage', 'IMG_LOAD.inputs.image');
+    // Image-to-image mode: input image and denoise
+    builder.setInputNode('inputImage', '8.inputs.image');
     builder.setInputNode('denoise', '5.inputs.denoise');
+  } else {
+    // Text-to-image mode: width and height
+    builder.setInputNode('width', '4.inputs.width');
+    builder.setInputNode('height', '4.inputs.height');
   }
 
   // Set input values
   builder
     .input('prompt', params.prompt)
-    .input('width', params.width)
-    .input('height', params.height)
     .input('steps', params.steps)
     .input('seed', params.seed ?? generateUniqueSeeds(1)[0])
     .input('cfg', params.cfg)
     .input('samplerName', params.samplerName)
     .input('scheduler', params.scheduler);
 
-  // Add i2i-specific input values
+  // Mode-specific input values
   if (isI2IMode) {
+    // Image-to-image mode: no width/height needed (comes from input image)
     builder.input('inputImage', params.imageUrl || params.imageUrls?.[0]);
     builder.input('denoise', params.strength);
+  } else {
+    // Text-to-image mode: width/height required
+    builder.input('width', params.width);
+    builder.input('height', params.height);
   }
 
   return builder;

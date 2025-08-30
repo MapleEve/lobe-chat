@@ -6,11 +6,13 @@
  */
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import debug from 'debug';
+import sharp from 'sharp';
 
 import { nanoid } from '@/utils/uuid';
 
 import type { CreateImagePayload, CreateImageResponse } from '../../types/image';
 import { ServicesError } from '../errors';
+import { imageResizer } from '../utils/imageResizer';
 import { WorkflowDetector } from '../utils/workflowDetector';
 import { ComfyUIClientService } from './comfyuiClient';
 import { ErrorHandlerService } from './errorHandler';
@@ -42,7 +44,10 @@ export class ImageService {
     const { model, params } = payload;
 
     try {
-      // Parallel execution of independent operations (connection validation and model validation)
+      // Parallel execution of independent operations
+      // - Connection validation (required for all operations)
+      // - Model validation (returns modelFileName needed for workflow and architecture for resizing)
+      // - Image processing (can start early, will determine resize needs after getting architecture)
       const [, validation] = await Promise.all([
         this.clientService.validateConnection(),
         this.modelResolverService.validateModel(model),
@@ -58,18 +63,15 @@ export class ImageService {
 
       const modelFileName = validation.actualFileName!;
 
-      // Parallel execution of image processing and workflow building
-      // These are independent operations that can run concurrently
-      const [, workflow] = await Promise.all([
-        this.processImageFetch(params),
-        this.buildWorkflow(model, modelFileName, params),
-      ]);
+      // Get architecture from workflow detection for image resizing
+      const detectionResult = WorkflowDetector.detectModelType(modelFileName);
 
-      log('=== WORKFLOW DEBUG ===');
-      log('Model ID:', model);
-      log('Model Filename:', modelFileName);
-      log('Has Image:', Boolean(params.imageUrl));
-      log('=== END DEBUG ===');
+      // Process image with architecture info for proper resizing
+      // Note: This is fast if no imageUrl exists, so keeping it sequential is fine
+      await this.processImageFetch(params, detectionResult.architecture);
+
+      // Build workflow with processed params (imageUrl already replaced with ComfyUI filename)
+      const workflow = await this.buildWorkflow(model, modelFileName, params);
 
       // Execute workflow
       const result = await this.clientService.executeWorkflow(workflow, (info: any) =>
@@ -87,10 +89,9 @@ export class ImageService {
       }
 
       const imageInfo = images[0] as any;
+
       return {
-        height: imageInfo.height ?? params.height ?? 1024,
         imageUrl: this.clientService.getPathImage(imageInfo),
-        width: imageInfo.width ?? params.width ?? 1024,
       };
     } catch (error) {
       // All error handling delegated to ErrorHandlerService
@@ -100,9 +101,13 @@ export class ImageService {
 
   /**
    * Process image URLs for img2img workflows
-   * Fetch image from URL and upload to ComfyUI
+   * Fetch image from URL, resize if needed, and upload to ComfyUI
+   * Also saves original dimensions to params for frontend rendering
    */
-  private async processImageFetch(params: Record<string, any>): Promise<void> {
+  private async processImageFetch(
+    params: Record<string, any>,
+    architecture?: string,
+  ): Promise<void> {
     const imageUrl = params.imageUrl || params.imageUrls?.[0];
 
     if (!imageUrl) {
@@ -134,7 +139,7 @@ export class ImageService {
 
       // Get image data as buffer
       const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
+      let buffer = Buffer.from(arrayBuffer);
       log('Image fetched successfully, size:', buffer.length);
 
       // Validate image data
@@ -144,17 +149,60 @@ export class ImageService {
         });
       }
 
-      // Check file size (limit to 30MB)
-      const MAX_SIZE = 30 * 1024 * 1024;
-      if (buffer.length > MAX_SIZE) {
+      // Get image metadata using sharp
+      const sharpInstance = sharp(buffer);
+      const metadata = await sharpInstance.metadata();
+      const { width: originalWidth, height: originalHeight } = metadata;
+
+      if (!originalWidth || !originalHeight) {
         throw new ServicesError(
-          `Image too large: ${buffer.length} bytes (max: ${MAX_SIZE})`,
-          ServicesError.Reasons.IMAGE_TOO_LARGE,
-          { maxSize: MAX_SIZE, size: buffer.length },
+          'Unable to read image dimensions',
+          ServicesError.Reasons.IMAGE_FETCH_FAILED,
+          { url: imageUrl },
         );
       }
 
-      log('Image fetched successfully, size:', buffer.length);
+      // Save original dimensions to params for frontend progress rendering
+      // This ensures the progress block has the correct aspect ratio
+      if (!params.width) {
+        params.width = originalWidth;
+      }
+      if (!params.height) {
+        params.height = originalHeight;
+      }
+
+      log('Original image dimensions:', { height: originalHeight, width: originalWidth });
+
+      // Check if image needs resizing based on architecture
+      // Architecture is guaranteed to exist from WorkflowDetector
+      if (architecture) {
+        const resizeResult = imageResizer.calculateTargetDimensions(
+          originalWidth,
+          originalHeight,
+          architecture,
+        );
+
+        if (resizeResult.needsResize) {
+          log('Image needs resizing for architecture:', {
+            architecture,
+            original: { height: originalHeight, width: originalWidth },
+            target: { height: resizeResult.height, width: resizeResult.width },
+          });
+
+          // Resize image using sharp (reuse the same instance)
+          buffer = Buffer.from(
+            await sharpInstance
+              .resize(resizeResult.width, resizeResult.height, {
+                fit: 'inside', // Maintain aspect ratio, fit within bounds
+                withoutEnlargement: false, // Allow enlargement if needed
+              })
+              .toBuffer(),
+          );
+          log('Image resized successfully, new size:', buffer.length);
+        } else {
+          log('Image dimensions are within model limits, no resize needed');
+        }
+      }
 
       // Upload to ComfyUI - use timestamp + 4-char random ID to prevent conflicts
       const fileName = `LobeChat_img2img_${Date.now()}_${nanoid(4)}.png`;
@@ -167,10 +215,12 @@ export class ImageService {
       if (params.imageUrls) {
         params.imageUrls[0] = uploadedFileName;
       }
+
+      log('Successfully replaced imageUrl with ComfyUI filename');
     } catch (error) {
       log('Failed to process image URL:', error);
 
-      // Provide helpful error messages
+      // Re-throw with more context if it's a fetch error
       if ((error as Error).message?.includes('fetch')) {
         throw new ServicesError(
           `Unable to fetch image from URL: ${imageUrl}`,

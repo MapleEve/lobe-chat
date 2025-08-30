@@ -104,18 +104,13 @@ export const fluxKreaDevParamsSchema: ModelParamsSchema = {
  * Image editing mode, supports modifying existing images based on text instructions, non-commercial license
  */
 export const fluxKontextDevParamsSchema: ModelParamsSchema = {
-  aspectRatio: {
-    default: '1:1',
-    enum: FLUX_ASPECT_RATIOS,
-  },
   cfg: { default: 3.5, max: 10, min: 1, step: 0.5 },
-  height: { default: 1024, max: 2048, min: 512, step: 8 },
   imageUrl: { default: '' }, // Input image URL (supports text-to-image and image-to-image)
   prompt: { default: '' },
   seed: { default: null },
   steps: { default: 28, max: 50, min: 10, step: 1 }, // Kontext defaults to 28 steps
   strength: { default: 0.75, max: 1, min: 0, step: 0.05 }, // Image editing strength control (frontend parameter)
-  width: { default: 1024, max: 2048, min: 512, step: 8 },
+  // Note: aspectRatio/width/height removed for image-to-image mode - all dimensions come from input image
 };
 
 /**
@@ -180,12 +175,7 @@ export const sdxlT2iParamsSchema: ModelParamsSchema = {
  * SDXL image-to-image generation, supports input image modification
  */
 export const sdxlI2iParamsSchema: ModelParamsSchema = {
-  aspectRatio: {
-    default: '1:1',
-    enum: SDXL_ASPECT_RATIOS,
-  },
   cfg: { default: 8, max: 20, min: 1, step: 0.5 },
-  height: { default: 1024, max: 2048, min: 512, step: 8 },
   imageUrl: { default: '' }, // Input image URL
   prompt: { default: '' },
   samplerName: { default: 'euler' },
@@ -193,7 +183,7 @@ export const sdxlI2iParamsSchema: ModelParamsSchema = {
   seed: { default: null },
   steps: { default: 30, max: 50, min: 10, step: 1 },
   strength: { default: 0.75, max: 1, min: 0, step: 0.05 }, // Image modification strength (frontend parameter)
-  width: { default: 1024, max: 2048, min: 512, step: 8 },
+  // Note: aspectRatio/width/height removed for image-to-image mode - all dimensions come from input image
 };
 
 /**
@@ -220,12 +210,7 @@ export const customSdT2iParamsSchema: ModelParamsSchema = {
  * Custom Stable Diffusion image-to-image model, supports image editing
  */
 export const customSdI2iParamsSchema: ModelParamsSchema = {
-  aspectRatio: {
-    default: '1:1',
-    enum: SDXL_ASPECT_RATIOS, // Use broader aspect ratio support
-  },
   cfg: { default: 7, max: 30, min: 1, step: 0.5 },
-  height: { default: 768, max: 2048, min: 256, step: 8 },
   imageUrl: { default: '' }, // Input image URL
   prompt: { default: '' },
   samplerName: { default: 'euler' }, // Use SDXL common parameters
@@ -233,7 +218,7 @@ export const customSdI2iParamsSchema: ModelParamsSchema = {
   seed: { default: null },
   steps: { default: 25, max: 100, min: 5, step: 1 },
   strength: { default: 0.75, max: 1, min: 0, step: 0.05 }, // Image modification strength (frontend parameter)
-  width: { default: 768, max: 2048, min: 256, step: 8 },
+  // Note: aspectRatio/width/height removed for image-to-image mode - all dimensions come from input image
 };
 
 /**

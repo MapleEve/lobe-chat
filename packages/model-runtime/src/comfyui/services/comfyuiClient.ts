@@ -13,10 +13,8 @@ import type {
 import debug from 'debug';
 
 import type { ComfyUIKeyVault } from '../../../../types/src/user/settings/keyVaults';
-import { parseComfyUIErrorMessage } from '../../utils/comfyuiErrorParser';
 import { COMFYUI_DEFAULTS } from '../constants';
 import { ServicesError } from '../errors';
-import { ModelResolverError } from '../errors/modelResolverError';
 import { TTLCacheManager } from '../utils/cacheManager';
 import { ErrorHandlerService } from './errorHandler';
 
@@ -276,7 +274,7 @@ export class ComfyUIClientService {
       return result.info.filename;
     } catch (error) {
       log('Image upload failed:', error);
-      throw this.handleApiError(error);
+      throw error;
     }
   }
 
@@ -297,22 +295,7 @@ export class ComfyUIClientService {
         })
         .onFailed((error: any) => {
           log('Workflow execution failed:', error?.message || error);
-
-          // If already a structured error, pass through
-          if (error && typeof error === 'object' && 'errorType' in error) {
-            reject(error);
-            return;
-          }
-
-          // Parse error message and reject with ServicesError
-          const parsedMessage = parseComfyUIErrorMessage(error);
-          reject(
-            new ServicesError(parsedMessage.error.message, ServicesError.Reasons.EXECUTION_FAILED, {
-              errorType: parsedMessage.errorType,
-              originalError: error,
-              parsedError: parsedMessage.error,
-            }),
-          );
+          reject(error);
         })
         .onProgress((info: any) => {
           log('Progress:', info);
@@ -348,7 +331,7 @@ export class ComfyUIClientService {
       });
     } catch (error) {
       log('Failed to get checkpoints:', error);
-      throw this.handleApiError(error);
+      throw error;
     }
   }
 
@@ -364,7 +347,7 @@ export class ComfyUIClientService {
       });
     } catch (error) {
       log('Failed to get LoRAs:', error);
-      throw this.handleApiError(error);
+      throw error;
     }
   }
 
@@ -384,7 +367,7 @@ export class ComfyUIClientService {
       return nodeName && allNodeDefs ? { [nodeName]: allNodeDefs[nodeName] } : allNodeDefs;
     } catch (error) {
       log('Failed to get node definitions:', error);
-      throw this.handleApiError(error);
+      throw error;
     }
   }
 
@@ -409,7 +392,7 @@ export class ComfyUIClientService {
       };
     } catch (error) {
       log('Failed to get sampler info:', error);
-      throw this.handleApiError(error);
+      throw error;
     }
   }
 
@@ -440,51 +423,7 @@ export class ComfyUIClientService {
       return true;
     } catch (error) {
       log('Connection validation failed:', error);
-      throw this.handleApiError(error);
-    }
-  }
-
-  /**
-   * Handle API errors uniformly
-   */
-  private handleApiError(error: unknown): Error {
-    // Network errors
-    if (error instanceof TypeError && error.message.includes('fetch')) {
-      throw new ModelResolverError(
-        ModelResolverError.Reasons.CONNECTION_ERROR,
-        'Failed to connect to ComfyUI server',
-        { baseURL: this.baseURL, error: error.message },
-      );
-    }
-
-    // HTTP errors
-    if (error instanceof Error && error.message.includes('status:')) {
-      const status = parseInt(error.message.match(/status: (\d+)/)?.[1] || '0');
-
-      if (status === 401 || status === 403) {
-        throw new ModelResolverError(
-          ModelResolverError.Reasons.PERMISSION_DENIED,
-          'Authentication failed',
-          { status },
-        );
-      }
-
-      if (status >= 500) {
-        throw new ModelResolverError(
-          ModelResolverError.Reasons.SERVICE_UNAVAILABLE,
-          'ComfyUI server error',
-          { status },
-        );
-      }
-    }
-
-    // Default error
-    if (error instanceof Error) {
       throw error;
     }
-
-    throw new ServicesError('Unknown error occurred', ServicesError.Reasons.EXECUTION_FAILED, {
-      originalError: error,
-    });
   }
 }

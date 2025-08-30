@@ -227,15 +227,11 @@ export const imageRouter = router({
         if (provider === 'comfyui') {
           // Use the public interface method to get auth headers
           // This avoids accessing private members and exposing credentials
-          if (typeof (agentRuntime as any).getAuthHeaders === 'function') {
-            authHeaders = (agentRuntime as any).getAuthHeaders();
-            if (authHeaders) {
-              log('Using authentication headers for ComfyUI image download');
-            } else {
-              log('No authentication configured for ComfyUI');
-            }
+          authHeaders = agentRuntime.getAuthHeaders();
+          if (authHeaders) {
+            log('Using authentication headers for ComfyUI image download');
           } else {
-            log('No authentication method available for ComfyUI');
+            log('No authentication configured for ComfyUI');
           }
         }
 

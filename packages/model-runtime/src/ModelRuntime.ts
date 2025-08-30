@@ -88,6 +88,16 @@ export class ModelRuntime {
   }
 
   /**
+   * Get authentication headers for ComfyUI image download
+   * Delegates to the underlying runtime if it supports this method
+   * @returns Authentication headers object, or undefined if not supported
+   */
+  getAuthHeaders(): Record<string, string> | undefined {
+    // Delegate to the underlying runtime's getAuthHeaders method if it exists
+    return this._runtime.getAuthHeaders?.();
+  }
+
+  /**
    * @description Initialize the runtime with the provider and the options
    * @param provider choose a model provider
    * @param params options of the choosed provider
