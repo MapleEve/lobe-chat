@@ -116,7 +116,7 @@ class AuthManager {
     switch (authType) {
       case 'basic': {
         if (username && password) {
-          const basicAuth = Buffer.from(`${username}:${password}`).toString('base64');
+          const basicAuth = btoa(`${username}:${password}`);
           return { Authorization: `Basic ${basicAuth}` };
         }
         break;
