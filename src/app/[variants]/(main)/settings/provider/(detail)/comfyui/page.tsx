@@ -26,10 +26,10 @@ const useComfyUICard = (): ProviderItem => {
   const authType = config?.keyVaults?.authType || 'none';
 
   const authTypeOptions = [
-    { label: t('comfyui.authType.options.none' as any), value: 'none' },
-    { label: t('comfyui.authType.options.basic' as any), value: 'basic' },
-    { label: t('comfyui.authType.options.bearer' as any), value: 'bearer' },
-    { label: t('comfyui.authType.options.custom' as any), value: 'custom' },
+    { label: t('comfyui.authType.options.none'), value: 'none' },
+    { label: t('comfyui.authType.options.basic'), value: 'basic' },
+    { label: t('comfyui.authType.options.bearer'), value: 'bearer' },
+    { label: t('comfyui.authType.options.custom'), value: 'custom' },
   ];
 
   const apiKeyItems = [
@@ -38,10 +38,10 @@ const useComfyUICard = (): ProviderItem => {
       children: isLoading ? (
         <SkeletonInput />
       ) : (
-        <FormInput placeholder={t('comfyui.baseURL.placeholder' as any)} />
+        <FormInput placeholder={t('comfyui.baseURL.placeholder')} />
       ),
-      desc: t('comfyui.baseURL.desc' as any),
-      label: t('comfyui.baseURL.title' as any),
+      desc: t('comfyui.baseURL.desc'),
+      label: t('comfyui.baseURL.title'),
       name: [KeyVaultsConfigKey, 'baseURL'],
     },
 
@@ -53,11 +53,11 @@ const useComfyUICard = (): ProviderItem => {
         <Select
           allowClear={false}
           options={authTypeOptions}
-          placeholder={t('comfyui.authType.placeholder' as any)}
+          placeholder={t('comfyui.authType.placeholder')}
         />
       ),
-      desc: t('comfyui.authType.desc' as any),
-      label: t('comfyui.authType.title' as any),
+      desc: t('comfyui.authType.desc'),
+      label: t('comfyui.authType.title'),
       name: [KeyVaultsConfigKey, 'authType'],
     },
   ];
@@ -69,13 +69,10 @@ const useComfyUICard = (): ProviderItem => {
         children: isLoading ? (
           <SkeletonInput />
         ) : (
-          <FormInput
-            autoComplete="username"
-            placeholder={t('comfyui.username.placeholder' as any)}
-          />
+          <FormInput autoComplete="username" placeholder={t('comfyui.username.placeholder')} />
         ),
-        desc: t('comfyui.username.desc' as any),
-        label: t('comfyui.username.title' as any),
+        desc: t('comfyui.username.desc'),
+        label: t('comfyui.username.title'),
         name: [KeyVaultsConfigKey, 'username'],
       },
       {
@@ -84,11 +81,11 @@ const useComfyUICard = (): ProviderItem => {
         ) : (
           <FormPassword
             autoComplete="new-password"
-            placeholder={t('comfyui.password.placeholder' as any)}
+            placeholder={t('comfyui.password.placeholder')}
           />
         ),
-        desc: t('comfyui.password.desc' as any),
-        label: t('comfyui.password.title' as any),
+        desc: t('comfyui.password.desc'),
+        label: t('comfyui.password.title'),
         name: [KeyVaultsConfigKey, 'password'],
       },
     );
@@ -99,13 +96,10 @@ const useComfyUICard = (): ProviderItem => {
       children: isLoading ? (
         <SkeletonInput />
       ) : (
-        <FormPassword
-          autoComplete="new-password"
-          placeholder={t('comfyui.apiKey.placeholder' as any)}
-        />
+        <FormPassword autoComplete="new-password" placeholder={t('comfyui.apiKey.placeholder')} />
       ),
-      desc: t('comfyui.apiKey.desc' as any),
-      label: t('comfyui.apiKey.title' as any),
+      desc: t('comfyui.apiKey.desc'),
+      label: t('comfyui.apiKey.title'),
       name: [KeyVaultsConfigKey, 'apiKey'],
     });
   }
@@ -116,15 +110,15 @@ const useComfyUICard = (): ProviderItem => {
         <SkeletonInput />
       ) : (
         <KeyValueEditor
-          addButtonText={t('comfyui.customHeaders.addButton' as any)}
-          deleteTooltip={t('comfyui.customHeaders.deleteTooltip' as any)}
-          duplicateKeyErrorText={t('comfyui.customHeaders.duplicateKeyError' as any)}
-          keyPlaceholder={t('comfyui.customHeaders.keyPlaceholder' as any)}
-          valuePlaceholder={t('comfyui.customHeaders.valuePlaceholder' as any)}
+          addButtonText={t('comfyui.customHeaders.addButton')}
+          deleteTooltip={t('comfyui.customHeaders.deleteTooltip')}
+          duplicateKeyErrorText={t('comfyui.customHeaders.duplicateKeyError')}
+          keyPlaceholder={t('comfyui.customHeaders.keyPlaceholder')}
+          valuePlaceholder={t('comfyui.customHeaders.valuePlaceholder')}
         />
       ),
-      desc: t('comfyui.customHeaders.desc' as any),
-      label: t('comfyui.customHeaders.title' as any),
+      desc: t('comfyui.customHeaders.desc'),
+      label: t('comfyui.customHeaders.title'),
       name: [KeyVaultsConfigKey, 'customHeaders'],
     });
   }

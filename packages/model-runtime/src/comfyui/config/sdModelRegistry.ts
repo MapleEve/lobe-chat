@@ -10,7 +10,7 @@ export const SD_MODEL_REGISTRY: Record<string, ModelConfig> = {
   // SD3.5 Model Family Registry
   // ===================================================================
 
-  // SD3.5 Models (With CLIP - requires clip_g.safetensors)
+  // SD3.5 Models (requires clip_g.safetensors)
   'sd3.5_large.safetensors': {
     priority: 1,
     variant: 'sd35',

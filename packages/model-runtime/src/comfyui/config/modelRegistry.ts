@@ -1,6 +1,5 @@
 /**
  * ComfyUI Model Registry - Linus-style simple design
- * Combines FLUX and SD model families while maintaining KISS principle
  * Interface shared, registries split for maintainability
  */
 import { FLUX_MODEL_REGISTRY } from './fluxModelRegistry';
@@ -15,7 +14,6 @@ export interface ModelConfig {
 
 // ===================================================================
 // Combined Model Registry - FLUX + SD families
-// Maintained KISS principle by composing separate registries
 // ===================================================================
 
 export const MODEL_REGISTRY: Record<string, ModelConfig> = {
@@ -30,17 +28,17 @@ export const MODEL_REGISTRY: Record<string, ModelConfig> = {
  */
 /* eslint-disable sort-keys-fix/sort-keys-fix */
 export const MODEL_ID_VARIANT_MAP: Record<string, string> = {
-  // FLUX models - based on actual frontend IDs
+  // FLUX models
   'flux-schnell': 'schnell', // comfyui/flux-schnell
   'flux-dev': 'dev', // comfyui/flux-dev
   'flux-krea-dev': 'krea', // comfyui/flux-krea-dev
   'flux-kontext-dev': 'kontext', // comfyui/flux-kontext-dev
 
-  // SD3 models - based on actual frontend IDs
+  // SD3 models
   'stable-diffusion-35': 'sd35', // comfyui/stable-diffusion-35
   'stable-diffusion-35-inclclip': 'sd35-inclclip', // comfyui/stable-diffusion-35-inclclip
 
-  // SD1/SDXL models - based on actual frontend IDs
+  // SD1/SDXL models
   'stable-diffusion-15': 'sd15-t2i', // comfyui/stable-diffusion-15
   'stable-diffusion-xl': 'sdxl-t2i', // comfyui/stable-diffusion-xl
   'stable-diffusion-refiner': 'sdxl-i2i', // comfyui/stable-diffusion-refiner
