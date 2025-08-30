@@ -74,28 +74,24 @@ describe('buildFluxKontextWorkflow', () => {
   it('should create FLUX Kontext workflow with default parameters', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-      
+      // Default from fluxKontextDevParamsSchema
+      cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,  
-      
-prompt: 'A beautiful landscape',  
-      
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-      
+      // Default from fluxKontextDevParamsSchema
+      height: 1024,
 
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-      
+      prompt: 'A beautiful landscape',
 
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-      
-width: 1024,  // Default from fluxKontextDevParamsSchema
+      // Default from fluxKontextDevParamsSchema
+      samplerName: 'dpmpp_2m',
+
+      // Default from fluxKontextDevParamsSchema
+      scheduler: 'karras',
+
+      // Default from fluxKontextDevParamsSchema
+      steps: 28,
+
+      width: 1024, // Default from fluxKontextDevParamsSchema
     };
 
     const result = await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -128,14 +124,13 @@ width: 1024,  // Default from fluxKontextDevParamsSchema
       cfg: 4,
       height: 768,
       prompt: 'Custom prompt',
-      samplerName: 'euler',  
+      samplerName: 'euler',
       // Custom sampler
-scheduler: 'simple',
-      
+      scheduler: 'simple',
 
-steps: 30,  
+      steps: 30,
       // Custom value different from default
-width: 512,  // Custom scheduler
+      width: 512, // Custom scheduler
     };
 
     await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -147,42 +142,29 @@ width: 512,  // Custom scheduler
   it('should handle image-to-image parameters', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-      
+      // Default from fluxKontextDevParamsSchema
+      cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,  
-      
+      // Default from fluxKontextDevParamsSchema
+      height: 1024,
 
-imageUrl: 'input_image.png',
-      
+      imageUrl: 'input_image.png',
 
+      prompt: 'test',
 
-prompt: 'test',  
-      
+      // Default from fluxKontextDevParamsSchema
+      samplerName: 'dpmpp_2m',
 
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-      
+      // Default from fluxKontextDevParamsSchema
+      scheduler: 'karras',
 
+      // Default from fluxKontextDevParamsSchema
+      steps: 28,
 
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-      
+      // Use imageUrl instead of image
+      strength: 0.8,
 
-
-
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-      
-
-
-// Use imageUrl instead of image
-strength: 0.8,  
-      
-width: 1024,  // Default from fluxKontextDevParamsSchema
+      width: 1024, // Default from fluxKontextDevParamsSchema
     };
 
     await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -194,47 +176,30 @@ width: 1024,  // Default from fluxKontextDevParamsSchema
   it('should support img2img workflow', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-      
+      // Default from fluxKontextDevParamsSchema
+      cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,  
-      
+      // Default from fluxKontextDevParamsSchema
+      height: 1024,
 
-imageUrl: 'test.png',  
-      
+      imageUrl: 'test.png',
 
+      prompt: 'test',
 
-prompt: 'test',  
-      
+      // Default from fluxKontextDevParamsSchema
+      samplerName: 'dpmpp_2m',
 
+      // Default from fluxKontextDevParamsSchema
+      scheduler: 'karras',
 
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-      
+      // Default from fluxKontextDevParamsSchema
+      steps: 28,
 
+      // Use imageUrl
+      strength: 0.75,
 
-
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-      
-
-
-
-
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-      
-
-
-
-// Use imageUrl
-strength: 0.75,  
-      
-// Default from fluxKontextDevParamsSchema
-width: 1024,  // Default from fluxKontextDevParamsSchema
+      // Default from fluxKontextDevParamsSchema
+      width: 1024, // Default from fluxKontextDevParamsSchema
     };
 
     await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -256,33 +221,25 @@ width: 1024,  // Default from fluxKontextDevParamsSchema
   it('should handle empty prompt', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5,  
-      
+      // Default from fluxKontextDevParamsSchema
+      cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,  
-      
+      // Default from fluxKontextDevParamsSchema
+      height: 1024,
 
-prompt: '',  
-      
+      prompt: '',
 
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-      
+      // Default from fluxKontextDevParamsSchema
+      samplerName: 'dpmpp_2m',
 
+      // Default from fluxKontextDevParamsSchema
+      scheduler: 'karras',
 
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-      
+      // Default from fluxKontextDevParamsSchema
+      steps: 28,
 
-
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-      
-// Empty prompt from fluxKontextDevParamsSchema default
-width: 1024,  // Default from fluxKontextDevParamsSchema
+      // Empty prompt from fluxKontextDevParamsSchema default
+      width: 1024, // Default from fluxKontextDevParamsSchema
     };
 
     await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -293,29 +250,25 @@ width: 1024,  // Default from fluxKontextDevParamsSchema
 
   it('should use appropriate default steps for Kontext model', async () => {
     const modelName = 'flux_kontext.safetensors';
-    const params = { 
-      
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-      
+    const params = {
+      // Default from fluxKontextDevParamsSchema
+      cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,  
-      
-prompt: 'test',  
-      
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-      
+      // Default from fluxKontextDevParamsSchema
+      height: 1024,
 
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-      
+      prompt: 'test',
 
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-      
-width: 1024,  // Default from fluxKontextDevParamsSchema
+      // Default from fluxKontextDevParamsSchema
+      samplerName: 'dpmpp_2m',
+
+      // Default from fluxKontextDevParamsSchema
+      scheduler: 'karras',
+
+      // Default from fluxKontextDevParamsSchema
+      steps: 28,
+
+      width: 1024, // Default from fluxKontextDevParamsSchema
     };
 
     await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -334,29 +287,25 @@ width: 1024,  // Default from fluxKontextDevParamsSchema
 
   it('should have correct workflow structure', async () => {
     const modelName = 'flux_kontext.safetensors';
-    const params = { 
-      
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-      
+    const params = {
+      // Default from fluxKontextDevParamsSchema
+      cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,  
-      
-prompt: 'test',  
-      
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-      
+      // Default from fluxKontextDevParamsSchema
+      height: 1024,
 
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-      
+      prompt: 'test',
 
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-      
-width: 1024,  // Default from fluxKontextDevParamsSchema
+      // Default from fluxKontextDevParamsSchema
+      samplerName: 'dpmpp_2m',
+
+      // Default from fluxKontextDevParamsSchema
+      scheduler: 'karras',
+
+      // Default from fluxKontextDevParamsSchema
+      steps: 28,
+
+      width: 1024, // Default from fluxKontextDevParamsSchema
     };
 
     await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -373,29 +322,25 @@ width: 1024,  // Default from fluxKontextDevParamsSchema
 
   it('should have all meta information', async () => {
     const modelName = 'flux_kontext.safetensors';
-    const params = { 
-      
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-      
+    const params = {
+      // Default from fluxKontextDevParamsSchema
+      cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,  
-      
-prompt: 'test',  
-      
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-      
+      // Default from fluxKontextDevParamsSchema
+      height: 1024,
 
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-      
+      prompt: 'test',
 
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-      
-width: 1024,  // Default from fluxKontextDevParamsSchema
+      // Default from fluxKontextDevParamsSchema
+      samplerName: 'dpmpp_2m',
+
+      // Default from fluxKontextDevParamsSchema
+      scheduler: 'karras',
+
+      // Default from fluxKontextDevParamsSchema
+      steps: 28,
+
+      width: 1024, // Default from fluxKontextDevParamsSchema
     };
 
     await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -413,47 +358,30 @@ width: 1024,  // Default from fluxKontextDevParamsSchema
   it('should support vision capabilities', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-      
+      // Default from fluxKontextDevParamsSchema
+      cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,  
-      
+      // Default from fluxKontextDevParamsSchema
+      height: 1024,
 
-imageUrl: 'input.jpg',  
-      
+      imageUrl: 'input.jpg',
 
+      prompt: 'test',
 
-prompt: 'test',  
-      
+      // Default from fluxKontextDevParamsSchema
+      samplerName: 'dpmpp_2m',
 
+      // Default from fluxKontextDevParamsSchema
+      scheduler: 'karras',
 
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-      
+      // Default from fluxKontextDevParamsSchema
+      steps: 28,
 
+      // Use imageUrl instead of image
+      strength: 0.75,
 
-
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-      
-
-
-
-
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-      
-
-
-
-// Use imageUrl instead of image
-strength: 0.75,  
-      
-// Default from fluxKontextDevParamsSchema
-width: 1024,  // Default from fluxKontextDevParamsSchema
+      // Default from fluxKontextDevParamsSchema
+      width: 1024, // Default from fluxKontextDevParamsSchema
     };
 
     await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -468,37 +396,28 @@ width: 1024,  // Default from fluxKontextDevParamsSchema
   it('should create image-to-image workflow with imageUrl parameter', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-      
+      // Default from fluxKontextDevParamsSchema
+      cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,
-      
+      // Default from fluxKontextDevParamsSchema
+      height: 1024,
 
-imageUrl: 'https://example.com/image.jpg',
-      
+      imageUrl: 'https://example.com/image.jpg',
 
-prompt: 'Transform this image into a painting',  
-      
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-      
+      prompt: 'Transform this image into a painting',
 
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-      
+      // Default from fluxKontextDevParamsSchema
+      samplerName: 'dpmpp_2m',
 
+      // Default from fluxKontextDevParamsSchema
+      scheduler: 'karras',
 
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-      
+      // Default from fluxKontextDevParamsSchema
+      steps: 28,
 
+      strength: 0.8,
 
-strength: 0.8,  
-      
-width: 1024,  // Default from fluxKontextDevParamsSchema
+      width: 1024, // Default from fluxKontextDevParamsSchema
     };
 
     await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -533,37 +452,28 @@ width: 1024,  // Default from fluxKontextDevParamsSchema
   it('should create image-to-image workflow with imageUrls array parameter', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-      
+      // Default from fluxKontextDevParamsSchema
+      cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,
-      
+      // Default from fluxKontextDevParamsSchema
+      height: 1024,
 
-imageUrls: ['https://example.com/first.jpg', 'https://example.com/second.jpg'],
-      
+      imageUrls: ['https://example.com/first.jpg', 'https://example.com/second.jpg'],
 
-prompt: 'Apply artistic style',  
-      
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-      
+      prompt: 'Apply artistic style',
 
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-      
+      // Default from fluxKontextDevParamsSchema
+      samplerName: 'dpmpp_2m',
 
+      // Default from fluxKontextDevParamsSchema
+      scheduler: 'karras',
 
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-      
+      // Default from fluxKontextDevParamsSchema
+      steps: 28,
 
+      strength: 0.65,
 
-strength: 0.65,  
-      
-width: 1024,  // Default from fluxKontextDevParamsSchema
+      width: 1024, // Default from fluxKontextDevParamsSchema
     };
 
     await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -597,37 +507,28 @@ width: 1024,  // Default from fluxKontextDevParamsSchema
   it('should use provided strength value for image-to-image when passed', async () => {
     const modelName = 'flux_kontext.safetensors';
     const params = {
-      
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-      
+      // Default from fluxKontextDevParamsSchema
+      cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,
-      
+      // Default from fluxKontextDevParamsSchema
+      height: 1024,
 
-imageUrl: 'https://example.com/test.png',
-      
+      imageUrl: 'https://example.com/test.png',
 
-prompt: 'Edit image',  
-      
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-      
+      prompt: 'Edit image',
 
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-      
+      // Default from fluxKontextDevParamsSchema
+      samplerName: 'dpmpp_2m',
 
+      // Default from fluxKontextDevParamsSchema
+      scheduler: 'karras',
 
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-      
+      // Default from fluxKontextDevParamsSchema
+      steps: 28,
 
+      strength: 0.75,
 
-strength: 0.75,  
-      
-width: 1024,  // Default from fluxKontextDevParamsSchema
+      width: 1024, // Default from fluxKontextDevParamsSchema
     };
 
     await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -646,20 +547,20 @@ width: 1024,  // Default from fluxKontextDevParamsSchema
     const modelName = 'flux_kontext.safetensors';
     const params = {
       // Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-      
-height: 1024,
-      
-prompt: 'Generate a new image',
-      
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-      
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-      
-steps: 28,  
-      width: 1024,  // Default from fluxKontextDevParamsSchema
+      cfg: 3.5,
+
+      height: 1024,
+
+      prompt: 'Generate a new image',
+
+      // Default from fluxKontextDevParamsSchema
+      samplerName: 'dpmpp_2m',
+
+      // Default from fluxKontextDevParamsSchema
+      scheduler: 'karras',
+
+      steps: 28,
+      width: 1024, // Default from fluxKontextDevParamsSchema
     };
 
     await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -694,27 +595,25 @@ steps: 28,
     const modelName = 'flux_kontext.safetensors';
     const params = {
       // Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-      
-height: 768,
-      
-imageUrl:
+      cfg: 3.5,
+
+      height: 768,
+
+      imageUrl:
         'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
-      
-prompt: 'Enhanced landscape',
-      
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',
-      
 
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-      
+      prompt: 'Enhanced landscape',
 
-steps: 28,  
-      
-strength: 0.8,  
-      width: 512,  // Default from fluxKontextDevParamsSchema
+      // Default from fluxKontextDevParamsSchema
+      samplerName: 'dpmpp_2m',
+
+      // Default from fluxKontextDevParamsSchema
+      scheduler: 'karras',
+
+      steps: 28,
+
+      strength: 0.8,
+      width: 512, // Default from fluxKontextDevParamsSchema
     };
 
     const result = await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -757,31 +656,25 @@ strength: 0.8,
     const modelName = 'flux_kontext.safetensors';
     const params = {
       // Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-      
-height: 480,
-      
-imageUrl: 'data:image/png;base64,test',  
-      
-prompt: 'Test image modification',
-      
+      cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',
-      
+      height: 480,
 
+      imageUrl: 'data:image/png;base64,test',
 
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-      
+      prompt: 'Test image modification',
 
-
-steps: 28,  
-      
-
-strength: 0.75,  
       // Default from fluxKontextDevParamsSchema
-width: 640,  // Default from fluxKontextDevParamsSchema
+      samplerName: 'dpmpp_2m',
+
+      // Default from fluxKontextDevParamsSchema
+      scheduler: 'karras',
+
+      steps: 28,
+
+      strength: 0.75,
+      // Default from fluxKontextDevParamsSchema
+      width: 640, // Default from fluxKontextDevParamsSchema
     };
 
     await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -792,59 +685,42 @@ width: 640,  // Default from fluxKontextDevParamsSchema
     ][0];
 
     // In image-to-image mode, workflow['7'] (EmptySD3LatentImage) should not exist
-    // Instead, width/height are set on workflow['4'] (ModelSamplingFlux)
+    // Width/height come from GetImageSize node via links, not static values
     expect(workflow['7']).toBeUndefined(); // No EmptySD3LatentImage in i2i mode
     expect(workflow['4']).toBeDefined();
-    expect(workflow['4'].inputs.width).toBe(640);
-    expect(workflow['4'].inputs.height).toBe(480);
+    // In i2i mode, width/height are linked from GetImageSize node
+    expect(workflow['4'].inputs.width).toEqual(['img_size', 0]);
+    expect(workflow['4'].inputs.height).toEqual(['img_size', 1]);
   });
 
   describe('Coverage Completion Tests', () => {
     it('should handle fallback imageUrl logic in LoadImage node with params.imageUrls', async () => {
       const modelName = 'flux_kontext.safetensors';
       const params = {
-        
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-        
+        // Default from fluxKontextDevParamsSchema
+        cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,
-        
-        
+        // Default from fluxKontextDevParamsSchema
+        height: 1024,
 
-imageUrls: ['http://example.com/image1.jpg', 'http://example.com/image2.jpg'],  
-        
+        imageUrls: ['http://example.com/image1.jpg', 'http://example.com/image2.jpg'],
 
+        prompt: 'Test with imageUrls array',
 
-prompt: 'Test with imageUrls array',  
-        
+        // Default from fluxKontextDevParamsSchema
+        samplerName: 'dpmpp_2m',
 
+        // Default from fluxKontextDevParamsSchema
+        scheduler: 'karras',
 
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-        
+        // Default from fluxKontextDevParamsSchema
+        steps: 28,
 
+        // No imageUrl property, should fall back to imageUrls[0]
+        strength: 0.75,
 
-
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-        
-
-
-
-
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-        
-
-
-
-// No imageUrl property, should fall back to imageUrls[0]
-strength: 0.75,  
-        
-// Default from fluxKontextDevParamsSchema
-width: 1024,  // Default from fluxKontextDevParamsSchema
+        // Default from fluxKontextDevParamsSchema
+        width: 1024, // Default from fluxKontextDevParamsSchema
       };
 
       await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -863,54 +739,33 @@ width: 1024,  // Default from fluxKontextDevParamsSchema
     it('should handle empty imageUrl fallback logic in LoadImage node', async () => {
       const modelName = 'flux_kontext.safetensors';
       const params = {
-        
+        // Default from fluxKontextDevParamsSchema
+        cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5, 
-        
+        // Default from fluxKontextDevParamsSchema
+        height: 1024,
 
+        // Provide a URL to trigger image mode
+        imageUrl: 'http://example.com/test.jpg',
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,
-        
+        imageUrls: [],
 
-// Provide a URL to trigger image mode
-imageUrl: 'http://example.com/test.jpg',
-        
-        
+        prompt: 'Test with valid image URL',
 
-imageUrls: [],  
-        
+        // Default from fluxKontextDevParamsSchema
+        samplerName: 'dpmpp_2m',
 
+        // Default from fluxKontextDevParamsSchema
+        scheduler: 'karras',
 
-prompt: 'Test with valid image URL',  
-        
+        // Default from fluxKontextDevParamsSchema
+        steps: 28,
 
+        // Empty array to test fallback
+        strength: 0.75,
 
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-        
-
-
-
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-        
-
-
-
-
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-        
-
-
-
-// Empty array to test fallback
-strength: 0.75,  
-        
-// Default from fluxKontextDevParamsSchema
-width: 1024,  // Default from fluxKontextDevParamsSchema
+        // Default from fluxKontextDevParamsSchema
+        width: 1024, // Default from fluxKontextDevParamsSchema
       };
 
       await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -929,43 +784,29 @@ width: 1024,  // Default from fluxKontextDevParamsSchema
     it('should handle hasInputImage branch logic with imageUrl fallback in builder input', async () => {
       const modelName = 'flux_kontext.safetensors';
       const params = {
-        
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-        
+        // Default from fluxKontextDevParamsSchema
+        cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,
-        
-        
+        // Default from fluxKontextDevParamsSchema
+        height: 1024,
 
-imageUrls: ['http://example.com/fallback-image.jpg'],
-        
+        imageUrls: ['http://example.com/fallback-image.jpg'],
 
+        prompt: 'Test hasInputImage branch',
 
-prompt: 'Test hasInputImage branch',  
-        
+        // Default from fluxKontextDevParamsSchema
+        samplerName: 'dpmpp_2m',
 
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-        
+        // Default from fluxKontextDevParamsSchema
+        scheduler: 'karras',
 
+        // Default from fluxKontextDevParamsSchema
+        steps: 28,
 
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-        
+        // No imageUrl, should use imageUrls[0]
+        strength: 0.8,
 
-
-
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-        
-
-
-// No imageUrl, should use imageUrls[0]
-strength: 0.8,  
-        
-width: 1024,  // Default from fluxKontextDevParamsSchema
+        width: 1024, // Default from fluxKontextDevParamsSchema
       };
 
       const result = await buildFluxKontextWorkflow(modelName, params, mockContext);
@@ -982,47 +823,34 @@ width: 1024,  // Default from fluxKontextDevParamsSchema
     it('should handle hasInputImage branch with empty fallback in builder input', async () => {
       const modelName = 'flux_kontext.safetensors';
       const params = {
-        
-// Default from fluxKontextDevParamsSchema
-cfg: 3.5,
-        
-        
+        // Default from fluxKontextDevParamsSchema
+        cfg: 3.5,
 
-// Default from fluxKontextDevParamsSchema
-height: 1024,
-        
+        // Default from fluxKontextDevParamsSchema
+        height: 1024,
 
+        prompt: 'Test hasInputImage with no image',
 
-prompt: 'Test hasInputImage with no image',  
-        
+        // Default from fluxKontextDevParamsSchema
+        samplerName: 'dpmpp_2m',
 
-// Default from fluxKontextDevParamsSchema
-samplerName: 'dpmpp_2m',  
-        
+        // Default from fluxKontextDevParamsSchema
+        scheduler: 'karras',
 
+        // Default from fluxKontextDevParamsSchema
+        steps: 28,
 
-// Default from fluxKontextDevParamsSchema
-scheduler: 'karras',  
-        
+        // No imageUrl or imageUrls
+        strength: 0.9,
 
-
-
-// Default from fluxKontextDevParamsSchema
-steps: 28,  
-        
-
-
-// No imageUrl or imageUrls
-strength: 0.9,  
-        
-width: 1024,  // Default from fluxKontextDevParamsSchema
+        width: 1024, // Default from fluxKontextDevParamsSchema
       };
 
       const result = await buildFluxKontextWorkflow(modelName, params, mockContext);
 
       // Check that input() was called with empty string for imageUrl
       // This covers line 284: .input('imageUrl', params.imageUrl || params.imageUrls?.[0] || '')
-      expect(result.input).toHaveBeenCalledWith('denoise', 1);  // Text-to-image uses denoise=1
+      expect(result.input).toHaveBeenCalledWith('denoise', 1); // Text-to-image uses denoise=1
       // In text-to-image mode (no imageUrl), the denoise should use default value
       // and imageUrl input should NOT be called at all
       expect(result.input).not.toHaveBeenCalledWith('imageUrl', expect.anything());

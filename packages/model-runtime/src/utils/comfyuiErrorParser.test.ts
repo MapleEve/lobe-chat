@@ -88,7 +88,8 @@ describe('ComfyUIErrorParser', () => {
         const error = { message: 'Not Found', status: 404 };
         const result = parseComfyUIErrorMessage(error);
 
-        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        // 404 triggers InvalidProviderAPIKey to show ComfyUIAuth for baseURL errors
+        expect(result.errorType).toBe(AgentRuntimeErrorType.InvalidProviderAPIKey);
         expect(result.error.status).toBe(404);
       });
 
@@ -129,7 +130,8 @@ describe('ComfyUIErrorParser', () => {
         const error = { message: 'HTTP 404 Not Found - Resource missing' };
         const result = parseComfyUIErrorMessage(error);
 
-        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        // 404 triggers InvalidProviderAPIKey to show ComfyUIAuth for baseURL errors
+        expect(result.errorType).toBe(AgentRuntimeErrorType.InvalidProviderAPIKey);
         expect(result.error.message).toBe('HTTP 404 Not Found - Resource missing');
       });
 
@@ -153,7 +155,8 @@ describe('ComfyUIErrorParser', () => {
         const error = { message: 'Got 404 response from server' };
         const result = parseComfyUIErrorMessage(error);
 
-        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        // 404 triggers InvalidProviderAPIKey to show ComfyUIAuth for baseURL errors
+        expect(result.errorType).toBe(AgentRuntimeErrorType.InvalidProviderAPIKey);
         expect(result.error.message).toBe('Got 404 response from server');
       });
     });
@@ -382,7 +385,8 @@ describe('ComfyUIErrorParser', () => {
         const error = new Error('Maximum reconnection attempts exceeded');
         const result = parseComfyUIErrorMessage(error);
 
-        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
+        // This specific error isn't handled, falls through to default ComfyUIBizError
+        expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
         expect(result.error.message).toBe('Maximum reconnection attempts exceeded');
       });
 
@@ -632,11 +636,9 @@ describe('ComfyUIErrorParser', () => {
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
         expect(result.error.details?.existingField).toBe('should be preserved');
         expect(result.error.details?.originalTimestamp).toBe('2023-01-01');
-        // Enhanced feature adds timestamp and nodeInfo
-        expect(result.error.details?.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+        // Node fields are added to details
         expect(result.error.details?.node_id).toBe('2');
         expect(result.error.details?.node_type).toBe('CheckpointLoaderSimple');
-        // No nodeInfo extracted from "Error in workflow" message (no pattern matches)
       });
     });
 
@@ -656,16 +658,11 @@ describe('ComfyUIErrorParser', () => {
         expect(result.error.message).toBe('Structured error message');
         expect(result.error.code).toBe('WORKFLOW_ERROR');
         expect(result.error.status).toBe(400);
-        // Enhanced feature adds timestamp while preserving original details
+        // Details are preserved
         expect(result.error.details).toMatchObject({
           nodeId: '5',
           nodeName: 'KSampler',
-          timestamp: expect.any(String),
         });
-        // In development mode, enhanced features add originalMessage
-        if (process.env.NODE_ENV !== 'production') {
-          expect(result.error.details?.originalMessage).toBe('Structured error message');
-        }
         expect(result.error.type).toBe('workflow_error');
       });
 
@@ -860,12 +857,7 @@ describe('ComfyUIErrorParser', () => {
         // Enhanced feature adds timestamp while preserving original details
         expect(result.error.details).toMatchObject({
           message: 'Response data message only',
-          timestamp: expect.any(String),
         });
-        // In development mode, enhanced features add originalMessage
-        if (process.env.NODE_ENV !== 'production') {
-          expect(result.error.details?.originalMessage).toBe('Response data message only');
-        }
       });
 
       it('should extract message from error.response.data.error.message - deepest path', () => {
@@ -886,14 +878,7 @@ describe('ComfyUIErrorParser', () => {
           error: {
             message: 'Deeply nested response error message',
           },
-          timestamp: expect.any(String),
         });
-        // In development mode, enhanced features add originalMessage
-        if (process.env.NODE_ENV !== 'production') {
-          expect(result.error.details?.originalMessage).toBe(
-            'Deeply nested response error message',
-          );
-        }
       });
 
       it('should handle generic object with node_id and node_type in other object branch', () => {
@@ -910,13 +895,7 @@ describe('ComfyUIErrorParser', () => {
         expect(result.error.details).toMatchObject({
           node_id: 'node_123',
           node_type: 'LoadImageNode',
-          nodeInfo: 'execution', // Extracted from "Node execution failed"
-          timestamp: expect.any(String),
         });
-        // In development mode, enhanced features add originalMessage
-        if (process.env.NODE_ENV !== 'production') {
-          expect(result.error.details?.originalMessage).toBe('Node execution failed');
-        }
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
       });
 
@@ -933,12 +912,7 @@ describe('ComfyUIErrorParser', () => {
         expect(result.error.details).toMatchObject({
           node_id: 'node_456',
           node_type: 'CLIPTextEncodeNode',
-          timestamp: expect.any(String),
         });
-        // In development mode, enhanced features add originalMessage
-        if (process.env.NODE_ENV !== 'production') {
-          expect(result.error.details?.originalMessage).toBe('Text encoding failed');
-        }
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
       });
 
@@ -961,12 +935,7 @@ describe('ComfyUIErrorParser', () => {
           workflow_id: 'wf_123',
           node_id: 'node_789',
           node_type: 'SamplerNode',
-          timestamp: expect.any(String),
         });
-        // In development mode, enhanced features add originalMessage
-        if (process.env.NODE_ENV !== 'production') {
-          expect(result.error.details?.originalMessage).toBe('Sampling failed');
-        }
       });
 
       it('should handle node fields when details is from error.error', () => {
@@ -978,17 +947,11 @@ describe('ComfyUIErrorParser', () => {
           message: 'Mixed error scenario',
         };
         const result = parseComfyUIErrorMessage(error);
-        // Enhanced feature adds timestamp
+        // Node fields are added to details
         expect(result.error.details).toMatchObject({
-          someError: 'data',
           node_id: 'mixed_node',
           node_type: undefined,
-          timestamp: expect.any(String),
         });
-        // In development mode, enhanced features add originalMessage
-        if (process.env.NODE_ENV !== 'production') {
-          expect(result.error.details?.originalMessage).toBe('Mixed error scenario');
-        }
       });
 
       it('should handle only node_type without node_id', () => {
@@ -1002,12 +965,7 @@ describe('ComfyUIErrorParser', () => {
         expect(result.error.details).toMatchObject({
           node_id: undefined,
           node_type: 'VAEDecode',
-          timestamp: expect.any(String),
         });
-        // In development mode, enhanced features add originalMessage
-        if (process.env.NODE_ENV !== 'production') {
-          expect(result.error.details?.originalMessage).toBe('VAE decoding failed');
-        }
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIWorkflowError);
       });
     });

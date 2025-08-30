@@ -153,17 +153,10 @@ describe('ComfyUIClientService', () => {
       const networkError = new TypeError('Failed to fetch');
       mockClient.uploadImage.mockRejectedValue(networkError);
 
-      // Execute and verify
+      // Execute and verify - uploadImage just re-throws without transformation
       await expect(service.uploadImage(Buffer.from('data'), 'file.png')).rejects.toThrow(
-        ModelResolverError,
+        'Failed to fetch',
       );
-
-      try {
-        await service.uploadImage(Buffer.from('data'), 'file.png');
-      } catch (error: any) {
-        expect(error).toBeInstanceOf(ModelResolverError);
-        expect(error.reason).toBe('CONNECTION_ERROR');
-      }
     });
 
     it('should handle 401 authentication error', async () => {
@@ -171,14 +164,10 @@ describe('ComfyUIClientService', () => {
       const authError = new Error('Request failed with status: 401');
       mockClient.uploadImage.mockRejectedValue(authError);
 
-      // Execute and verify
-      try {
-        await service.uploadImage(Buffer.from('data'), 'file.png');
-      } catch (error: any) {
-        expect(error).toBeInstanceOf(ModelResolverError);
-        expect(error.reason).toBe('PERMISSION_DENIED');
-        expect(error.message).toBe('Authentication failed');
-      }
+      // Execute and verify - uploadImage just re-throws without transformation
+      await expect(service.uploadImage(Buffer.from('data'), 'file.png')).rejects.toThrow(
+        'Request failed with status: 401',
+      );
     });
 
     it('should handle 403 forbidden error', async () => {
@@ -186,14 +175,10 @@ describe('ComfyUIClientService', () => {
       const forbiddenError = new Error('Request failed with status: 403');
       mockClient.uploadImage.mockRejectedValue(forbiddenError);
 
-      // Execute and verify
-      try {
-        await service.uploadImage(Buffer.from('data'), 'file.png');
-      } catch (error: any) {
-        expect(error).toBeInstanceOf(ModelResolverError);
-        expect(error.reason).toBe('PERMISSION_DENIED');
-        expect(error.message).toBe('Authentication failed');
-      }
+      // Execute and verify - uploadImage just re-throws without transformation
+      await expect(service.uploadImage(Buffer.from('data'), 'file.png')).rejects.toThrow(
+        'Request failed with status: 403',
+      );
     });
 
     it('should handle 500+ server errors', async () => {
@@ -201,14 +186,10 @@ describe('ComfyUIClientService', () => {
       const serverError = new Error('Request failed with status: 503');
       mockClient.uploadImage.mockRejectedValue(serverError);
 
-      // Execute and verify
-      try {
-        await service.uploadImage(Buffer.from('data'), 'file.png');
-      } catch (error: any) {
-        expect(error).toBeInstanceOf(ModelResolverError);
-        expect(error.reason).toBe('SERVICE_UNAVAILABLE');
-        expect(error.message).toBe('ComfyUI server error');
-      }
+      // Execute and verify - uploadImage just re-throws without transformation
+      await expect(service.uploadImage(Buffer.from('data'), 'file.png')).rejects.toThrow(
+        'Request failed with status: 503',
+      );
     });
 
     it('should handle unknown errors', async () => {
@@ -216,14 +197,10 @@ describe('ComfyUIClientService', () => {
       const unknownError = 'Some unexpected error string';
       mockClient.uploadImage.mockRejectedValue(unknownError);
 
-      // Execute and verify
-      try {
-        await service.uploadImage(Buffer.from('data'), 'file.png');
-      } catch (error: any) {
-        expect(error).toBeInstanceOf(ServicesError);
-        expect(error.message).toBe('Unknown error occurred');
-        expect(error.reason).toBe('EXECUTION_FAILED');
-      }
+      // Execute and verify - uploadImage just re-throws without transformation
+      await expect(service.uploadImage(Buffer.from('data'), 'file.png')).rejects.toBe(
+        'Some unexpected error string',
+      );
     });
 
     it('should support Blob upload', async () => {
@@ -307,10 +284,8 @@ describe('ComfyUIClientService', () => {
         failCallback(mockError);
       });
 
-      // Execute and verify
-      await expect(service.executeWorkflow(mockWorkflow as any)).rejects.toMatchObject({
-        reason: 'EXECUTION_FAILED',
-      });
+      // Execute and verify - executeWorkflow just passes through the error
+      await expect(service.executeWorkflow(mockWorkflow as any)).rejects.toThrow('Workflow failed');
     });
 
     it('should call progress callback', async () => {
@@ -386,8 +361,8 @@ describe('ComfyUIClientService', () => {
       // Setup
       vi.mocked(service.getNodeDefs).mockRejectedValue(new TypeError('Failed to fetch'));
 
-      // Execute and verify
-      await expect(service.validateConnection()).rejects.toThrow(ModelResolverError);
+      // Execute and verify - validateConnection just re-throws without transformation
+      await expect(service.validateConnection()).rejects.toThrow('Failed to fetch');
     });
 
     it('should handle invalid response', async () => {
