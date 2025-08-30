@@ -6,7 +6,6 @@ export * from './BaseAI';
 export { LobeBedrockAI } from './bedrock';
 export { LobeBflAI } from './bfl';
 export { LobeComfyUI } from './comfyui';
-export * from './comfyui';
 export { LobeDeepSeekAI } from './deepseek';
 export { LobeGoogleAI } from './google';
 export { LobeGroq } from './groq';
