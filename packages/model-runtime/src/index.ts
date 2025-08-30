@@ -22,8 +22,6 @@ export { LobeQwenAI } from './qwen';
 export { LobeTogetherAI } from './togetherai';
 export * from './types';
 export * from './types/error';
-export type { ComfyUIError, ParsedError } from './utils/comfyuiErrorParser';
-export { cleanComfyUIErrorMessage, parseComfyUIErrorMessage } from './utils/comfyuiErrorParser';
 export { AgentRuntimeError } from './utils/createError';
 export { getModelPropertyWithFallback } from './utils/getFallbackModelProperty';
 export { createOpenAICompatibleRuntime } from './utils/openaiCompatibleFactory';
@@ -32,11 +30,3 @@ export { parseDataUri } from './utils/uriParser';
 export { LobeVolcengineAI } from './volcengine';
 export { LobeZeroOneAI } from './zeroone';
 export { LobeZhipuAI } from './zhipu';
-export type {
-  BasicCredentials,
-  BearerTokenCredentials,
-  CallWrapper,
-  ComfyApi,
-  CustomCredentials,
-  PromptBuilder,
-} from '@saintno/comfyui-sdk';
