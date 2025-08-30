@@ -35,9 +35,6 @@ export interface LobeRuntimeAI {
 
   // 模型管理相关接口
   pullModel?(params: PullModelParams, options?: ModelRequestOptions): Promise<Response>;
-
-  // 认证相关接口
-  getAuthHeaders?(): Record<string, string> | undefined;
 }
 /* eslint-enabled */
 

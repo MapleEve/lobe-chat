@@ -16,7 +16,7 @@ import {
   TextToImagePayload,
   TextToSpeechPayload,
 } from './types';
-import { CreateImagePayload } from './types/image';
+import { AuthenticatedImageRuntime, CreateImagePayload } from './types/image';
 
 export interface AgentChatOptions {
   enableTrace?: boolean;
@@ -88,13 +88,10 @@ export class ModelRuntime {
   }
 
   /**
-   * Get authentication headers for ComfyUI image download
-   * Delegates to the underlying runtime if it supports this method
-   * @returns Authentication headers object, or undefined if not supported
+   * Get authentication headers if runtime supports it
    */
   getAuthHeaders(): Record<string, string> | undefined {
-    // Delegate to the underlying runtime's getAuthHeaders method if it exists
-    return this._runtime.getAuthHeaders?.();
+    return (this._runtime as AuthenticatedImageRuntime).getAuthHeaders?.();
   }
 
   /**
