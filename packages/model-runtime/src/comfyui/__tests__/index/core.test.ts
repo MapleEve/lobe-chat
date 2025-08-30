@@ -241,22 +241,20 @@ describe('LobeComfyUI - Core Functionality', () => {
     });
 
     // Setup processModelList default behavior
-    vi.mocked(processModelList).mockImplementation(
-      async (modelList: any) => {
-        return modelList.map((model: any) => ({
-          ...model,
-          contextWindowTokens: undefined,
-          description: '',
-          displayName: model.id,
-          functionCall: false,
-          maxOutput: undefined,
-          reasoning: false,
-          releasedAt: undefined,
-          type: 'chat' as const,
-          vision: false,
-        }));
-      },
-    );
+    vi.mocked(processModelList).mockImplementation(async (modelList: any) => {
+      return modelList.map((model: any) => ({
+        ...model,
+        contextWindowTokens: undefined,
+        description: '',
+        displayName: model.id,
+        functionCall: false,
+        maxOutput: undefined,
+        reasoning: false,
+        releasedAt: undefined,
+        type: 'chat' as const,
+        vision: false,
+      }));
+    });
 
     instance = new LobeComfyUI({ apiKey: 'test-key' });
   });
@@ -276,9 +274,7 @@ describe('LobeComfyUI - Core Functionality', () => {
       const result = await instance.createImage(payload);
 
       expect(result).toEqual({
-        height: 1024,
         imageUrl: 'http://localhost:8188/view?filename=test.png',
-        width: 1024,
       });
     });
 
@@ -297,9 +293,7 @@ describe('LobeComfyUI - Core Functionality', () => {
       const result = await instance.createImage(payload);
 
       expect(result).toEqual({
-        height: 1024,
         imageUrl: 'http://localhost:8188/view?filename=test.png',
-        width: 1024,
       });
     });
 
@@ -318,9 +312,7 @@ describe('LobeComfyUI - Core Functionality', () => {
       const result = await instance.createImage(payload);
 
       expect(result).toEqual({
-        height: 1024, // From mock service
         imageUrl: 'http://localhost:8188/view?filename=test.png',
-        width: 1024, // From mock service
       });
     });
 
@@ -334,11 +326,9 @@ describe('LobeComfyUI - Core Functionality', () => {
 
       const result = await instance.createImage(payload);
 
-      // Should return a valid result with fallback dimensions
+      // Should return a valid result
       expect(result).toEqual({
-        height: 1024, // Default fallback
         imageUrl: 'http://localhost:8188/view?filename=test.png',
-        width: 1024, // Default fallback
       });
     });
 
@@ -355,9 +345,7 @@ describe('LobeComfyUI - Core Functionality', () => {
       const result = await instance.createImage(payload);
 
       expect(result).toEqual({
-        height: 1024, // From mock service
         imageUrl: 'http://localhost:8188/view?filename=test.png',
-        width: 1024, // From mock service
       });
     });
   });

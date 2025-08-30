@@ -151,9 +151,7 @@ describe('LobeComfyUI - Integration Tests', () => {
       expect(mockClientService.validateConnection).toHaveBeenCalled();
       expect(mockClientService.executeWorkflow).toHaveBeenCalled();
       expect(result).toMatchObject({
-        height: 1024,
         imageUrl: 'http://localhost:8188/image.png',
-        width: 1024,
       });
     });
 

@@ -113,9 +113,7 @@ describe('ImageService', () => {
 
       // Verify
       expect(result).toEqual({
-        height: 1024,
         imageUrl: 'https://comfyui.test/image.png',
-        width: 1024,
       });
 
       expect(mockModelResolverService.validateModel).toHaveBeenCalledWith('flux-schnell');
