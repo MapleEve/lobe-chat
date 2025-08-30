@@ -4,7 +4,7 @@
  * Centralized error handling for ComfyUI runtime
  * Maps internal errors to framework errors
  */
-import { AgentRuntimeErrorType, ILobeAgentRuntimeErrorType } from '../../error';
+import { AgentRuntimeErrorType, ILobeAgentRuntimeErrorType } from '../../types/error';
 import { parseComfyUIErrorMessage } from '../../utils/comfyuiErrorParser';
 import { AgentRuntimeError } from '../../utils/createError';
 import {

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { AgentRuntimeErrorType } from '../../../error';
+import { AgentRuntimeErrorType } from '../../../types/error';
 import { ConfigError, ServicesError, UtilsError, WorkflowError } from '../../errors';
 import { ModelResolverError } from '../../errors/modelResolverError';
 import { ErrorHandlerService } from '../../services/errorHandler';

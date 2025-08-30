@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AgentRuntimeErrorType } from '../../../error';
+import { AgentRuntimeErrorType } from '../../../types/error';
 import { CreateImagePayload } from '../../../types/image';
 import { ComfyUIClientService } from '../../services/comfyuiClient';
 import { ErrorHandlerService } from '../../services/errorHandler';

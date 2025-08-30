@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AgentRuntimeErrorType } from '../../../error';
+import { AgentRuntimeErrorType } from '../../../types/error';
 import { LobeComfyUI } from '../../index';
 import { ComfyUIClientService } from '../../services/comfyuiClient';
 import { ModelResolverService } from '../../services/modelResolver';

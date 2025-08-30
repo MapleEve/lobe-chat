@@ -2,7 +2,7 @@
 import { CallWrapper, ComfyApi, PromptBuilder } from '@saintno/comfyui-sdk';
 import { Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { AgentRuntimeErrorType } from '../../../error';
+import { AgentRuntimeErrorType } from '../../../types/error';
 import { ModelResolverError } from '../../errors/modelResolverError';
 import { CreateImagePayload, LobeComfyUI } from '../../index';
 import { WorkflowDetector } from '../../utils/workflowDetector';
