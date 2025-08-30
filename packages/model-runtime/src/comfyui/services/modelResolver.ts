@@ -10,6 +10,7 @@ import { MODEL_ID_VARIANT_MAP, MODEL_REGISTRY } from '../config/modelRegistry';
 import { SYSTEM_COMPONENTS } from '../config/systemComponents';
 import { COMPONENT_NODE_MAPPINGS, CUSTOM_SD_CONFIG, SUPPORTED_MODEL_FORMATS } from '../constants';
 import { ModelResolverError } from '../errors/modelResolverError';
+import { TTLCacheManager } from '../utils/cacheManager';
 import { getModelsByVariant } from '../utils/staticModelLookup';
 import { ComfyUIClientService } from './comfyuiClient';
 
@@ -47,11 +48,11 @@ export interface ModelValidationResult {
  */
 export class ModelResolverService {
   private clientService: ComfyUIClientService;
-  private modelCache: Map<string, { timestamp: number; value: string }> = new Map();
-  private readonly CACHE_TTL = 60 * 1000; // 1 minute
+  private cacheManager: TTLCacheManager;
 
   constructor(clientService: ComfyUIClientService) {
     this.clientService = clientService;
+    this.cacheManager = new TTLCacheManager(60000); // 1 minute TTL
   }
 
   /**
@@ -61,85 +62,70 @@ export class ModelResolverService {
   async resolveModelFileName(modelId: string): Promise<string | undefined> {
     log('Resolving model:', modelId);
 
-    // Check cache first with TTL
-    const now = Date.now();
-    if (this.modelCache.has(modelId)) {
-      const cached = this.modelCache.get(modelId)!;
-      if (now - cached.timestamp < this.CACHE_TTL) {
-        log('Found in cache:', cached.value);
-        return cached.value;
-      } else {
-        // Cache expired, remove it
-        this.modelCache.delete(modelId);
-      }
-    }
+    return this.cacheManager.get(`model:${modelId}`, async () => {
+      // Clean model ID (remove prefix)
+      const cleanId = modelId.replace(/^comfyui\//, '');
 
-    // Clean model ID (remove prefix)
-    const cleanId = modelId.replace(/^comfyui\//, '');
+      // Special handling for custom SD models - force fixed filename
+      if (cleanId === 'stable-diffusion-custom' || cleanId === 'stable-diffusion-custom-refiner') {
+        // Both custom models use the same filename
+        const fixedFileName = CUSTOM_SD_CONFIG.MODEL_FILENAME;
 
-    // Special handling for custom SD models - force fixed filename
-    if (cleanId === 'stable-diffusion-custom' || cleanId === 'stable-diffusion-custom-refiner') {
-      // Both custom models use the same filename
-      const fixedFileName = CUSTOM_SD_CONFIG.MODEL_FILENAME;
-
-      // Verify the custom model file exists on server
-      const serverModels = await this.getAvailableModelFiles();
-      if (!serverModels.includes(fixedFileName)) {
-        return undefined;
-      }
-
-      this.modelCache.set(modelId, { timestamp: now, value: fixedFileName });
-      log('Resolved custom SD model to fixed filename:', fixedFileName);
-      return fixedFileName;
-    }
-
-    // 1. Try model ID mapping first
-    log('Checking MODEL_ID_VARIANT_MAP for:', cleanId);
-    const mappedVariant = MODEL_ID_VARIANT_MAP[cleanId];
-    log('Mapped variant result:', mappedVariant);
-
-    if (mappedVariant) {
-      log('Found model ID mapping:', cleanId, '->', mappedVariant);
-
-      const prioritizedModels = getModelsByVariant(mappedVariant);
-      log('Prioritized models for variant', mappedVariant, ':', prioritizedModels);
-
-      const serverModels = await this.getAvailableModelFiles();
-
-      // Find first available model from prioritized list
-      for (const filename of prioritizedModels) {
-        if (serverModels.includes(filename)) {
-          log('Found available model by variant:', filename);
-          this.modelCache.set(modelId, { timestamp: now, value: filename });
-          return filename;
+        // Verify the custom model file exists on server
+        const serverModels = await this.getAvailableModelFiles();
+        if (!serverModels.includes(fixedFileName)) {
+          return undefined;
         }
+
+        log('Resolved custom SD model to fixed filename:', fixedFileName);
+        return fixedFileName;
       }
 
-      log('No prioritized models available on server for variant:', mappedVariant);
-    } else {
-      log('No mapping found for cleanId:', cleanId);
-    }
+      // 1. Try model ID mapping first
+      log('Checking MODEL_ID_VARIANT_MAP for:', cleanId);
+      const mappedVariant = MODEL_ID_VARIANT_MAP[cleanId];
+      log('Mapped variant result:', mappedVariant);
 
-    // 2. Direct registry lookup (filename is the registry key)
-    if (MODEL_REGISTRY[cleanId]) {
-      this.modelCache.set(modelId, { timestamp: now, value: cleanId });
-      log('Found in registry:', cleanId);
-      return cleanId;
-    }
+      if (mappedVariant) {
+        log('Found model ID mapping:', cleanId, '->', mappedVariant);
 
-    // 3. If it's already a model file format, check if it exists on server
-    if (isModelFile(cleanId)) {
-      const serverModels = await this.getAvailableModelFiles();
-      if (serverModels.includes(cleanId)) {
-        this.modelCache.set(modelId, { timestamp: now, value: cleanId });
-        log('Found on server:', cleanId);
+        const prioritizedModels = getModelsByVariant(mappedVariant);
+        log('Prioritized models for variant', mappedVariant, ':', prioritizedModels);
+
+        const serverModels = await this.getAvailableModelFiles();
+
+        // Find first available model from prioritized list
+        for (const filename of prioritizedModels) {
+          if (serverModels.includes(filename)) {
+            log('Found available model by variant:', filename);
+            return filename;
+          }
+        }
+
+        log('No prioritized models available on server for variant:', mappedVariant);
+      } else {
+        log('No mapping found for cleanId:', cleanId);
+      }
+
+      // 2. Direct registry lookup (filename is the registry key)
+      if (MODEL_REGISTRY[cleanId]) {
+        log('Found in registry:', cleanId);
         return cleanId;
       }
-      // Don't throw error yet, try other methods
-    }
 
-    // 4. Not found - return undefined
-    return undefined;
+      // 3. If it's already a model file format, check if it exists on server
+      if (isModelFile(cleanId)) {
+        const serverModels = await this.getAvailableModelFiles();
+        if (serverModels.includes(cleanId)) {
+          log('Found on server:', cleanId);
+          return cleanId;
+        }
+        // Don't throw error yet, try other methods
+      }
+
+      // 4. Not found - return undefined
+      return undefined;
+    });
   }
 
   /**

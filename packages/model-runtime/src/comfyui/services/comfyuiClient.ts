@@ -17,9 +17,159 @@ import { parseComfyUIErrorMessage } from '../../utils/comfyuiErrorParser';
 import { COMFYUI_DEFAULTS } from '../constants';
 import { ServicesError } from '../errors';
 import { ModelResolverError } from '../errors/modelResolverError';
+import { TTLCacheManager } from '../utils/cacheManager';
 import { ErrorHandlerService } from './errorHandler';
 
 const log = debug('lobe-image:comfyui:client');
+
+/**
+ * Authentication Manager
+ * Handles all authentication-related logic
+ */
+class AuthManager {
+  private credentials: BasicCredentials | BearerTokenCredentials | CustomCredentials | undefined;
+  private authHeaders: Record<string, string> | undefined;
+
+  constructor(options: ComfyUIKeyVault) {
+    this.validateOptions(options);
+    this.credentials = this.createCredentials(options);
+    this.authHeaders = this.createAuthHeaders(options);
+  }
+
+  /**
+   * Get credentials for SDK
+   */
+  getCredentials(): typeof this.credentials {
+    return this.credentials;
+  }
+
+  /**
+   * Get authentication headers for HTTP requests
+   */
+  getAuthHeaders(): Record<string, string> | undefined {
+    return this.authHeaders;
+  }
+
+  private validateOptions(options: ComfyUIKeyVault): void {
+    const { authType = 'none', apiKey, username, password, customHeaders } = options;
+
+    if (authType === 'basic' && (!username || !password)) {
+      throw new ServicesError(
+        'Basic authentication requires username and password',
+        ServicesError.Reasons.INVALID_ARGS,
+        { authType },
+      );
+    }
+
+    if (authType === 'bearer' && !apiKey) {
+      throw new ServicesError(
+        'Bearer token authentication requires API key',
+        ServicesError.Reasons.INVALID_AUTH,
+        { authType },
+      );
+    }
+
+    if (authType === 'custom' && (!customHeaders || Object.keys(customHeaders).length === 0)) {
+      throw new ServicesError(
+        'Custom authentication requires custom headers',
+        ServicesError.Reasons.INVALID_ARGS,
+        { authType },
+      );
+    }
+  }
+
+  private createCredentials(options: ComfyUIKeyVault): typeof this.credentials {
+    const { authType = 'none', apiKey, username, password, customHeaders } = options;
+
+    switch (authType) {
+      case 'basic':
+        return {
+          type: 'basic',
+          username: username!,
+          password: password!,
+        } as BasicCredentials;
+
+      case 'bearer':
+        return {
+          type: 'bearer_token',
+          token: apiKey!,
+        } as BearerTokenCredentials;
+
+      case 'custom':
+        return {
+          type: 'custom',
+          headers: customHeaders!,
+        } as CustomCredentials;
+
+      default:
+        return undefined;
+    }
+  }
+
+  private createAuthHeaders(options: ComfyUIKeyVault): Record<string, string> | undefined {
+    const { authType = 'none', apiKey, username, password, customHeaders } = options;
+
+    switch (authType) {
+      case 'basic':
+        if (username && password) {
+          const basicAuth = Buffer.from(`${username}:${password}`).toString('base64');
+          return { Authorization: `Basic ${basicAuth}` };
+        }
+        break;
+
+      case 'bearer':
+        if (apiKey) {
+          return { Authorization: `Bearer ${apiKey}` };
+        }
+        break;
+
+      case 'custom':
+        return customHeaders;
+    }
+
+    return undefined;
+  }
+}
+
+/**
+ * Connection Manager
+ * Handles connection validation and state management
+ */
+class ConnectionManager {
+  private validated: boolean = false;
+  private lastValidationTime: number = 0;
+  private readonly validationTTL = 5 * 60 * 1000; // 5 minutes
+
+  /**
+   * Check if connection is validated and not expired
+   */
+  isValidated(): boolean {
+    if (!this.validated) return false;
+
+    const now = Date.now();
+    if (now - this.lastValidationTime > this.validationTTL) {
+      this.validated = false;
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Mark connection as validated
+   */
+  markAsValidated(): void {
+    this.validated = true;
+    this.lastValidationTime = Date.now();
+  }
+
+  /**
+   * Invalidate connection
+   */
+  invalidate(): void {
+    this.validated = false;
+  }
+}
 
 /**
  * Workflow execution result
@@ -45,32 +195,30 @@ export type ProgressCallback = (info: any) => void;
 export class ComfyUIClientService {
   private client: ComfyApi;
   private baseURL: string;
-  private connectionValidated: boolean = false;
-  private nodeDefsCache: any = null;
-  private nodeDefsCacheTime: number = 0;
-  private checkpointsCache: string[] | null = null;
-  private checkpointsCacheTime: number = 0;
-  private lorasCache: string[] | null = null;
-  private lorasCacheTime: number = 0;
-  private readonly CACHE_TTL = 60 * 1000; // 1 minute (unified TTL)
+
+  // Use helper classes instead of scattered state
+  private cacheManager: TTLCacheManager;
+  private authManager: AuthManager;
+  private connectionManager: ConnectionManager;
   private errorHandler: ErrorHandlerService;
 
   constructor(options: ComfyUIKeyVault = {}) {
     this.errorHandler = new ErrorHandlerService();
 
     try {
-      // Validate configuration
-      this.validateOptions(options);
+      // Initialize helper classes
+      this.authManager = new AuthManager(options);
+      this.cacheManager = new TTLCacheManager(60000); // 1 minute TTL
+      this.connectionManager = new ConnectionManager();
 
       // Setup base URL
       this.baseURL =
         options.baseURL || process.env.COMFYUI_DEFAULT_URL || COMFYUI_DEFAULTS.BASE_URL;
 
-      // Create credentials
-      const credentials = this.createCredentials(options);
-
-      // Initialize client
-      this.client = new ComfyApi(this.baseURL, undefined, { credentials });
+      // Initialize client with credentials from AuthManager
+      this.client = new ComfyApi(this.baseURL, undefined, {
+        credentials: this.authManager.getCredentials(),
+      });
       this.client.init();
 
       log('Client initialized with baseURL:', this.baseURL);
@@ -78,6 +226,16 @@ export class ComfyUIClientService {
       // Use ErrorHandlerService to transform internal errors to framework errors
       this.errorHandler.handleError(error);
     }
+  }
+
+  /**
+   * Get authentication headers for image download
+   * This method provides auth headers to framework layer without exposing credentials
+   * @returns Authentication headers object, or undefined if no auth is configured
+   */
+  getAuthHeaders(): Record<string, string> | undefined {
+    // Delegate to AuthManager
+    return this.authManager.getAuthHeaders();
   }
 
   /**
@@ -178,20 +336,13 @@ export class ComfyUIClientService {
   /**
    * Get available checkpoints from ComfyUI
    * Wraps SDK method to avoid Law of Demeter violation
-   * Includes 1-minute TTL cache for performance optimization
+   * Uses unified TTL cache for performance optimization
    */
   async getCheckpoints(): Promise<string[]> {
     try {
-      const now = Date.now();
-
-      // Refresh cache if expired or doesn't exist
-      if (!this.checkpointsCache || now - this.checkpointsCacheTime > this.CACHE_TTL) {
-        this.checkpointsCache = await this.client.getCheckpoints();
-        this.checkpointsCacheTime = now;
-        log('Checkpoints cache refreshed');
-      }
-
-      return this.checkpointsCache;
+      return await this.cacheManager.get('checkpoints', async () => {
+        return await this.client.getCheckpoints();
+      });
     } catch (error) {
       log('Failed to get checkpoints:', error);
       throw this.handleApiError(error);
@@ -201,20 +352,13 @@ export class ComfyUIClientService {
   /**
    * Get available LoRAs from ComfyUI
    * Wraps SDK method to avoid Law of Demeter violation
-   * Includes 1-minute TTL cache for performance optimization
+   * Uses unified TTL cache for performance optimization
    */
   async getLoras(): Promise<string[]> {
     try {
-      const now = Date.now();
-
-      // Refresh cache if expired or doesn't exist
-      if (!this.lorasCache || now - this.lorasCacheTime > this.CACHE_TTL) {
-        this.lorasCache = await this.client.getLoras();
-        this.lorasCacheTime = now;
-        log('LoRAs cache refreshed');
-      }
-
-      return this.lorasCache;
+      return await this.cacheManager.get('loras', async () => {
+        return await this.client.getLoras();
+      });
     } catch (error) {
       log('Failed to get LoRAs:', error);
       throw this.handleApiError(error);
@@ -224,22 +368,17 @@ export class ComfyUIClientService {
   /**
    * Get node definitions from ComfyUI
    * Wraps SDK method to avoid Law of Demeter violation
-   * Includes 1-minute TTL cache for performance optimization
+   * Uses unified TTL cache for performance optimization
    * @param nodeName - Optional specific node name to query
    */
   async getNodeDefs(nodeName?: string): Promise<any> {
     try {
-      const now = Date.now();
-
-      // Refresh cache if expired or doesn't exist
-      if (!this.nodeDefsCache || now - this.nodeDefsCacheTime > this.CACHE_TTL) {
-        this.nodeDefsCache = await this.client.getNodeDefs();
-        this.nodeDefsCacheTime = now;
-        log('NodeDefs cache refreshed');
-      }
+      const allNodeDefs = await this.cacheManager.get('nodeDefs', async () => {
+        return await this.client.getNodeDefs();
+      });
 
       // Return specific node or all nodes
-      return nodeName ? { [nodeName]: this.nodeDefsCache[nodeName] } : this.nodeDefsCache;
+      return nodeName && allNodeDefs ? { [nodeName]: allNodeDefs[nodeName] } : allNodeDefs;
     } catch (error) {
       log('Failed to get node definitions:', error);
       throw this.handleApiError(error);
@@ -275,7 +414,8 @@ export class ComfyUIClientService {
    * Validate connection to ComfyUI server
    */
   async validateConnection(): Promise<boolean> {
-    if (this.connectionValidated) {
+    // Check if already validated and not expired
+    if (this.connectionManager.isValidated()) {
       return true;
     }
 
@@ -292,7 +432,7 @@ export class ComfyUIClientService {
         );
       }
 
-      this.connectionValidated = true;
+      this.connectionManager.markAsValidated();
       log('Connection validated successfully');
       return true;
     } catch (error) {
@@ -343,73 +483,5 @@ export class ComfyUIClientService {
     throw new ServicesError('Unknown error occurred', ServicesError.Reasons.EXECUTION_FAILED, {
       originalError: error,
     });
-  }
-
-  /**
-   * Validate options
-   */
-  private validateOptions(options: ComfyUIKeyVault): void {
-    const { authType = 'none', apiKey, username, password, customHeaders } = options;
-
-    if (authType === 'basic' && (!username || !password)) {
-      throw new ServicesError(
-        'Basic authentication requires username and password',
-        ServicesError.Reasons.INVALID_ARGS,
-        { authType },
-      );
-    }
-
-    if (authType === 'bearer' && !apiKey) {
-      throw new ServicesError(
-        'Bearer token authentication requires API key',
-        ServicesError.Reasons.INVALID_AUTH,
-        { authType },
-      );
-    }
-
-    if (authType === 'custom' && (!customHeaders || Object.keys(customHeaders).length === 0)) {
-      throw new ServicesError(
-        'Custom authentication requires custom headers',
-        ServicesError.Reasons.INVALID_ARGS,
-        { authType },
-      );
-    }
-  }
-
-  /**
-   * Create authentication credentials
-   */
-  private createCredentials(
-    options: ComfyUIKeyVault,
-  ): BasicCredentials | BearerTokenCredentials | CustomCredentials | undefined {
-    const { authType = 'none', apiKey, username, password, customHeaders } = options;
-
-    switch (authType) {
-      case 'basic': {
-        return {
-          password: password!,
-          type: 'basic',
-          username: username!,
-        } as BasicCredentials;
-      }
-
-      case 'bearer': {
-        return {
-          token: apiKey!,
-          type: 'bearer_token',
-        } as BearerTokenCredentials;
-      }
-
-      case 'custom': {
-        return {
-          headers: customHeaders!,
-          type: 'custom',
-        } as CustomCredentials;
-      }
-
-      default: {
-        return undefined;
-      }
-    }
   }
 }

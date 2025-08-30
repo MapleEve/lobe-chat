@@ -305,25 +305,78 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
 
 /**
  * Parse ComfyUI error message and return structured error information
+ * Enhanced to extract more useful information while maintaining interface compatibility
  * @param error - Original error object
  * @returns Parsed error object and error type
  */
 export function parseComfyUIErrorMessage(error: any): ParsedError {
   const comfyError = extractComfyUIErrorInfo(error);
 
+  // Enhanced: extract additional helpful information from error message
+  const message = comfyError.message;
+  let enhancedDetails = comfyError.details || {};
+
+  // Extract useful information patterns from message
+  if (message) {
+    // CUDA out of memory detection - provide helpful suggestion
+    if (message.includes('CUDA out of memory') || message.includes('OutOfMemoryError')) {
+      enhancedDetails.resourceIssue = 'memory';
+      enhancedDetails.suggestion = 'Try reducing image size or batch size';
+    }
+
+    // Extract model name from error message
+    if (message.includes('Model') || message.includes('checkpoint')) {
+      const modelMatch = message.match(/Model[:\s]+([^\s,]+)|checkpoint[:\s]+([^\s,]+)/i);
+      if (modelMatch) {
+        enhancedDetails.modelName = modelMatch[1] || modelMatch[2];
+      }
+    }
+
+    // Extract node information from error message
+    if (message.includes('node') || message.includes('Node')) {
+      const nodeMatch = message.match(/node[:\s]+([^\s,]+)|Node[:\s]+([^\s,]+)/i);
+      if (nodeMatch) {
+        enhancedDetails.nodeInfo = nodeMatch[1] || nodeMatch[2];
+      }
+    }
+
+    // Connection issue detection
+    if (message.includes('Connection') || message.includes('connection')) {
+      enhancedDetails.connectionIssue = true;
+    }
+
+    // Add timestamp for debugging
+    enhancedDetails.timestamp = new Date().toISOString();
+
+    // Preserve original error info in development
+    if (process.env.NODE_ENV !== 'production') {
+      enhancedDetails.originalMessage = message;
+      if (error instanceof Error) {
+        enhancedDetails.errorName = error.name;
+        enhancedDetails.stack = error.stack;
+      }
+    }
+  }
+
+  // Update comfyError with enhanced details
+  const enhancedError = {
+    ...comfyError,
+    details: enhancedDetails,
+  };
+
   // 1. HTTP status code errors (priority check)
   const status = comfyError.status;
   if (status) {
     if (status === 401) {
       return {
-        error: comfyError,
+        error: enhancedError,
         errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
       };
     }
 
     if (status === 403) {
       return {
-        error: comfyError,
+        error: enhancedError,
         errorType: AgentRuntimeErrorType.PermissionDenied,
       };
     }
@@ -331,7 +384,7 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
     // 400 indicates bad request, usually configuration or authentication error
     if (status === 400) {
       return {
-        error: comfyError,
+        error: enhancedError,
         errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
       };
     }
@@ -339,14 +392,14 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
     // 404 indicates service endpoint does not exist, meaning ComfyUI service is unavailable or address is incorrect
     if (status === 404) {
       return {
-        error: comfyError,
+        error: enhancedError,
         errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
       };
     }
 
     if (status >= 500) {
       return {
-        error: comfyError,
+        error: enhancedError,
         errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
       };
     }
@@ -355,7 +408,7 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
   // 2. SDK custom errors (high priority)
   if (isSDKCustomError(error)) {
     return {
-      error: comfyError,
+      error: enhancedError,
       errorType: AgentRuntimeErrorType.ComfyUIBizError,
     };
   }
@@ -363,7 +416,7 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
   // 3. WebSocket lifecycle errors (check before general network errors)
   if (isWebSocketLifecycleError(error)) {
     return {
-      error: comfyError,
+      error: enhancedError,
       errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
     };
   }
@@ -371,35 +424,34 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
   // 4. Network connection errors (only check when no HTTP status code)
   if (!status && isNetworkError(error)) {
     return {
-      error: comfyError,
+      error: enhancedError,
       errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
     };
   }
 
   // 5. Check HTTP status code from error message (when status field doesn't exist)
-  const message = comfyError.message;
   if (!status && message) {
     if (message.includes('HTTP 401') || message.includes('401')) {
       return {
-        error: comfyError,
+        error: enhancedError,
         errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
       };
     }
     if (message.includes('HTTP 400') || message.includes('400')) {
       return {
-        error: comfyError,
+        error: enhancedError,
         errorType: AgentRuntimeErrorType.InvalidProviderAPIKey,
       };
     }
     if (message.includes('HTTP 403') || message.includes('403')) {
       return {
-        error: comfyError,
+        error: enhancedError,
         errorType: AgentRuntimeErrorType.PermissionDenied,
       };
     }
     if (message.includes('HTTP 404') || message.includes('404')) {
       return {
-        error: comfyError,
+        error: enhancedError,
         errorType: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
       };
     }
@@ -408,7 +460,7 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
   // 6. Model-related errors
   if (isModelError(error)) {
     return {
-      error: comfyError,
+      error: enhancedError,
       errorType: AgentRuntimeErrorType.ModelNotFound,
     };
   }
@@ -416,14 +468,14 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
   // 7. Workflow errors (enhanced with node-specific detection)
   if (isWorkflowError(error)) {
     return {
-      error: comfyError,
+      error: enhancedError,
       errorType: AgentRuntimeErrorType.ComfyUIWorkflowError,
     };
   }
 
   // 8. Other ComfyUI business errors (default)
   return {
-    error: comfyError,
+    error: enhancedError,
     errorType: AgentRuntimeErrorType.ComfyUIBizError,
   };
 }

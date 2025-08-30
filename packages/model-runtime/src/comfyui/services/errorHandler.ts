@@ -23,37 +23,63 @@ import { ModelResolverError } from '../errors/modelResolverError';
 export class ErrorHandlerService {
   /**
    * Handle and transform any error into framework error
+   * Enhanced to preserve more debugging information while maintaining compatibility
    * @param error - The error to handle
    * @throws {AgentRuntimeError} Always throws a properly formatted error
    */
   handleError(error: unknown): never {
-    // Handle ComfyUI internal errors
+    // 1. If already a framework error, pass through (maintain existing behavior)
+    if (error && typeof error === 'object' && 'errorType' in error) {
+      throw error;
+    }
+
+    // 2. Handle ComfyUI internal errors - enhance information preservation
     if (isComfyUIInternalError(error)) {
       const errorType = this.mapInternalErrorToRuntimeError(error);
 
-      // If we have a parsed error in details, use it for better error messages
-      const errorInfo = error.details?.parsedError || {
-        details: error.details || {},
+      // Enhanced: preserve more context information
+      const enhancedError = {
         message: error.message,
+        details: error.details || {},
+        // New: preserve original error type and reason
+        originalErrorType: error.constructor.name,
+        originalReason: error.reason,
+        // New: preserve stack trace in development
+        ...(process.env.NODE_ENV !== 'production' && {
+          stack: error.stack,
+          originalError: error,
+        }),
       };
 
       throw AgentRuntimeError.createImage({
-        error: errorInfo,
+        error: enhancedError,
         errorType: errorType as ILobeAgentRuntimeErrorType,
         provider: 'comfyui',
       });
     }
 
-    // Handle pre-formatted framework errors
-    if (error && typeof error === 'object' && 'errorType' in error) {
-      throw error;
-    }
-
-    // Parse other errors
+    // 3. Parse other errors - use enhanced parser with more information
     const { error: parsedError, errorType } = parseComfyUIErrorMessage(error);
 
+    // Enhanced: add more context
+    const enhancedParsedError = {
+      ...parsedError,
+      // New: timestamp and request ID (if available)
+      timestamp: new Date().toISOString(),
+      // Preserve original error info for debugging
+      ...(process.env.NODE_ENV !== 'production' && {
+        originalError:
+          error instanceof Error
+            ? {
+                message: error.message,
+                stack: error.stack,
+              }
+            : error,
+      }),
+    };
+
     throw AgentRuntimeError.createImage({
-      error: parsedError,
+      error: enhancedParsedError,
       errorType,
       provider: 'comfyui',
     });

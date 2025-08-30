@@ -225,44 +225,17 @@ export const imageRouter = router({
         // Extract ComfyUI authentication headers if provider is ComfyUI
         let authHeaders: Record<string, string> | undefined;
         if (provider === 'comfyui') {
-          // Get ComfyUI configuration from the runtime
-          // The runtime._runtime contains the actual LobeComfyUI instance with options
-          const comfyRuntime = (agentRuntime as any)._runtime;
-          const runtimeConfig = comfyRuntime?.options;
-
-          log('ComfyUI runtime config:', {
-            authType: runtimeConfig?.authType,
-            hasApiKey: !!runtimeConfig?.apiKey,
-            hasCustomHeaders: !!runtimeConfig?.customHeaders,
-            hasPassword: !!runtimeConfig?.password,
-            hasUsername: !!runtimeConfig?.username,
-          });
-
-          if (
-            runtimeConfig?.authType === 'basic' &&
-            runtimeConfig?.username &&
-            runtimeConfig?.password
-          ) {
-            // Basic auth header
-            const basicAuth = Buffer.from(
-              `${runtimeConfig.username}:${runtimeConfig.password}`,
-            ).toString('base64');
-            authHeaders = {
-              Authorization: `Basic ${basicAuth}`,
-            };
-            log('Using Basic authentication for ComfyUI image download');
-          } else if (runtimeConfig?.authType === 'bearer' && runtimeConfig?.apiKey) {
-            // Bearer token header
-            authHeaders = {
-              Authorization: `Bearer ${runtimeConfig.apiKey}`,
-            };
-            log('Using Bearer authentication for ComfyUI image download');
-          } else if (runtimeConfig?.authType === 'custom' && runtimeConfig?.customHeaders) {
-            // Custom headers
-            authHeaders = runtimeConfig.customHeaders;
-            log('Using custom headers for ComfyUI image download');
+          // Use the public interface method to get auth headers
+          // This avoids accessing private members and exposing credentials
+          if (typeof (agentRuntime as any).getAuthHeaders === 'function') {
+            authHeaders = (agentRuntime as any).getAuthHeaders();
+            if (authHeaders) {
+              log('Using authentication headers for ComfyUI image download');
+            } else {
+              log('No authentication configured for ComfyUI');
+            }
           } else {
-            log('No authentication configured for ComfyUI');
+            log('No authentication method available for ComfyUI');
           }
         }
 

@@ -36,16 +36,18 @@ export class ImageService {
 
   /**
    * Create image with complete business logic
+   * Optimized with parallel execution for independent operations
    */
   async createImage(payload: CreateImagePayload): Promise<CreateImageResponse> {
     const { model, params } = payload;
 
     try {
-      // Ensure connection first
-      await this.clientService.validateConnection();
+      // Parallel execution of independent operations (connection validation and model validation)
+      const [, validation] = await Promise.all([
+        this.clientService.validateConnection(),
+        this.modelResolverService.validateModel(model),
+      ]);
 
-      // Validate and resolve model to actual filename
-      const validation = await this.modelResolverService.validateModel(model);
       if (!validation.exists) {
         throw new ServicesError(
           `Model not found: ${model}`,
@@ -56,11 +58,12 @@ export class ImageService {
 
       const modelFileName = validation.actualFileName!;
 
-      // Process S3 images if present
-      await this.processImageFetch(params);
-
-      // Build workflow
-      const workflow = await this.buildWorkflow(model, modelFileName, params);
+      // Parallel execution of image processing and workflow building
+      // These are independent operations that can run concurrently
+      const [, workflow] = await Promise.all([
+        this.processImageFetch(params),
+        this.buildWorkflow(model, modelFileName, params),
+      ]);
 
       log('=== WORKFLOW DEBUG ===');
       log('Model ID:', model);

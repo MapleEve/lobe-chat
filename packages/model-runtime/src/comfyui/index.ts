@@ -57,6 +57,16 @@ export class LobeComfyUI implements LobeRuntimeAI {
   }
 
   /**
+   * Get authentication headers for image download
+   * This method provides auth headers to framework layer without exposing credentials
+   * @returns Authentication headers object, or undefined if no auth is configured
+   */
+  getAuthHeaders(): Record<string, string> | undefined {
+    // Delegate to clientService which manages authentication
+    return this.clientService.getAuthHeaders();
+  }
+
+  /**
    * Create image
    * Entry point that delegates all business logic to ImageService
    */
