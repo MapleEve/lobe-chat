@@ -2,7 +2,7 @@ import debug from 'debug';
 
 import type { ComfyUIKeyVault } from '../../../types/src/user/settings/keyVaults';
 import { LobeRuntimeAI } from '../BaseAI';
-import { CreateImagePayload, CreateImageResponse } from '../types/image';
+import { AuthenticatedImageRuntime, CreateImagePayload, CreateImageResponse } from '../types/image';
 import { COMFYUI_DEFAULTS } from './constants';
 import { ComfyUIClientService } from './services/comfyuiClient';
 import { ImageService } from './services/imageService';
@@ -20,7 +20,7 @@ export type { CreateImagePayload, CreateImageResponse } from '../types/image';
 export { ModelResolverService as ComfyUIModelResolver } from './services/modelResolver';
 export * from './workflows';
 
-export class LobeComfyUI implements LobeRuntimeAI {
+export class LobeComfyUI implements LobeRuntimeAI, AuthenticatedImageRuntime {
   private imageService: ImageService;
   private clientService: ComfyUIClientService;
   private options: ComfyUIKeyVault;
