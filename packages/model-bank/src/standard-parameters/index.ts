@@ -171,15 +171,6 @@ export const ModelParamsMetaSchema = z.object({
     })
     .optional(),
 
-  weightDtype: z
-    .object({
-      default: z.string().optional().default('default'),
-      description: z.string().optional(),
-      enum: z.array(z.string()),
-      type: z.literal('string').optional(),
-    })
-    .optional(),
-
   width: z
     .object({
       default: z.number(),
