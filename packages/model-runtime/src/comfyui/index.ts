@@ -1,6 +1,6 @@
+import type { ComfyUIKeyVault } from '@lobechat/types';
 import debug from 'debug';
 
-import type { ComfyUIKeyVault } from '../../../types/src/user/settings/keyVaults';
 import { LobeRuntimeAI } from '../BaseAI';
 import { AuthenticatedImageRuntime, CreateImagePayload, CreateImageResponse } from '../types/image';
 import { COMFYUI_DEFAULTS } from './constants';
