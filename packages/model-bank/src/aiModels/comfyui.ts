@@ -109,8 +109,7 @@ export const fluxKontextDevParamsSchema: ModelParamsSchema = {
   prompt: { default: '' },
   seed: { default: null },
   steps: { default: 28, max: 50, min: 10, step: 1 }, // Kontext defaults to 28 steps
-  strength: { default: 0.75, max: 1, min: 0, step: 0.05 }, // Image editing strength control (frontend parameter)
-  // Note: aspectRatio/width/height removed for image-to-image mode - all dimensions come from input image
+  strength: { default: 0.85, max: 1, min: 0, step: 0.05 }, // Image editing strength control (frontend parameter)
 };
 
 /**
@@ -183,7 +182,6 @@ export const sdxlI2iParamsSchema: ModelParamsSchema = {
   seed: { default: null },
   steps: { default: 30, max: 50, min: 10, step: 1 },
   strength: { default: 0.75, max: 1, min: 0, step: 0.05 }, // Image modification strength (frontend parameter)
-  // Note: aspectRatio/width/height removed for image-to-image mode - all dimensions come from input image
 };
 
 /**
@@ -218,7 +216,6 @@ export const customSdI2iParamsSchema: ModelParamsSchema = {
   seed: { default: null },
   steps: { default: 25, max: 100, min: 5, step: 1 },
   strength: { default: 0.75, max: 1, min: 0, step: 0.05 }, // Image modification strength (frontend parameter)
-  // Note: aspectRatio/width/height removed for image-to-image mode - all dimensions come from input image
 };
 
 /**
@@ -248,7 +245,7 @@ const comfyuiImageModels: AIImageModelCard[] = [
   {
     description: 'FLUX.1 Krea-dev - 增强安全的文生图模型，与 Krea 合作开发，内置安全过滤',
     displayName: 'FLUX.1 Krea-dev',
-    enabled: true,
+    enabled: false,
     id: 'comfyui/flux-krea-dev',
     parameters: fluxKreaDevParamsSchema,
     releasedAt: '2025-07-31',
@@ -278,7 +275,7 @@ const comfyuiImageModels: AIImageModelCard[] = [
     description:
       'Stable Diffusion 3.5 内置 CLIP/T5 编码器版本，无需外部编码器文件，适用于 sd3.5_medium_incl_clips 等模型，资源占用更少。',
     displayName: 'Stable Diffusion 3.5 (内置编码器)',
-    enabled: true,
+    enabled: false,
     id: 'comfyui/stable-diffusion-35-inclclip',
     parameters: sd35ParamsSchema,
     releasedAt: '2024-10-22',
@@ -288,7 +285,7 @@ const comfyuiImageModels: AIImageModelCard[] = [
     description:
       'Stable Diffusion 1.5 文生图模型，经典的512x512分辨率文本到图像生成，适合快速原型和创意实验',
     displayName: 'SD 1.5',
-    enabled: true,
+    enabled: false,
     id: 'comfyui/stable-diffusion-15',
     parameters: sd15T2iParamsSchema,
     releasedAt: '2022-08-22',
@@ -318,7 +315,7 @@ const comfyuiImageModels: AIImageModelCard[] = [
     description:
       '自定义 SD 文生图模型，模型文件名请使用 custom_sd_lobe.safetensors，如有 VAE 请使用 custom_sd_vae_lobe.safetensors，模型文件需要按照 Comfy 的要求放入对应文件夹',
     displayName: '自定义 SD 文生图',
-    enabled: true,
+    enabled: false,
     id: 'comfyui/stable-diffusion-custom',
     parameters: customSdT2iParamsSchema,
     releasedAt: '2023-01-01',
@@ -328,7 +325,7 @@ const comfyuiImageModels: AIImageModelCard[] = [
     description:
       '自定义 SDXL 图生图模型，模型文件名请使用 custom_sd_lobe.safetensors，如有 VAE 请使用 custom_sd_vae_lobe.safetensors，模型文件需要按照 Comfy 的要求放入对应文件夹',
     displayName: '自定义 SDXL Refiner',
-    enabled: true,
+    enabled: false,
     id: 'comfyui/stable-diffusion-custom-refiner',
     parameters: customSdI2iParamsSchema,
     releasedAt: '2023-01-01',
