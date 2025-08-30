@@ -14,10 +14,10 @@ const log = debug('lobe-image:comfyui:cache');
  * Provides unified caching with automatic expiration
  */
 export class TTLCacheManager {
-  private caches = new Map<string, { value: any; timestamp: number }>();
+  private caches = new Map<string, { timestamp: number; value: any }>();
   private readonly ttl: number;
 
-  constructor(ttlMs: number = 60000) {
+  constructor(ttlMs: number = 60_000) {
     this.ttl = ttlMs;
   }
 
@@ -38,7 +38,7 @@ export class TTLCacheManager {
 
     log(`Cache miss for ${key}, fetching...`);
     const value = await fetcher();
-    this.caches.set(key, { value, timestamp: now });
+    this.caches.set(key, { timestamp: now, value });
     return value;
   }
 
