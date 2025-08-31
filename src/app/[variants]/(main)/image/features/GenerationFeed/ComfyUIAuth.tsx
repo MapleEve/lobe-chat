@@ -142,9 +142,7 @@ const ComfyUIAuth = memo<ComfyUIAuthProps>(({ onClose, onRecreate }) => {
       <Center gap={16} paddingBlock={32} style={{ width: '100%' }}>
         <ComfyUI.Combine size={64} type={'color'} />
         <FormAction
-          avatar={
-            <Image alt="LobeHub" height={48} src="https://lobehub.com/favicon.ico" width={48} />
-          }
+          avatar={<Image alt="LobeHub" height={42} src="/favicon.ico" width={42} />}
           description={t('unlock.comfyui.description', { name: 'ComfyUI' })}
           title={t('unlock.comfyui.title', { name: 'ComfyUI' })}
         >
