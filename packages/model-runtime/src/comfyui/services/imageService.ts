@@ -6,8 +6,7 @@
  */
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import debug from 'debug';
-
-import { nanoid } from '@/utils/uuid';
+import { nanoid } from 'nanoid';
 
 import type { CreateImagePayload, CreateImageResponse } from '../../types/image';
 import { ServicesError } from '../errors';
