@@ -142,10 +142,15 @@ describe('LobeComfyUI - Error Handling', () => {
 
   describe('Model Validation Errors', () => {
     it('should throw ModelNotFound error when validation fails', async () => {
-      // Mock service to return model not found
-      mockModelResolverService.validateModel.mockResolvedValue({
-        exists: false,
-      });
+      // Mock service to throw ModelResolverError for model not found
+      const { ModelResolverError } = await import('../../errors/modelResolverError');
+      mockModelResolverService.validateModel.mockRejectedValue(
+        new ModelResolverError(
+          ModelResolverError.Reasons.MODEL_NOT_FOUND,
+          'Model not found: comfyui/unknown-model',
+          { modelId: 'comfyui/unknown-model' },
+        ),
+      );
 
       const payload: CreateImagePayload = {
         model: 'comfyui/unknown-model',

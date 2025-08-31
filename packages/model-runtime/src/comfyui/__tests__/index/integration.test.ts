@@ -77,9 +77,14 @@ describe('LobeComfyUI - Integration Tests', () => {
 
   describe('Connection Validation', () => {
     it('should throw ModelNotFound error for non-existent model', async () => {
-      mockModelResolverService.validateModel.mockResolvedValue({
-        exists: false,
-      });
+      const { ModelResolverError } = await import('../../errors/modelResolverError');
+      mockModelResolverService.validateModel.mockRejectedValue(
+        new ModelResolverError(
+          ModelResolverError.Reasons.MODEL_NOT_FOUND,
+          'Model not found: nonexistent-model',
+          { modelId: 'nonexistent-model' },
+        ),
+      );
 
       await expect(
         instance.createImage({

@@ -376,12 +376,13 @@ describe('ModelResolverService', () => {
   });
 
   describe('validateModel edge cases', () => {
-    it('should return false for non-ModelResolverError errors', async () => {
+    it('should re-throw non-ModelResolverError errors', async () => {
       // Mock to throw a regular error instead of ModelResolverError
       mockClientService.getCheckpoints.mockRejectedValue(new Error('Network error'));
 
-      const result = await service.validateModel('test-model.safetensors');
-      expect(result).toEqual({ exists: false });
+      await expect(service.validateModel('test-model.safetensors')).rejects.toThrow(
+        'Network error',
+      );
     });
 
     it('should re-throw ModelResolverError', async () => {

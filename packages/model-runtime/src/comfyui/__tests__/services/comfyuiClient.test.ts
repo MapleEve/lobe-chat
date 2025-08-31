@@ -324,50 +324,75 @@ describe('ComfyUIClientService', () => {
   describe('validateConnection', () => {
     beforeEach(() => {
       service = new ComfyUIClientService();
-      // Mock getNodeDefs for validation
-      service.getNodeDefs = vi.fn();
+      // Mock global fetch
+      global.fetch = vi.fn();
     });
 
     it('should validate connection successfully', async () => {
       // Setup
-      const mockNodeDefs = {
-        KSampler: { input: {} },
-        VAEDecode: { input: {} },
+      const mockSystemStats = {
+        system: { os: 'windows', python_version: '3.11.9' },
+        devices: [{ name: 'cuda:0', type: 'cuda' }],
       };
 
-      vi.mocked(service.getNodeDefs).mockResolvedValue(mockNodeDefs);
+      vi.mocked(global.fetch).mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(mockSystemStats),
+      } as Response);
 
       // Execute
       const result = await service.validateConnection();
 
       // Verify
       expect(result).toBe(true);
-      expect(service.getNodeDefs).toHaveBeenCalled();
+      expect(global.fetch).toHaveBeenCalledWith(
+        'http://localhost:8188/system_stats',
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+          }),
+          mode: 'cors',
+        }),
+      );
     });
 
     it('should cache successful validation', async () => {
       // Setup
-      vi.mocked(service.getNodeDefs).mockResolvedValue({ test: 'data' });
+      vi.mocked(global.fetch).mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ test: 'data' }),
+      } as Response);
 
       // Execute twice
       await service.validateConnection();
       await service.validateConnection();
 
-      // Verify only called once
-      expect(service.getNodeDefs).toHaveBeenCalledTimes(1);
+      // Verify only called once due to caching
+      expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
     it('should handle connection failure', async () => {
       // Setup
-      vi.mocked(service.getNodeDefs).mockRejectedValue(new TypeError('Failed to fetch'));
+      vi.mocked(global.fetch).mockResolvedValue({
+        ok: false,
+        status: 500,
+        statusText: 'Internal Server Error',
+      } as Response);
 
-      // Execute and verify - validateConnection just re-throws without transformation
-      await expect(service.validateConnection()).rejects.toThrow('Failed to fetch');
+      // Execute and verify
+      await expect(service.validateConnection()).rejects.toThrow('HTTP 500: Internal Server Error');
     });
 
     it('should handle invalid response', async () => {
       // Setup
-      vi.mocked(service.getNodeDefs).mockResolvedValue(null);
+      vi.mocked(global.fetch).mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(null),
+      } as Response);
 
       // Execute and verify
       await expect(service.validateConnection()).rejects.toThrow(
