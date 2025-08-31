@@ -2,8 +2,9 @@
 import { CallWrapper, ComfyApi, PromptBuilder } from '@saintno/comfyui-sdk';
 import { Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { CreateImagePayload } from '../../../types/image';
 import { processModelList } from '../../../utils/modelParse';
-import { CreateImagePayload, LobeComfyUI } from '../../index';
+import { LobeComfyUI } from '../../index';
 import { WorkflowDetector } from '../../utils/workflowDetector';
 import {
   createMockCallWrapper,
