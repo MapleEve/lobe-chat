@@ -6,9 +6,9 @@
  */
 import { PromptBuilder } from '@saintno/comfyui-sdk';
 import debug from 'debug';
-import { nanoid } from 'nanoid';
 
 import type { CreateImagePayload, CreateImageResponse } from '../../types/image';
+import { nanoid } from '../../utils/uuid';
 import { ServicesError } from '../errors';
 import { imageResizer } from '../utils/imageResizer';
 import { WorkflowDetector } from '../utils/workflowDetector';
