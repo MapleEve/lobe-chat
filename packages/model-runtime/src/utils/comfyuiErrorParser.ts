@@ -222,6 +222,7 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
     const possibleStatus = [
       error.status,
       error.statusCode,
+      error.details?.status, // ServicesError puts status in details
       error.response?.status,
       error.response?.statusCode,
       error.error?.status,

@@ -263,23 +263,18 @@ export class ComfyUIClientService {
   async uploadImage(file: Buffer | Blob, fileName: string): Promise<string> {
     log('Uploading image to ComfyUI:', fileName);
 
-    try {
-      const result = await this.client.uploadImage(file, fileName);
+    const result = await this.client.uploadImage(file, fileName);
 
-      if (!result) {
-        throw new ServicesError(
-          'Failed to upload image to ComfyUI server',
-          ServicesError.Reasons.UPLOAD_FAILED,
-          { fileName, response: result },
-        );
-      }
-
-      log('Image uploaded successfully:', result.info.filename);
-      return result.info.filename;
-    } catch (error) {
-      log('Image upload failed:', error);
-      throw error;
+    if (!result) {
+      throw new ServicesError(
+        'Failed to upload image to ComfyUI server',
+        ServicesError.Reasons.UPLOAD_FAILED,
+        { fileName, response: result },
+      );
     }
+
+    log('Image uploaded successfully:', result.info.filename);
+    return result.info.filename;
   }
 
   /**
@@ -335,14 +330,9 @@ export class ComfyUIClientService {
    * Uses unified TTL cache for performance optimization
    */
   async getCheckpoints(): Promise<string[]> {
-    try {
-      return await this.cacheManager.get('checkpoints', async () => {
-        return await this.client.getCheckpoints();
-      });
-    } catch (error) {
-      log('Failed to get checkpoints:', error);
-      throw error;
-    }
+    return await this.cacheManager.get('checkpoints', async () => {
+      return await this.client.getCheckpoints();
+    });
   }
 
   /**
@@ -351,14 +341,9 @@ export class ComfyUIClientService {
    * Uses unified TTL cache for performance optimization
    */
   async getLoras(): Promise<string[]> {
-    try {
-      return await this.cacheManager.get('loras', async () => {
-        return await this.client.getLoras();
-      });
-    } catch (error) {
-      log('Failed to get LoRAs:', error);
-      throw error;
-    }
+    return await this.cacheManager.get('loras', async () => {
+      return await this.client.getLoras();
+    });
   }
 
   /**
@@ -368,17 +353,12 @@ export class ComfyUIClientService {
    * @param nodeName - Optional specific node name to query
    */
   async getNodeDefs(nodeName?: string): Promise<any> {
-    try {
-      const allNodeDefs = await this.cacheManager.get('nodeDefs', async () => {
-        return await this.client.getNodeDefs();
-      });
+    const allNodeDefs = await this.cacheManager.get('nodeDefs', async () => {
+      return await this.client.getNodeDefs();
+    });
 
-      // Return specific node or all nodes
-      return nodeName && allNodeDefs ? { [nodeName]: allNodeDefs[nodeName] } : allNodeDefs;
-    } catch (error) {
-      log('Failed to get node definitions:', error);
-      throw error;
-    }
+    // Return specific node or all nodes
+    return nodeName && allNodeDefs ? { [nodeName]: allNodeDefs[nodeName] } : allNodeDefs;
   }
 
   /**
@@ -386,28 +366,28 @@ export class ComfyUIClientService {
    * Wraps SDK method to avoid Law of Demeter violation
    */
   async getSamplerInfo(): Promise<{ samplerName: string[]; scheduler: string[] }> {
-    try {
-      const info = await this.client.getSamplerInfo();
-      // Handle both string arrays and tuple arrays like ['euler', { tooltip: 'info' }]
-      const extractStrings = (arr: any): string[] => {
-        if (!Array.isArray(arr)) return [];
-        return arr
-          .map((item) => (Array.isArray(item) ? item[0] : item))
-          .filter((item) => typeof item === 'string');
-      };
+    const info = await this.client.getSamplerInfo();
 
-      return {
-        samplerName: extractStrings(info.sampler),
-        scheduler: extractStrings(info.scheduler),
-      };
-    } catch (error) {
-      log('Failed to get sampler info:', error);
-      throw error;
-    }
+    return {
+      samplerName: this.extractStrings(info.sampler),
+      scheduler: this.extractStrings(info.scheduler),
+    };
+  }
+
+  /**
+   * Extract string values from sampler info arrays
+   * Handle both string arrays and tuple arrays like ['euler', { tooltip: 'info' }]
+   */
+  private extractStrings(arr: any): string[] {
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .map((item) => (Array.isArray(item) ? item[0] : item))
+      .filter((item) => typeof item === 'string');
   }
 
   /**
    * Validate connection to ComfyUI server
+   * Uses direct fetch to system_stats endpoint for health check
    */
   async validateConnection(): Promise<boolean> {
     // Check if already validated and not expired
@@ -416,15 +396,40 @@ export class ComfyUIClientService {
     }
 
     try {
-      // Use SDK's getNodeDefs to validate connection
-      // This returns node definitions if server is available
-      const nodeDefs = await this.getNodeDefs();
+      // Use system_stats endpoint for health check
+      // This is a lightweight endpoint that returns system information
+      const url = `${this.baseURL}/system_stats`;
+      const headers = this.authManager.getAuthHeaders() || {};
 
-      if (!nodeDefs || typeof nodeDefs !== 'object') {
+      log('Validating connection to:', url);
+
+      const response = await fetch(url, {
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        method: 'GET',
+        mode: 'cors',
+      });
+
+      // Just check if we got a successful response
+      if (!response.ok) {
+        this.connectionManager.invalidate();
+        // Throw ServicesError with status for error parser to handle
+        throw new ServicesError(
+          `HTTP ${response.status}: ${response.statusText}`,
+          ServicesError.Reasons.CONNECTION_FAILED,
+          { endpoint: '/system_stats', status: response.status, statusText: response.statusText },
+        );
+      }
+
+      // Verify response is valid JSON
+      const data = await response.json();
+      if (!data || typeof data !== 'object') {
         throw new ServicesError(
           'Invalid response from ComfyUI server',
           ServicesError.Reasons.CONNECTION_FAILED,
-          { endpoint: 'getNodeDefs' },
+          { endpoint: '/system_stats' },
         );
       }
 
@@ -432,7 +437,10 @@ export class ComfyUIClientService {
       log('Connection validated successfully');
       return true;
     } catch (error) {
-      log('Connection validation failed:', error);
+      // Reset connection state on any error
+      this.connectionManager.invalidate();
+
+      // Re-throw all errors - let the service layer handle error classification
       throw error;
     }
   }
