@@ -15,8 +15,6 @@ const log = debug('lobe-image:comfyui');
  * ComfyUI Runtime implementation
  * Supports text-to-image and image editing
  */
-export type { CreateImagePayload, CreateImageResponse } from '../types/image';
-
 export class LobeComfyUI implements LobeRuntimeAI, AuthenticatedImageRuntime {
   private imageService: ImageService;
   private clientService: ComfyUIClientService;
