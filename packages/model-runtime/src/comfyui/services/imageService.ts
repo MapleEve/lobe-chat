@@ -44,23 +44,12 @@ export class ImageService {
     const params = { ...payload.params };
 
     try {
-      // Parallel execution of independent operations
-      // - Connection validation (required for all operations)
-      // - Model validation (returns modelFileName needed for workflow and architecture for resizing)
-      // - Image processing (can start early, will determine resize needs after getting architecture)
-      const [, validation] = await Promise.all([
-        this.clientService.validateConnection(),
-        this.modelResolverService.validateModel(model),
-      ]);
+      // First validate connection - this will throw auth errors if credentials are wrong
+      await this.clientService.validateConnection();
 
-      if (!validation.exists) {
-        throw new ServicesError(
-          `Model not found: ${model}`,
-          ServicesError.Reasons.MODEL_NOT_FOUND,
-          { model },
-        );
-      }
-
+      // Then validate model - only after we know connection is good
+      // ModelResolverService will throw ModelResolverError if model not found
+      const validation = await this.modelResolverService.validateModel(model);
       const modelFileName = validation.actualFileName!;
 
       // Get architecture from workflow detection for image resizing

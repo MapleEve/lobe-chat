@@ -43,7 +43,6 @@ export interface ModelValidationResult {
  *
  * @params clientService - The ComfyUI client service instance
  * @returns The resolved model filename or undefined if not found
- * @throws ModelResolverError for any resolution or validation issues
  * @note This service does not handle workflow building or execution
  */
 export class ModelResolverService {
@@ -52,7 +51,7 @@ export class ModelResolverService {
 
   constructor(clientService: ComfyUIClientService) {
     this.clientService = clientService;
-    this.cacheManager = new TTLCacheManager(60000); // 1 minute TTL
+    this.cacheManager = new TTLCacheManager(60_000); // 1 minute TTL
   }
 
   /**
@@ -215,28 +214,17 @@ export class ModelResolverService {
 
   /**
    * Validate if a model exists
+   * @throws ModelResolverError if model not found
    */
   async validateModel(modelId: string): Promise<ModelValidationResult> {
-    try {
-      const fileName = await this.resolveModelFileName(modelId);
-      if (fileName) {
-        return { actualFileName: fileName, exists: true };
-      } else {
-        // Model not found - throw error for backward compatibility
-        throw new ModelResolverError(
-          ModelResolverError.Reasons.MODEL_NOT_FOUND,
-          `Model not found: ${modelId}`,
-          { modelId },
-        );
-      }
-    } catch (error) {
-      // Re-throw service errors
-      if (error instanceof ModelResolverError) {
-        throw error;
-      }
-
-      // Unexpected error - return false (original behavior)
-      return { exists: false };
+    const fileName = await this.resolveModelFileName(modelId);
+    if (!fileName) {
+      throw new ModelResolverError(
+        ModelResolverError.Reasons.MODEL_NOT_FOUND,
+        `Model not found: ${modelId}`,
+        { modelId },
+      );
     }
+    return { actualFileName: fileName, exists: true };
   }
 }
