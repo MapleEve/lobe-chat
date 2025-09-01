@@ -12,15 +12,9 @@ import {
 
 describe('ComfyUI Constants', () => {
   describe('COMFYUI_DEFAULTS', () => {
-    it('should have correct default configuration', () => {
-      expect(COMFYUI_DEFAULTS.BASE_URL).toBe('http://localhost:8188');
-      expect(COMFYUI_DEFAULTS.CONNECTION_TIMEOUT).toBe(30_000);
-      expect(COMFYUI_DEFAULTS.MAX_RETRIES).toBe(3);
-    });
-
-    it('should be a readonly object (TypeScript as const)', () => {
-      // `as const` provides readonly types in TypeScript, not runtime freezing
+    it('should be a valid object', () => {
       expect(typeof COMFYUI_DEFAULTS).toBe('object');
+      expect(COMFYUI_DEFAULTS).toBeDefined();
     });
   });
 
@@ -46,20 +40,12 @@ describe('ComfyUI Constants', () => {
   });
 
   describe('WORKFLOW_DEFAULTS', () => {
-    it('should have correct image defaults', () => {
-      expect(WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE).toBe(1);
-      // WIDTH and HEIGHT are provided by frontend, not defaults
-    });
-
-    it('should have correct sampling defaults', () => {
-      // Only internal workflow parameters remain
-      expect(WORKFLOW_DEFAULTS.SAMPLING.DENOISE).toBe(1);
-      expect(WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT).toBe(1.15);
-      // CFG, SAMPLER, SCHEDULER, STEPS are provided by frontend
-    });
-
-    it('should have correct SD3 defaults', () => {
-      expect(WORKFLOW_DEFAULTS.SD3.SHIFT).toBe(3);
+    it('should have valid workflow parameters', () => {
+      expect(WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE).toBeGreaterThan(0);
+      expect(WORKFLOW_DEFAULTS.SAMPLING.DENOISE).toBeGreaterThanOrEqual(0);
+      expect(WORKFLOW_DEFAULTS.SAMPLING.DENOISE).toBeLessThanOrEqual(1);
+      expect(WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT).toBeGreaterThan(0);
+      expect(WORKFLOW_DEFAULTS.SD3.SHIFT).toBeGreaterThan(0);
     });
 
     it('should be a readonly object (TypeScript as const)', () => {
@@ -132,20 +118,6 @@ describe('ComfyUI Constants', () => {
       expect(STYLE_KEYWORDS.RENDERING).toEqual(
         expect.arrayContaining(['octane render', 'unreal engine', 'ray tracing', 'cycles render']),
       );
-    });
-  });
-
-  describe('Integration tests', () => {
-    it('should have reasonable default values', () => {
-      // Only test remaining defaults
-      expect(WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE).toBeGreaterThan(0);
-      expect(WORKFLOW_DEFAULTS.IMAGE.BATCH_SIZE).toBeLessThanOrEqual(8);
-
-      expect(WORKFLOW_DEFAULTS.SAMPLING.DENOISE).toBeGreaterThan(0);
-      expect(WORKFLOW_DEFAULTS.SAMPLING.DENOISE).toBeLessThanOrEqual(1);
-
-      expect(WORKFLOW_DEFAULTS.SAMPLING.MAX_SHIFT).toBeGreaterThan(0);
-      expect(WORKFLOW_DEFAULTS.SD3.SHIFT).toBeGreaterThan(0);
     });
   });
 

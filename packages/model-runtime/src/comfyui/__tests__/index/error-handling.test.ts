@@ -7,19 +7,7 @@ import { CreateImagePayload } from '../../../types/image';
 import { ModelResolverError } from '../../errors/modelResolverError';
 import { LobeComfyUI } from '../../index';
 import { WorkflowDetector } from '../../utils/workflowDetector';
-import {
-  createMockCallWrapper,
-  createMockComfyApi,
-  createMockModelResolver,
-  createMockPromptBuilder,
-} from '../helpers/testSetup';
-
-// Mock the ComfyUI SDK
-vi.mock('@saintno/comfyui-sdk', () => ({
-  CallWrapper: vi.fn(),
-  ComfyApi: vi.fn(),
-  PromptBuilder: vi.fn(),
-}));
+import { setupAllMocks } from '../setup/unifiedMocks';
 
 // Mock the ComfyUI services for error handling tests
 let mockClientService: any;
@@ -107,26 +95,11 @@ const serviceUnavailableErrorType = 'ComfyUIServiceUnavailable';
 const modelNotFoundErrorType = 'ModelNotFound';
 
 describe('LobeComfyUI - Error Handling', () => {
+  const { inputCalls } = setupAllMocks();
   let instance: LobeComfyUI;
-  let mockComfyApi: ReturnType<typeof createMockComfyApi>;
-  let mockCallWrapper: ReturnType<typeof createMockCallWrapper>;
-  let mockPromptBuilder: ReturnType<typeof createMockPromptBuilder>;
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  let _mockModelResolver: ReturnType<typeof createMockModelResolver>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-
-    // Create fresh mock instances for test-specific customization
-    mockComfyApi = createMockComfyApi();
-    mockCallWrapper = createMockCallWrapper();
-    mockPromptBuilder = createMockPromptBuilder();
-    _mockModelResolver = createMockModelResolver();
-
-    // Mock ComfyApi constructor to return our mock instance
-    (ComfyApi as unknown as Mock).mockImplementation(() => mockComfyApi as any);
-    (CallWrapper as unknown as Mock).mockImplementation(() => mockCallWrapper as any);
-    (PromptBuilder as unknown as Mock).mockImplementation(() => mockPromptBuilder as any);
 
     // Mock global fetch
     global.fetch = vi.fn() as Mock;

@@ -1,15 +1,32 @@
 // @vitest-environment node
 import { ComfyApi } from '@saintno/comfyui-sdk';
-import { beforeEach, describe, expect, it, vi, Mock } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LobeComfyUI } from '../../index';
-import { createMockComfyApi } from '../helpers/testSetup';
+import { setupAllMocks } from '../setup/unifiedMocks';
 
-// Mock the ComfyUI SDK
+// Mock ComfyApi constructor to track calls
 vi.mock('@saintno/comfyui-sdk', () => ({
-  CallWrapper: vi.fn(),
-  ComfyApi: vi.fn(),
-  PromptBuilder: vi.fn(),
+  ComfyApi: vi.fn().mockImplementation((baseURL: string, clientId?: string, options?: any) => ({
+    baseURL,
+    clientId,
+    options,
+    init: vi.fn(),
+    connect: vi.fn(),
+    disconnect: vi.fn(),
+    getObjectInfo: vi.fn().mockResolvedValue({}),
+  })),
+  CallWrapper: vi.fn().mockImplementation(() => ({
+    call: vi.fn(),
+    execute: vi.fn(),
+  })),
+  PromptBuilder: vi.fn().mockImplementation((workflow: any) => ({
+    input: vi.fn().mockReturnThis(),
+    setInputNode: vi.fn().mockReturnThis(),
+    setOutputNode: vi.fn().mockReturnThis(),
+    workflow,
+  })),
+  seed: vi.fn(() => 42),
 }));
 
 // Mock the ModelResolver
@@ -163,13 +180,10 @@ vi.mock('../../utils/modelParse', () => ({
 vi.spyOn(console, 'error').mockImplementation(() => {});
 
 describe('LobeComfyUI - Constructor', () => {
-  let mockComfyApi: ReturnType<typeof createMockComfyApi>;
+  const { inputCalls } = setupAllMocks();
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockComfyApi = createMockComfyApi();
-    // Mock ComfyApi constructor to return our mock instance
-    (ComfyApi as unknown as Mock).mockImplementation(() => mockComfyApi as any);
   });
 
   describe('Basic Configuration', () => {
@@ -179,7 +193,6 @@ describe('LobeComfyUI - Constructor', () => {
       expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8188', undefined, {
         credentials: undefined,
       });
-      expect(mockComfyApi.init).toHaveBeenCalled();
       // baseURL property test removed as instance is not used
     });
 

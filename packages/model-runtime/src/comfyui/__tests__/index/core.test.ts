@@ -6,18 +6,7 @@ import { CreateImagePayload } from '../../../types/image';
 import { processModelList } from '../../../utils/modelParse';
 import { LobeComfyUI } from '../../index';
 import { WorkflowDetector } from '../../utils/workflowDetector';
-import {
-  createMockCallWrapper,
-  createMockComfyApi,
-  createMockPromptBuilder,
-} from '../helpers/testSetup';
-
-// Mock the ComfyUI SDK
-vi.mock('@saintno/comfyui-sdk', () => ({
-  CallWrapper: vi.fn(),
-  ComfyApi: vi.fn(),
-  PromptBuilder: vi.fn(),
-}));
+import { setupAllMocks } from '../setup/unifiedMocks';
 
 // Mock the ComfyUI services
 vi.mock('../../services/comfyuiClient', () => {
@@ -203,21 +192,12 @@ vi.mock('../../config/systemComponents', () => ({
 
 describe('LobeComfyUI - Core Functionality', () => {
   let instance: LobeComfyUI;
-  let mockComfyApi: ReturnType<typeof createMockComfyApi>;
-  let mockCallWrapper: ReturnType<typeof createMockCallWrapper>;
-  let mockPromptBuilder: ReturnType<typeof createMockPromptBuilder>;
+  let inputCalls: Map<string, any>;
 
   beforeEach(async () => {
     vi.clearAllMocks();
-
-    mockComfyApi = createMockComfyApi();
-    (ComfyApi as unknown as Mock).mockImplementation(() => mockComfyApi);
-
-    mockCallWrapper = createMockCallWrapper();
-    (CallWrapper as Mock).mockImplementation(() => mockCallWrapper);
-
-    mockPromptBuilder = createMockPromptBuilder();
-    (PromptBuilder as Mock).mockImplementation(() => mockPromptBuilder);
+    const mocks = setupAllMocks();
+    inputCalls = mocks.inputCalls;
 
     // ModelResolver service is mocked at module level
 
