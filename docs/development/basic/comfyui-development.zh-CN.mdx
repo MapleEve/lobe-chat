@@ -606,6 +606,160 @@ try {
 }
 ```
 
+## 测试架构与开发
+
+### 测试架构概述
+
+ComfyUI 集成使用了统一的测试架构，确保测试的可维护性和定制友好性。该架构包括：
+
+- **统一 Mock 系统**：集中管理所有外部依赖的模拟
+- **参数化测试**：自动适应新模型，无需修改现有测试
+- **夹具系统**：从配置文件中获取测试数据，确保准确性
+- **覆盖率目标**：ComfyUI 模块维持 97%+ 覆盖率
+
+### 测试文件结构
+
+```
+packages/model-runtime/src/comfyui/__tests__/
+├── setup/
+│   └── unifiedMocks.ts              # 统一Mock配置
+├── fixtures/
+│   ├── parameters.fixture.ts        # 参数测试夹具
+│   └── workflow.fixture.ts          # 工作流测试夹具
+├── integration/
+│   ├── parameterMapping.test.ts     # 参数映射集成测试
+│   └── workflowBuilder.test.ts      # 工作流构建测试
+├── services/                        # 各服务单元测试
+└── workflows/                       # 工作流单元测试
+```
+
+### 添加新模型测试
+
+当添加新模型时，测试会自动识别并运行相应的参数映射测试。你只需要：
+
+#### 1. 在模型配置中添加参数架构
+
+```typescript
+// packages/model-bank/src/aiModels/comfyui.ts
+export const myNewModelParamsSchema = {
+  prompt: { type: 'string', required: true },
+  steps: { type: 'number', default: 20, min: 1, max: 150 },
+  cfg: { type: 'number', default: 7.0, min: 1.0, max: 30.0 }
+};
+```
+
+#### 2. 创建工作流构建器
+
+```typescript
+// packages/model-runtime/src/comfyui/workflows/myNewModel.ts
+export async function buildMyNewModelWorkflow(
+  modelName: string,
+  params: MyNewModelParams,
+  context: ComfyUIContext
+) {
+  const workflow = { /* 工作流定义 */ };
+  
+  // 参数注入
+  workflow['1'].inputs.prompt = params.prompt;
+  workflow['2'].inputs.steps = params.steps;
+  
+  return workflow;
+}
+```
+
+#### 3. 在夹具中注册模型
+
+```typescript
+// packages/model-runtime/src/comfyui/__tests__/fixtures/parameters.fixture.ts
+import { 
+  myNewModelParamsSchema,
+  // ... 其他架构
+} from '../../../../../model-bank/src/aiModels/comfyui';
+
+export const parametersFixture = {
+  models: {
+    'my-new-model': {
+      schema: myNewModelParamsSchema,
+      defaults: {
+        steps: myNewModelParamsSchema.steps.default,
+        cfg: myNewModelParamsSchema.cfg.default,
+      },
+      boundaries: {
+        min: { steps: myNewModelParamsSchema.steps.min },
+        max: { steps: myNewModelParamsSchema.steps.max }
+      }
+    }
+  }
+};
+```
+
+### 测试最佳实践
+
+#### 使用统一 Mock 系统
+
+```typescript
+import { setupAllMocks } from '../setup/unifiedMocks';
+
+describe('MyTest', () => {
+  const mocks = setupAllMocks();
+  
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+});
+```
+
+#### 编写参数映射测试
+
+参数映射测试会自动运行，验证前端参数正确注入到工作流中：
+
+```typescript
+// 测试会自动包含新注册的模型
+describe.each(
+  Object.entries(models).filter(([name]) => workflowBuilders[name])
+)(
+  '%s parameter mapping',
+  (modelName, modelConfig) => {
+    it('should map schema parameters to workflow', async () => {
+      const params = {
+        prompt: 'test prompt',
+        ...modelConfig.defaults,
+      };
+      
+      const workflow = await builder(`${modelName}.safetensors`, params, mockContext);
+      expect(workflow).toBeDefined();
+    });
+  }
+);
+```
+
+#### 定制友好的测试原则
+
+- **不测试工作流结构**：工作流是 ComfyUI 官方格式，只测试参数映射
+- **使用配置驱动的数据**：测试数据来自模型配置文件，确保一致性
+- **避免脆性断言**：不检查具体的节点 ID 或内部结构
+- **支持扩展**：新增模型应该只影响覆盖率，不破坏现有测试
+
+### 运行测试
+
+```bash
+# 运行 ComfyUI 相关测试
+cd packages/model-runtime
+bunx vitest run --silent='passed-only' 'src/comfyui'
+
+# 查看覆盖率
+bunx vitest run --coverage 'src/comfyui'
+
+# 运行特定测试文件
+bunx vitest run 'src/comfyui/__tests__/integration/parameterMapping.test.ts'
+```
+
+### 覆盖率目标
+
+- **整体覆盖率**：ComfyUI 模块维持 97%+ 覆盖率
+- **核心功能**：100% 分支覆盖率
+- **新增功能**：保持或提升现有覆盖率水平
+
 ## 开发和测试
 
 ### 1. 本地开发设置
@@ -713,3 +867,15 @@ const optimizedResult = await comfyUI.createImage({
   }
 });
 ```
+
+## 注意事项
+
+- 确保 ComfyUI 服务正常运行并可访问
+- 检查所有必需的模型文件是否已正确安装
+- 注意模型文件的命名规范和路径配置
+- 定期检查和更新工作流配置以支持新功能
+- 注意不同模型系列的参数差异和兼容性
+- 添加新模型时，请遵循测试架构指南确保测试完整性
+- 在提交代码前务必运行相关测试确保覆盖率达标
+
+通过遵循这些指南，开发者可以有效地在 LobeChat 中使用和扩展 ComfyUI 功能，为用户提供强大的图像生成和处理能力。

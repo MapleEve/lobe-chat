@@ -606,6 +606,160 @@ try {
 }
 ```
 
+## Testing Architecture and Development
+
+### Testing Architecture Overview
+
+The ComfyUI integration uses a unified testing architecture that ensures maintainability and customization-friendly tests. This architecture includes:
+
+- **Unified Mock System**: Centralized management of all external dependency mocks
+- **Parameterized Testing**: Automatically adapts to new models without modifying existing tests
+- **Fixture System**: Retrieves test data from configuration files to ensure accuracy
+- **Coverage Goals**: ComfyUI module maintains 97%+ coverage
+
+### Test File Structure
+
+```
+packages/model-runtime/src/comfyui/__tests__/
+├── setup/
+│   └── unifiedMocks.ts              # Unified Mock configuration
+├── fixtures/
+│   ├── parameters.fixture.ts        # Parameter test fixtures
+│   └── workflow.fixture.ts          # Workflow test fixtures
+├── integration/
+│   ├── parameterMapping.test.ts     # Parameter mapping integration tests
+│   └── workflowBuilder.test.ts      # Workflow builder tests
+├── services/                        # Service unit tests
+└── workflows/                       # Workflow unit tests
+```
+
+### Adding Tests for New Models
+
+When adding new models, tests will automatically recognize and run appropriate parameter mapping tests. You only need to:
+
+#### 1. Add Parameter Schema in Model Configuration
+
+```typescript
+// packages/model-bank/src/aiModels/comfyui.ts
+export const myNewModelParamsSchema = {
+  prompt: { type: 'string', required: true },
+  steps: { type: 'number', default: 20, min: 1, max: 150 },
+  cfg: { type: 'number', default: 7.0, min: 1.0, max: 30.0 }
+};
+```
+
+#### 2. Create Workflow Builder
+
+```typescript
+// packages/model-runtime/src/comfyui/workflows/myNewModel.ts
+export async function buildMyNewModelWorkflow(
+  modelName: string,
+  params: MyNewModelParams,
+  context: ComfyUIContext
+) {
+  const workflow = { /* workflow definition */ };
+  
+  // Parameter injection
+  workflow['1'].inputs.prompt = params.prompt;
+  workflow['2'].inputs.steps = params.steps;
+  
+  return workflow;
+}
+```
+
+#### 3. Register Model in Fixtures
+
+```typescript
+// packages/model-runtime/src/comfyui/__tests__/fixtures/parameters.fixture.ts
+import { 
+  myNewModelParamsSchema,
+  // ... other schemas
+} from '../../../../../model-bank/src/aiModels/comfyui';
+
+export const parametersFixture = {
+  models: {
+    'my-new-model': {
+      schema: myNewModelParamsSchema,
+      defaults: {
+        steps: myNewModelParamsSchema.steps.default,
+        cfg: myNewModelParamsSchema.cfg.default,
+      },
+      boundaries: {
+        min: { steps: myNewModelParamsSchema.steps.min },
+        max: { steps: myNewModelParamsSchema.steps.max }
+      }
+    }
+  }
+};
+```
+
+### Testing Best Practices
+
+#### Use Unified Mock System
+
+```typescript
+import { setupAllMocks } from '../setup/unifiedMocks';
+
+describe('MyTest', () => {
+  const mocks = setupAllMocks();
+  
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+});
+```
+
+#### Write Parameter Mapping Tests
+
+Parameter mapping tests run automatically, verifying that frontend parameters are correctly injected into workflows:
+
+```typescript
+// Tests automatically include newly registered models
+describe.each(
+  Object.entries(models).filter(([name]) => workflowBuilders[name])
+)(
+  '%s parameter mapping',
+  (modelName, modelConfig) => {
+    it('should map schema parameters to workflow', async () => {
+      const params = {
+        prompt: 'test prompt',
+        ...modelConfig.defaults,
+      };
+      
+      const workflow = await builder(`${modelName}.safetensors`, params, mockContext);
+      expect(workflow).toBeDefined();
+    });
+  }
+);
+```
+
+#### Customization-Friendly Testing Principles
+
+- **Don't test workflow structure**: Workflows are ComfyUI's official format; only test parameter mapping
+- **Use configuration-driven data**: Test data comes from model configuration files to ensure consistency
+- **Avoid brittle assertions**: Don't check specific node IDs or internal structures
+- **Support extension**: New models should only affect coverage, not break existing tests
+
+### Running Tests
+
+```bash
+# Run ComfyUI related tests
+cd packages/model-runtime
+bunx vitest run --silent='passed-only' 'src/comfyui'
+
+# View coverage
+bunx vitest run --coverage 'src/comfyui'
+
+# Run specific test files
+bunx vitest run 'src/comfyui/__tests__/integration/parameterMapping.test.ts'
+```
+
+### Coverage Targets
+
+- **Overall coverage**: ComfyUI module maintains 97%+ coverage
+- **Core functionality**: 100% branch coverage
+- **New features**: Maintain or improve existing coverage levels
+
 ## Development and Testing
 
 ### 1. Local Development Setup
@@ -714,14 +868,25 @@ const optimizedResult = await comfyUI.createImage({
 });
 ```
 
+## Important Notes
+
+- Ensure ComfyUI service is running and accessible
+- Check that all required model files are properly installed
+- Pay attention to model file naming conventions and path configurations
+- Regularly check and update workflow configurations to support new features
+- Be aware of parameter differences and compatibility across model families
+- When adding new models, follow the testing architecture guidelines to ensure test completeness
+- Always run relevant tests before committing code to ensure coverage targets are met
+
 ## Summary
 
-This rewritten documentation is based on actual code implementation:
+This documentation is based on actual code implementation and includes:
 
 1. **Real Architecture Description**: Four-layer service architecture with clear responsibility separation
 2. **Accurate API Calls**: Using `PromptBuilder` instead of fictional classes
 3. **Correct Workflow Creation**: Real process of exporting JSON from ComfyUI
 4. **Actual Configuration Structure**: Based on real registry files
 5. **Working Code Examples**: All examples can be run directly
+6. **Comprehensive Testing Guide**: Unified testing architecture with customization-friendly approach
 
-Developers can now use this accurate documentation to extend ComfyUI integration functionality.
+Developers can use this accurate documentation to effectively extend ComfyUI integration functionality while maintaining high code quality and test coverage.
