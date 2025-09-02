@@ -1,5 +1,5 @@
 import { ComfyApi } from '@saintno/comfyui-sdk';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ComfyUIKeyVault } from '@/types/user/settings/keyVaults';
 
@@ -16,20 +16,30 @@ vi.mock('@saintno/comfyui-sdk', () => ({
 describe('ComfyUIClientService', () => {
   let service: ComfyUIClientService;
   let mockClient: any;
+  let originalDateNow: () => number;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    originalDateNow = Date.now;
 
     // Create mock client
     mockClient = {
       fetchApi: vi.fn(),
+      getCheckpoints: vi.fn(),
+      getLoras: vi.fn(),
+      getNodeDefs: vi.fn(),
       getPathImage: vi.fn(),
+      getSamplerInfo: vi.fn(),
       init: vi.fn(),
       uploadImage: vi.fn(),
     };
 
     // Mock ComfyApi constructor
     vi.mocked(ComfyApi).mockImplementation(() => mockClient);
+  });
+
+  afterEach(() => {
+    Date.now = originalDateNow;
   });
 
   describe('constructor', () => {
@@ -374,6 +384,32 @@ describe('ComfyUIClientService', () => {
       expect(global.fetch).toHaveBeenCalledTimes(1);
     });
 
+    it('should invalidate cache after TTL expires', async () => {
+      // Setup
+      let currentTime = Date.now();
+      Date.now = vi.fn(() => currentTime);
+
+      vi.mocked(global.fetch).mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ test: 'data' }),
+      } as Response);
+
+      // First validation
+      await service.validateConnection();
+      expect(global.fetch).toHaveBeenCalledTimes(1);
+
+      // Second validation within TTL (5 minutes)
+      currentTime += 4 * 60 * 1000; // 4 minutes later
+      await service.validateConnection();
+      expect(global.fetch).toHaveBeenCalledTimes(1); // Still cached
+
+      // Third validation after TTL expires
+      currentTime += 2 * 60 * 1000; // 6 minutes total (> 5 minutes TTL)
+      await service.validateConnection();
+      expect(global.fetch).toHaveBeenCalledTimes(2); // Cache expired, new fetch
+    });
+
     it('should handle connection failure', async () => {
       // Setup
       vi.mocked(global.fetch).mockResolvedValue({
@@ -422,6 +458,50 @@ describe('ComfyUIClientService', () => {
       // Verify
       expect(result).toBe(expectedPath);
       expect(mockClient.getPathImage).toHaveBeenCalledWith(mockImageInfo);
+    });
+  });
+
+  describe('getAuthHeaders', () => {
+    it('should return undefined when no auth is configured', () => {
+      service = new ComfyUIClientService();
+      const headers = service.getAuthHeaders();
+      expect(headers).toBeUndefined();
+    });
+
+    it('should return basic auth headers', () => {
+      service = new ComfyUIClientService({
+        authType: 'basic',
+        username: 'testuser',
+        password: 'testpass',
+      });
+      const headers = service.getAuthHeaders();
+      expect(headers).toEqual({
+        Authorization: `Basic ${btoa('testuser:testpass')}`,
+      });
+    });
+
+    it('should return bearer token headers', () => {
+      service = new ComfyUIClientService({
+        authType: 'bearer',
+        apiKey: 'test-api-key-123',
+      });
+      const headers = service.getAuthHeaders();
+      expect(headers).toEqual({
+        Authorization: 'Bearer test-api-key-123',
+      });
+    });
+
+    it('should return custom headers', () => {
+      const customHeaders = {
+        'X-Custom-Auth': 'custom-value',
+        'X-API-Key': 'api-key-value',
+      };
+      service = new ComfyUIClientService({
+        authType: 'custom',
+        customHeaders,
+      });
+      const headers = service.getAuthHeaders();
+      expect(headers).toEqual(customHeaders);
     });
   });
 
