@@ -4,7 +4,6 @@ import { AsyncTaskModel } from '@/database/models/asyncTask';
 import { FileModel } from '@/database/models/file';
 import { LobeChatDatabase } from '@/database/type';
 import { ChunkContentParams, ContentChunk } from '@/server/modules/ContentChunk';
-import { createAsyncCaller } from '@/server/routers/async';
 import {
   AsyncTaskError,
   AsyncTaskErrorType,
@@ -17,9 +16,15 @@ export class ChunkService {
   private chunkClient: ContentChunk;
   private fileModel: FileModel;
   private asyncTaskModel: AsyncTaskModel;
+  private asyncCaller?: any; // Optional injected async caller
 
-  constructor(serverDB: LobeChatDatabase, userId: string) {
+  constructor(
+    serverDB: LobeChatDatabase,
+    userId: string,
+    asyncCaller?: any, // Inject async caller to break circular dependency
+  ) {
     this.userId = userId;
+    this.asyncCaller = asyncCaller;
 
     this.chunkClient = new ContentChunk();
 
@@ -44,7 +49,13 @@ export class ChunkService {
 
     await this.fileModel.update(fileId, { embeddingTaskId: asyncTaskId });
 
-    const asyncCaller = await createAsyncCaller({ jwtPayload: payload, userId: this.userId });
+    // Use injected caller if available, otherwise create one
+    let asyncCaller = this.asyncCaller;
+    if (!asyncCaller) {
+      // Only import when needed to avoid circular dependency
+      const { createAsyncCaller } = await import('@/server/routers/async');
+      asyncCaller = await createAsyncCaller({ jwtPayload: payload, userId: this.userId });
+    }
 
     // trigger embedding task asynchronously
     try {
@@ -83,20 +94,28 @@ export class ChunkService {
 
     await this.fileModel.update(fileId, { chunkTaskId: asyncTaskId });
 
-    const asyncCaller = await createAsyncCaller({ jwtPayload: payload, userId: this.userId });
+    // Use injected caller if available, otherwise create one
+    let asyncCaller = this.asyncCaller;
+    if (!asyncCaller) {
+      // Only import when needed to avoid circular dependency
+      const { createAsyncCaller } = await import('@/server/routers/async');
+      asyncCaller = await createAsyncCaller({ jwtPayload: payload, userId: this.userId });
+    }
 
     // trigger parse file task asynchronously
-    asyncCaller.file.parseFileToChunks({ fileId: fileId, taskId: asyncTaskId }).catch(async (e) => {
-      console.error('[ParseFileToChunks] error:', e);
+    asyncCaller.file
+      .parseFileToChunks({ fileId: fileId, taskId: asyncTaskId })
+      .catch(async (e: Error) => {
+        console.error('[ParseFileToChunks] error:', e);
 
-      await this.asyncTaskModel.update(asyncTaskId, {
-        error: new AsyncTaskError(
-          AsyncTaskErrorType.TaskTriggerError,
-          'trigger chunk embedding async task error. Please make sure the APP_URL is available from your server. You can check the proxy config or WAF blocking',
-        ),
-        status: AsyncTaskStatus.Error,
+        await this.asyncTaskModel.update(asyncTaskId, {
+          error: new AsyncTaskError(
+            AsyncTaskErrorType.TaskTriggerError,
+            'trigger chunk embedding async task error. Please make sure the APP_URL is available from your server. You can check the proxy config or WAF blocking',
+          ),
+          status: AsyncTaskStatus.Error,
+        });
       });
-    });
 
     return asyncTaskId;
   }

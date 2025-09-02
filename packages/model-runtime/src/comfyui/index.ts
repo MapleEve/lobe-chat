@@ -3,11 +3,6 @@ import debug from 'debug';
 
 import { LobeRuntimeAI } from '../BaseAI';
 import { AuthenticatedImageRuntime, CreateImagePayload, CreateImageResponse } from '../types/image';
-import { COMFYUI_DEFAULTS } from './constants';
-import { ComfyUIClientService } from './services/comfyuiClient';
-import { ImageService } from './services/imageService';
-import { ModelResolverService } from './services/modelResolver';
-import { WorkflowBuilderService, WorkflowContext } from './services/workflowBuilder';
 
 const log = debug('lobe-image:comfyui');
 
@@ -16,57 +11,101 @@ const log = debug('lobe-image:comfyui');
  * Supports text-to-image and image editing
  */
 export class LobeComfyUI implements LobeRuntimeAI, AuthenticatedImageRuntime {
-  private imageService: ImageService;
-  private clientService: ComfyUIClientService;
   private options: ComfyUIKeyVault;
-
   baseURL: string;
 
   constructor(options: ComfyUIKeyVault = {}) {
-    log('🏗️ ComfyUI Constructor called with options:', {
-      authType: options.authType,
-      baseURL: options.baseURL,
-    });
+    log('🏗️ ComfyUI Runtime initialized');
 
     this.options = options;
-    this.baseURL = options.baseURL || process.env.COMFYUI_DEFAULT_URL || COMFYUI_DEFAULTS.BASE_URL;
+    this.baseURL = options.baseURL || process.env.COMFYUI_DEFAULT_URL || 'http://localhost:8188';
 
-    // Initialize services
-    this.clientService = new ComfyUIClientService(options);
-    const modelResolverService = new ModelResolverService(this.clientService);
-
-    // Create workflow context
-    const context: WorkflowContext = {
-      clientService: this.clientService,
-      modelResolverService: modelResolverService,
-    };
-
-    const workflowBuilderService = new WorkflowBuilderService(context);
-
-    // Initialize image service with all dependencies
-    this.imageService = new ImageService(
-      this.clientService,
-      modelResolverService,
-      workflowBuilderService,
-    );
+    log('✅ ComfyUI Runtime ready - baseURL: %s', this.baseURL);
   }
 
   /**
    * Get authentication headers for image download
-   * This method provides auth headers to framework layer without exposing credentials
-   * @returns Authentication headers object, or undefined if no auth is configured
+   * Used by framework for authenticated image downloads
    */
   getAuthHeaders(): Record<string, string> | undefined {
-    // Delegate to clientService which manages authentication
-    return this.clientService.getAuthHeaders();
+    log('🔐 Providing auth headers for image download');
+
+    const { authType = 'none', apiKey, username, password, customHeaders } = this.options;
+
+    switch (authType) {
+      case 'basic': {
+        if (username && password) {
+          return { Authorization: `Basic ${btoa(`${username}:${password}`)}` };
+        }
+        return undefined;
+      }
+
+      case 'bearer': {
+        if (apiKey) {
+          return { Authorization: `Bearer ${apiKey}` };
+        }
+        return undefined;
+      }
+
+      case 'custom': {
+        return customHeaders || undefined;
+      }
+
+      case 'none': {
+        return undefined;
+      }
+    }
   }
 
   /**
-   * Create image
-   * Entry point that delegates all business logic to ImageService
+   * Create image using integrated Framework services (no tRPC overhead)
    */
   async createImage(payload: CreateImagePayload): Promise<CreateImageResponse> {
-    // All logic including connection validation delegated to ImageService
-    return this.imageService.createImage(payload);
+    log('🎨 Creating image with model: %s', payload.model);
+
+    try {
+      // Import Framework services dynamically to avoid circular dependencies
+      const { ComfyUIClientService } = await import(
+        '@/server/services/comfyui/core/comfyUIClientService'
+      );
+      const { ModelResolverService } = await import(
+        '@/server/services/comfyui/core/modelResolverService'
+      );
+      const { WorkflowBuilderService } = await import(
+        '@/server/services/comfyui/core/workflowBuilderService'
+      );
+      const { ImageService } = await import('@/server/services/comfyui/core/imageService');
+
+      // Initialize Framework layer services directly (no tRPC)
+      const clientService = new ComfyUIClientService(this.options);
+      const modelResolverService = new ModelResolverService(clientService);
+
+      // Create workflow context
+      const context = {
+        clientService,
+        modelResolverService,
+      };
+
+      const workflowBuilderService = new WorkflowBuilderService(context);
+
+      // Initialize image service with all dependencies
+      const imageService = new ImageService(
+        clientService,
+        modelResolverService,
+        workflowBuilderService,
+      );
+
+      // Execute image creation
+      const response = await imageService.createImage({
+        model: payload.model,
+        params: payload.params,
+      });
+
+      log('✅ Image creation completed successfully');
+      return response;
+    } catch (error) {
+      log('❌ Image creation failed:', error);
+      throw error;
+    }
   }
 }

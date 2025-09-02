@@ -1,4 +1,5 @@
-import { getComponentInfo, isSystemComponent } from '../comfyui/utils/componentInfo';
+import { getComponentInfo, isSystemComponent } from '@/server/services/comfyui/utils/componentInfo';
+
 import { AgentRuntimeErrorType, ILobeAgentRuntimeErrorType } from '../types/error';
 
 export interface ComfyUIError {
