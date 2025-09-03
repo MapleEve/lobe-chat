@@ -61,16 +61,16 @@ export class LobeComfyUI implements LobeRuntimeAI, AuthenticatedImageRuntime {
   constructor(options: ComfyUIKeyVault = {}) {
     // 1. Client Service - handles auth and API calls
     this.clientService = new ComfyUIClientService(options);
-    
+
     // 2. Model Resolver Service - model lookup and component selection
     const modelResolverService = new ModelResolverService(this.clientService);
-    
+
     // 3. Workflow Builder Service - routes and builds workflows
     const workflowBuilderService = new WorkflowBuilderService({
       clientService: this.clientService,
       modelResolverService: modelResolverService,
     });
-    
+
     // 4. Image Service - unified image generation entry point
     this.imageService = new ImageService(
       this.clientService,
@@ -106,7 +106,7 @@ interface ComfyUIKeyVault {
 ```typescript
 // No authentication
 const comfyUI = new LobeComfyUI({
-  baseURL: 'http://localhost:8188',
+  baseURL: 'http://localhost:8000',
   authType: 'none'
 });
 
@@ -160,7 +160,7 @@ Add new models in `fluxModelRegistry.ts`:
 // packages/model-runtime/src/comfyui/config/fluxModelRegistry.ts
 export const FLUX_MODEL_REGISTRY: Record<string, ModelConfig> = {
   // Existing models...
-  
+
   // Add new FLUX Dev model
   'your-custom-flux-dev.safetensors': {
     modelFamily: 'FLUX',
@@ -168,7 +168,7 @@ export const FLUX_MODEL_REGISTRY: Record<string, ModelConfig> = {
     variant: 'dev',
     recommendedDtype: 'default',
   },
-  
+
   // Add quantized version
   'your-custom-flux-dev-fp8.safetensors': {
     modelFamily: 'FLUX',
@@ -187,7 +187,7 @@ Add in `sdModelRegistry.ts`:
 // packages/model-runtime/src/comfyui/config/sdModelRegistry.ts
 export const SD_MODEL_REGISTRY: Record<string, ModelConfig> = {
   // Existing models...
-  
+
   // Add new SD3.5 model
   'your-custom-sd35.safetensors': {
     modelFamily: 'SD3',
@@ -206,7 +206,7 @@ If you need friendly model IDs for frontend, add mapping in `modelRegistry.ts`:
 // packages/model-runtime/src/comfyui/config/modelRegistry.ts
 export const MODEL_ID_VARIANT_MAP: Record<string, string> = {
   // Existing mappings...
-  
+
   // Add new model friendly IDs
   'my-custom-flux': 'dev',  // Maps to dev variant
   'my-custom-sd35': 'sd35', // Maps to sd35 variant
@@ -255,7 +255,7 @@ export async function buildYourCustomWorkflow(
   params: Record<string, any>,
   context: WorkflowContext,
 ): Promise<PromptBuilder<any, any, any>> {
-  
+
   // JSON structure from ComfyUI "Export (API Format)"
   const workflow = {
     '1': {
@@ -328,7 +328,7 @@ export async function buildYourCustomWorkflow(
 
   // Set input node paths
   builder.setInputNode('width', '3.inputs.width');
-  builder.setInputNode('height', '3.inputs.height'); 
+  builder.setInputNode('height', '3.inputs.height');
   builder.setInputNode('steps', '4.inputs.steps');
   builder.setInputNode('cfg', '4.inputs.cfg');
   builder.setInputNode('seed', '4.inputs.seed');
@@ -355,7 +355,7 @@ import { buildYourCustomWorkflow } from '../workflows/your-workflow';
 
 export const VARIANT_WORKFLOW_MAP: Record<string, WorkflowBuilder> = {
   // Existing mappings...
-  
+
   // Add new workflow
   'your-variant': buildYourCustomWorkflow,
 };
@@ -402,7 +402,7 @@ export async function buildFluxDevWorkflow(
   // Create and configure PromptBuilder
   const builder = new PromptBuilder(workflow, inputs, outputs);
   // Configure input/output mappings...
-  
+
   return builder;
 }
 ```
@@ -430,21 +430,21 @@ export const SYSTEM_COMPONENTS: Record<string, ComponentConfig> = {
     priority: 1,
     type: 'vae',
   },
-  
+
   // CLIP components
   'clip_l.safetensors': {
     modelFamily: 'FLUX',
     priority: 1,
     type: 'clip',
   },
-  
+
   // T5 encoders
   't5xxl_fp16.safetensors': {
     modelFamily: 'FLUX',
     priority: 1,
     type: 't5',
   },
-  
+
   // LoRA adapters
   'realism_lora.safetensors': {
     compatibleVariants: ['dev'],
@@ -452,7 +452,7 @@ export const SYSTEM_COMPONENTS: Record<string, ComponentConfig> = {
     priority: 1,
     type: 'lora',
   },
-  
+
   // ControlNet models
   'flux-controlnet-canny-v3.safetensors': {
     compatibleVariants: ['dev'],
@@ -525,7 +525,7 @@ export class ModelResolverService {
     if (mappedVariant) {
       const prioritizedModels = getModelsByVariant(mappedVariant);
       const serverModels = await this.getAvailableModelFiles();
-      
+
       // Find first available model by priority
       for (const filename of prioritizedModels) {
         if (serverModels.includes(filename)) {
@@ -658,11 +658,11 @@ export async function buildMyNewModelWorkflow(
   context: ComfyUIContext
 ) {
   const workflow = { /* workflow definition */ };
-  
+
   // Parameter injection
   workflow['1'].inputs.prompt = params.prompt;
   workflow['2'].inputs.steps = params.steps;
-  
+
   return workflow;
 }
 ```
@@ -671,7 +671,7 @@ export async function buildMyNewModelWorkflow(
 
 ```typescript
 // packages/model-runtime/src/comfyui/__tests__/fixtures/parameters.fixture.ts
-import { 
+import {
   myNewModelParamsSchema,
   // ... other schemas
 } from '../../../../../model-bank/src/aiModels/comfyui';
@@ -702,7 +702,7 @@ import { setupAllMocks } from '../setup/unifiedMocks';
 
 describe('MyTest', () => {
   const mocks = setupAllMocks();
-  
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -725,7 +725,7 @@ describe.each(
         prompt: 'test prompt',
         ...modelConfig.defaults,
       };
-      
+
       const workflow = await builder(`${modelName}.safetensors`, params, mockContext);
       expect(workflow).toBeDefined();
     });
@@ -817,7 +817,7 @@ describe('Model Registry', () => {
 import { LobeComfyUI } from '@/libs/model-runtime/comfyui';
 
 const comfyUI = new LobeComfyUI({
-  baseURL: 'http://localhost:8188',
+  baseURL: 'http://localhost:8000',
   authType: 'none'
 });
 

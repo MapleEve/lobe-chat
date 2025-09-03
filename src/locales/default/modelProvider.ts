@@ -105,7 +105,7 @@ export default {
     },
     baseURL: {
       desc: 'ComfyUI 网页访问地址',
-      placeholder: 'http://localhost:8188',
+      placeholder: 'http://127.0.0.1:8000',
       required: '请输入 ComfyUI 服务地址',
       title: 'ComfyUI 服务地址',
     },

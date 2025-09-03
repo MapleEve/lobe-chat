@@ -46,7 +46,7 @@ const ComfyUIAuth = memo<ComfyUIAuthProps>(({ onClose, onRecreate }) => {
   const [formValues, setFormValues] = useState({
     apiKey: '',
     authType: 'none' as string,
-    baseURL: 'http://localhost:8188',
+    baseURL: 'http://127.0.0.1:8000',
     customHeaders: {} as Record<string, string>,
     password: '',
     username: '',
@@ -59,7 +59,7 @@ const ComfyUIAuth = memo<ComfyUIAuthProps>(({ onClose, onRecreate }) => {
       const newValues = {
         apiKey: comfyUIConfig.apiKey || '',
         authType: comfyUIConfig.authType || 'none',
-        baseURL: comfyUIConfig.baseURL || 'http://localhost:8188',
+        baseURL: comfyUIConfig.baseURL || 'http://127.0.0.1:8000',
         customHeaders: comfyUIConfig.customHeaders || {},
         password: comfyUIConfig.password || '',
         username: comfyUIConfig.username || '',

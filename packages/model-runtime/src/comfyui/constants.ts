@@ -8,7 +8,7 @@
  * 注意：BASE_URL不再处理环境变量，由构造函数统一处理优先级
  */
 export const COMFYUI_DEFAULTS = {
-  BASE_URL: 'http://localhost:8188',
+  BASE_URL: 'http://localhost:8000',
   CONNECTION_TIMEOUT: 30_000,
   MAX_RETRIES: 3,
 } as const;

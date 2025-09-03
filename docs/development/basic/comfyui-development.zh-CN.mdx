@@ -106,7 +106,7 @@ interface ComfyUIKeyVault {
 ```typescript
 // 无认证
 const comfyUI = new LobeComfyUI({
-  baseURL: 'http://localhost:8188',
+  baseURL: 'http://localhost:8000',
   authType: 'none'
 });
 
@@ -658,11 +658,11 @@ export async function buildMyNewModelWorkflow(
   context: ComfyUIContext
 ) {
   const workflow = { /* 工作流定义 */ };
-  
+
   // 参数注入
   workflow['1'].inputs.prompt = params.prompt;
   workflow['2'].inputs.steps = params.steps;
-  
+
   return workflow;
 }
 ```
@@ -671,7 +671,7 @@ export async function buildMyNewModelWorkflow(
 
 ```typescript
 // packages/model-runtime/src/comfyui/__tests__/fixtures/parameters.fixture.ts
-import { 
+import {
   myNewModelParamsSchema,
   // ... 其他架构
 } from '../../../../../model-bank/src/aiModels/comfyui';
@@ -702,7 +702,7 @@ import { setupAllMocks } from '../setup/unifiedMocks';
 
 describe('MyTest', () => {
   const mocks = setupAllMocks();
-  
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -725,7 +725,7 @@ describe.each(
         prompt: 'test prompt',
         ...modelConfig.defaults,
       };
-      
+
       const workflow = await builder(`${modelName}.safetensors`, params, mockContext);
       expect(workflow).toBeDefined();
     });
@@ -817,7 +817,7 @@ describe('Model Registry', () => {
 import { LobeComfyUI } from '@/libs/model-runtime/comfyui';
 
 const comfyUI = new LobeComfyUI({
-  baseURL: 'http://localhost:8188',
+  baseURL: 'http://localhost:8000',
   authType: 'none'
 });
 

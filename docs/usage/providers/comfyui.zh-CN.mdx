@@ -131,7 +131,7 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
   pip install PyJWT
 
   # 启动 ComfyUI 服务器
-  python main.py --listen 0.0.0.0 --port 8188
+  python main.py --listen 0.0.0.0 --port 8000
   ```
 
   #### 2. 下载模型文件
@@ -186,7 +186,7 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
 
   #### 3. 验证服务器运行
 
-  访问 `http://localhost:8188` 确认 ComfyUI 界面正常加载。
+  访问 `http://localhost:8000` 确认 ComfyUI 界面正常加载。
 
   ### 步骤二：在 LobeChat 中配置 ComfyUI
 
@@ -201,7 +201,7 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
 
   **基本配置**：
 
-  - **服务器地址**：输入 ComfyUI 服务器地址，如 `http://localhost:8188`
+  - **服务器地址**：输入 ComfyUI 服务器地址，如 `http://localhost:8000`
   - **认证类型**：选择合适的认证方式
 
   ### 步骤三：配置认证方式
@@ -221,7 +221,7 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
 
   ```yaml
   认证类型：无认证
-  服务器地址：http://localhost:8188
+  服务器地址：http://localhost:8000
   ```
 
   **安全提醒**：
@@ -234,10 +234,10 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
 
   ```bash
   # 标准启动方式
-  python main.py --listen 0.0.0.0 --port 8188
+  python main.py --listen 0.0.0.0 --port 8000
 
   # Docker 方式
-  docker run -p 8188:8188 comfyui/comfyui
+  docker run -p 8000:8000 comfyui/comfyui
   ```
 
   #### 基本认证 (basic)
@@ -264,11 +264,11 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
   server {
       listen 80;
       server_name your-domain.com;
-      
+
       location / {
           auth_basic "ComfyUI Access";
           auth_basic_user_file /etc/nginx/.htpasswd;
-          proxy_pass http://localhost:8188;
+          proxy_pass http://localhost:8000;
           proxy_set_header Host $host;
           proxy_set_header X-Real-IP $remote_addr;
       }
@@ -303,7 +303,7 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
   # 使用环境变量配置认证
   export COMFYUI_AUTH_USER="admin"
   export COMFYUI_AUTH_PASSWORD="your_password"
-  python main.py --listen 0.0.0.0 --port 8188
+  python main.py --listen 0.0.0.0 --port 8000
   ```
 
   #### Bearer Token (bearer)
@@ -362,7 +362,7 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
 
   ```yaml
   认证类型：Bearer Token
-  服务器地址：http://your-server:8188
+  服务器地址：http://your-server:8000
   API 密钥：eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
   ```
 
@@ -372,7 +372,7 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
   # 设置 Token 验证
   export COMFYUI_AUTH_TOKEN="your_bearer_token"
   export COMFYUI_AUTH_SECRET="your-secret-key"
-  python main.py --listen 0.0.0.0 --port 8188 --auth-token
+  python main.py --listen 0.0.0.0 --port 8000 --auth-token
   ```
 
   **验证 Token 有效性**：
@@ -383,12 +383,12 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
 
   # 测试 API 调用（使用环境变量）
   curl -H "Authorization: Bearer $COMFYUI_TOKEN" \
-       http://your-server:8188/system_stats
+       http://your-server:8000/system_stats
 
   # 或者使用文件方式（更安全）
   echo "Bearer your_actual_token_here" > ~/.comfyui_token
   curl -H "Authorization: $(cat ~/.comfyui_token)" \
-       http://your-server:8188/system_stats
+       http://your-server:8000/system_stats
   ```
 
   #### 自定义认证 (custom)
@@ -458,42 +458,42 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
           secret = self.api_keys.get(api_key)
           if not secret:
               return False
-              
+
           # 验证时间戳（5分钟内有效）
           if abs(time.time() - int(timestamp)) > 300:
               return False
-              
+
           # 生成预期签名
           message = f"{api_key}{timestamp}{body}"
           expected = hmac.new(
-              secret.encode(), 
-              message.encode(), 
+              secret.encode(),
+              message.encode(),
               hashlib.sha256
           ).hexdigest()
-          
+
           return hmac.compare_digest(signature, expected)
 
       def __call__(self, environ, start_response):
-          headers = {k[5:].replace('_', '-').title(): v 
-                    for k, v in environ.items() 
+          headers = {k[5:].replace('_', '-').title(): v
+                    for k, v in environ.items()
                     if k.startswith('HTTP_')}
-          
+
           api_key = headers.get('X-Api-Key')
           signature = headers.get('X-Signature')
           timestamp = headers.get('X-Timestamp')
-          
+
           if not all([api_key, signature, timestamp]):
               start_response('401 Unauthorized', [])
               return [b'Missing authentication headers']
-              
+
           # 获取请求体
           content_length = int(environ.get('CONTENT_LENGTH', 0))
           body = environ['wsgi.input'].read(content_length).decode('utf-8')
-          
+
           if not self.verify_signature(api_key, signature, timestamp, body):
               start_response('401 Unauthorized', [])
               return [b'Invalid signature']
-              
+
           return self.app(environ, start_response)
   ```
 
@@ -502,14 +502,14 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
   ```bash
   # 应用自定义中间件
   export COMFYUI_MIDDLEWARE="auth_middleware:CustomAuthMiddleware"
-  python main.py --listen 0.0.0.0 --port 8188 --custom-auth
+  python main.py --listen 0.0.0.0 --port 8000 --custom-auth
   ```
 
   **LobeChat 配置**：
 
   ```yaml
   认证类型：自定义
-  服务器地址：http://your-server:8188
+  服务器地址：http://your-server:8000
   自定义请求头：
   {
     "X-API-Key": "your_api_key",
@@ -533,20 +533,20 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
 
     # 检查认证配置（使用环境变量）
     curl -v -H "Authorization: Bearer $COMFYUI_TOKEN" \
-         http://your-server:8188/system_stats
+         http://your-server:8000/system_stats
 
     # 验证用户名密码
     echo -n "admin:password" | base64
 
     # 测试 Bearer Token（使用环境变量）
     curl -H "Authorization: Bearer $COMFYUI_TOKEN" \
-         http://your-server:8188/system_stats
+         http://your-server:8000/system_stats
 
     # 或使用文件方式避免环境变量泄露
     echo "Bearer your_actual_token_here" > ~/.comfyui_token
     chmod 600 ~/.comfyui_token  # 限制文件权限
     curl -H "Authorization: $(cat ~/.comfyui_token)" \
-         http://your-server:8188/system_stats
+         http://your-server:8000/system_stats
     ```
 
   **403 Forbidden**：
@@ -560,11 +560,11 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
   - **解决**：
     ```bash
     # 检查服务器状态
-    netstat -tulpn | grep 8188
+    netstat -tulpn | grep 8000
 
     # 检查防火墙
     sudo ufw status
-    sudo ufw allow 8188
+    sudo ufw allow 8000
 
     # 查看服务器日志
     tail -f comfyui.log
@@ -604,14 +604,14 @@ LobeChat ComfyUI 集成采用配置驱动的架构，支持 **223 个模型**，
   server {
       listen 443 ssl;
       server_name your-domain.com;
-      
+
       ssl_certificate /path/to/cert.pem;
       ssl_certificate_key /path/to/key.pem;
-      
+
       location / {
           auth_basic "ComfyUI Access";
           auth_basic_user_file /etc/nginx/.htpasswd;
-          proxy_pass http://localhost:8188;
+          proxy_pass http://localhost:8000;
           proxy_set_header X-Forwarded-Proto https;
       }
   }
@@ -714,10 +714,10 @@ LobeChat 集成了智能错误处理系统，能够自动诊断并提供针对�
 1. **检查服务器状态**：
    ```bash
    # 确认 ComfyUI 正在运行
-   curl http://localhost:8188/system_stats
+   curl http://localhost:8000/system_stats
 
    # 检查端口是否开放
-   netstat -tulpn | grep 8188
+   netstat -tulpn | grep 8000
    ```
 
 2. **验证网络连接**：
@@ -728,7 +728,7 @@ LobeChat 集成了智能错误处理系统，能够自动诊断并提供针对�
 3. **重启服务**：
    ```bash
    # 重启 ComfyUI 服务器
-   python main.py --listen 0.0.0.0 --port 8188
+   python main.py --listen 0.0.0.0 --port 8000
    ```
 
 ##### 🔑 认证和权限问题
@@ -1175,7 +1175,7 @@ interface ComfyUIResponse {
 **示例**：
 
 ```
-A young woman with flowing long hair, wearing an elegant blue dress, standing in a cherry blossom park, 
+A young woman with flowing long hair, wearing an elegant blue dress, standing in a cherry blossom park,
 sunlight filtering through leaves, warm atmosphere, cinematic lighting, 4K high resolution, detailed, photorealistic
 ```
 

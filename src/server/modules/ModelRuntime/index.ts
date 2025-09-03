@@ -93,7 +93,7 @@ const getParamsFromPayload = (provider: string, payload: ClientSecretPayload) =>
       } = llmConfig;
 
       // ComfyUI specific handling with environment variables fallback
-      const baseURL = payload?.baseURL || COMFYUI_BASE_URL || 'http://localhost:8188';
+      const baseURL = payload?.baseURL || COMFYUI_BASE_URL || 'http://127.0.0.1:8000';
 
       // ComfyUI supports multiple auth types: none, basic, bearer, custom
       // Extract all relevant auth fields from the payload or environment

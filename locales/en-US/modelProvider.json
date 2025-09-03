@@ -100,8 +100,8 @@
       "title": "Authentication Type"
     },
     "baseURL": {
-      "desc": "ComfyUI server access address, e.g., http://localhost:8188",
-      "placeholder": "http://localhost:8188",
+      "desc": "ComfyUI server access address, e.g., http://localhost:8000",
+      "placeholder": "http://localhost:8000",
       "title": "Server Address"
     },
     "checker": {

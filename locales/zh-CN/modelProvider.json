@@ -101,7 +101,7 @@
     },
     "baseURL": {
       "desc": "ComfyUI 网页访问地址",
-      "placeholder": "http://localhost:8188",
+      "placeholder": "http://localhost:8000",
       "title": "访问地址"
     },
     "checker": {
