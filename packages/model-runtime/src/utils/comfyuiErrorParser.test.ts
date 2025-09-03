@@ -35,15 +35,15 @@ describe('ComfyUIErrorParser', () => {
       });
 
       it('should identify ECONNREFUSED errors', () => {
-        const error = { message: 'connect ECONNREFUSED 127.0.0.1:8188', code: 'ECONNREFUSED' };
+        const error = { code: 'ECONNREFUSED', message: 'connect ECONNREFUSED 127.0.0.1:8000' };
         const result = parseComfyUIErrorMessage(error);
 
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
-        expect(result.error.message).toBe('connect ECONNREFUSED 127.0.0.1:8188');
+        expect(result.error.message).toBe('connect ECONNREFUSED 127.0.0.1:8000');
       });
 
       it('should identify ENOTFOUND errors', () => {
-        const error = { message: 'getaddrinfo ENOTFOUND localhost', code: 'ENOTFOUND' };
+        const error = { code: 'ENOTFOUND', message: 'getaddrinfo ENOTFOUND localhost' };
         const result = parseComfyUIErrorMessage(error);
 
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIServiceUnavailable);
@@ -162,12 +162,14 @@ describe('ComfyUIErrorParser', () => {
     });
 
     describe('model errors', () => {
-      it('should identify model not found errors', () => {
+      it('should identify model not found errors and extract file name', () => {
         const error = new Error('Model not found: flux-dev.safetensors');
         const result = parseComfyUIErrorMessage(error);
 
         expect(result.errorType).toBe(AgentRuntimeErrorType.ModelNotFound);
         expect(result.error.message).toBe('Model not found: flux-dev.safetensors');
+        expect(result.error.missingFileName).toBe('flux-dev.safetensors');
+        expect(result.error.missingFileType).toBe('model');
       });
 
       it('should identify checkpoint errors', () => {
@@ -178,12 +180,120 @@ describe('ComfyUIErrorParser', () => {
         expect(result.error.message).toBe('Checkpoint not found in models directory');
       });
 
-      it('should identify safetensors errors', () => {
+      it('should identify safetensors errors without specific file name', () => {
         const error = new Error('Failed to load safetensors file');
         const result = parseComfyUIErrorMessage(error);
 
         expect(result.errorType).toBe(AgentRuntimeErrorType.ModelNotFound);
         expect(result.error.message).toBe('Failed to load safetensors file');
+        expect(result.error.missingFileName).toBeUndefined();
+        expect(result.error.missingFileType).toBeUndefined();
+      });
+
+      it('should extract component file names correctly', () => {
+        const testCases = [
+          {
+            expectedFileName: 'clip_l.safetensors',
+            expectedType: 'component' as const,
+            message: 'CLIP model not found: clip_l.safetensors',
+          },
+          {
+            expectedFileName: 't5xxl_fp16.safetensors',
+            expectedType: 'component' as const,
+            message: 'T5 encoder missing: t5xxl_fp16.safetensors',
+          },
+          {
+            expectedFileName: 'vae_model.safetensors',
+            expectedType: 'model' as const,
+            message: 'VAE not found: vae_model.safetensors', // Not in SYSTEM_COMPONENTS, so treated as main model
+          },
+        ];
+
+        testCases.forEach(({ message, expectedFileName, expectedType }) => {
+          const error = new Error(message);
+          const result = parseComfyUIErrorMessage(error);
+
+          expect(result.error.missingFileName).toBe(expectedFileName);
+          expect(result.error.missingFileType).toBe(expectedType);
+        });
+      });
+
+      it('should extract main model file names correctly', () => {
+        const testCases = [
+          {
+            expectedFileName: 'sd_xl_base_1.0.safetensors',
+            expectedType: 'model' as const,
+            message: 'Checkpoint not found: sd_xl_base_1.0.safetensors',
+          },
+          {
+            expectedFileName: 'flux-schnell.ckpt',
+            expectedType: 'model' as const,
+            message: 'Model file missing: flux-schnell.ckpt',
+          },
+          {
+            expectedFileName: 'custom_model_v2.pt',
+            expectedType: 'model' as const,
+            message: 'Cannot load model: custom_model_v2.pt',
+          },
+        ];
+
+        testCases.forEach(({ message, expectedFileName, expectedType }) => {
+          const error = new Error(message);
+          const result = parseComfyUIErrorMessage(error);
+
+          expect(result.error.missingFileName).toBe(expectedFileName);
+          expect(result.error.missingFileType).toBe(expectedType);
+        });
+      });
+
+      it('should handle messages with multiple file names', () => {
+        const error = new Error('Missing files: flux-dev.safetensors and clip_l.safetensors');
+        const result = parseComfyUIErrorMessage(error);
+
+        // Should extract the first file found
+        expect(result.error.missingFileName).toBe('flux-dev.safetensors');
+        expect(result.error.missingFileType).toBe('model');
+      });
+
+      it('should handle messages without file names', () => {
+        const error = new Error('General model loading error');
+        const result = parseComfyUIErrorMessage(error);
+
+        expect(result.error.missingFileName).toBeUndefined();
+        expect(result.error.missingFileType).toBeUndefined();
+        expect(result.error.userGuidance).toBeUndefined();
+      });
+
+      it('should generate appropriate user guidance for different file types', () => {
+        const testCases = [
+          {
+            expectedGuidance:
+              'Missing model file: flux-dev.safetensors. Please download and place it in the models/checkpoints folder.',
+            message: 'Model not found: flux-dev.safetensors',
+          },
+          {
+            expectedGuidance:
+              'Missing CLIP text encoder: clip_l.safetensors. Please download and place it in the models/clip folder.',
+            message: 'CLIP model not found: clip_l.safetensors',
+          },
+          {
+            expectedGuidance:
+              'Missing T5 text encoder: t5xxl_fp16.safetensors. Please download and place it in the models/clip folder.',
+            message: 'T5 encoder missing: t5xxl_fp16.safetensors',
+          },
+          {
+            expectedGuidance:
+              'Missing model file: vae_model.safetensors. Please download and place it in the models/checkpoints folder.',
+            message: 'VAE not found: vae_model.safetensors',
+          },
+        ];
+
+        testCases.forEach(({ message, expectedGuidance }) => {
+          const error = new Error(message);
+          const result = parseComfyUIErrorMessage(error);
+
+          expect(result.error.userGuidance).toBe(expectedGuidance);
+        });
       });
 
       it('should identify ckpt_name errors', () => {
@@ -231,7 +341,7 @@ describe('ComfyUIErrorParser', () => {
 
     describe('SDK custom errors', () => {
       it('should identify CallWrapperError', () => {
-        const error = { name: 'CallWrapperError', message: 'Call wrapper failed' };
+        const error = { message: 'Call wrapper failed', name: 'CallWrapperError' };
         const result = parseComfyUIErrorMessage(error);
 
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
@@ -239,7 +349,7 @@ describe('ComfyUIErrorParser', () => {
       });
 
       it('should identify ExecutionInterruptedError', () => {
-        const error = { name: 'ExecutionInterruptedError', message: 'Execution was interrupted' };
+        const error = { message: 'Execution was interrupted', name: 'ExecutionInterruptedError' };
         const result = parseComfyUIErrorMessage(error);
 
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
@@ -247,7 +357,7 @@ describe('ComfyUIErrorParser', () => {
       });
 
       it('should identify MissingNodeError', () => {
-        const error = { name: 'MissingNodeError', message: 'Missing node in workflow' };
+        const error = { message: 'Missing node in workflow', name: 'MissingNodeError' };
         const result = parseComfyUIErrorMessage(error);
 
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
@@ -255,7 +365,7 @@ describe('ComfyUIErrorParser', () => {
       });
 
       it('should identify InvalidModelError', () => {
-        const error = { name: 'InvalidModelError', message: 'Model configuration is invalid' };
+        const error = { message: 'Model configuration is invalid', name: 'InvalidModelError' };
         const result = parseComfyUIErrorMessage(error);
 
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
@@ -263,7 +373,7 @@ describe('ComfyUIErrorParser', () => {
       });
 
       it('should identify WorkflowValidationError', () => {
-        const error = { name: 'WorkflowValidationError', message: 'Workflow validation failed' };
+        const error = { message: 'Workflow validation failed', name: 'WorkflowValidationError' };
         const result = parseComfyUIErrorMessage(error);
 
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
@@ -271,7 +381,7 @@ describe('ComfyUIErrorParser', () => {
       });
 
       it('should identify ComfyUIConnectionError', () => {
-        const error = { name: 'ComfyUIConnectionError', message: 'Connection to ComfyUI failed' };
+        const error = { message: 'Connection to ComfyUI failed', name: 'ComfyUIConnectionError' };
         const result = parseComfyUIErrorMessage(error);
 
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
@@ -279,7 +389,7 @@ describe('ComfyUIErrorParser', () => {
       });
 
       it('should identify ComfyUITimeoutError', () => {
-        const error = { name: 'ComfyUITimeoutError', message: 'ComfyUI operation timed out' };
+        const error = { message: 'ComfyUI operation timed out', name: 'ComfyUITimeoutError' };
         const result = parseComfyUIErrorMessage(error);
 
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
@@ -287,7 +397,7 @@ describe('ComfyUIErrorParser', () => {
       });
 
       it('should identify ComfyUIRuntimeError', () => {
-        const error = { name: 'ComfyUIRuntimeError', message: 'Runtime error occurred' };
+        const error = { message: 'Runtime error occurred', name: 'ComfyUIRuntimeError' };
         const result = parseComfyUIErrorMessage(error);
 
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
@@ -295,7 +405,7 @@ describe('ComfyUIErrorParser', () => {
       });
 
       it('should identify ComfyUIConfigError', () => {
-        const error = { name: 'ComfyUIConfigError', message: 'Configuration error detected' };
+        const error = { message: 'Configuration error detected', name: 'ComfyUIConfigError' };
         const result = parseComfyUIErrorMessage(error);
 
         expect(result.errorType).toBe(AgentRuntimeErrorType.ComfyUIBizError);
@@ -305,32 +415,32 @@ describe('ComfyUIErrorParser', () => {
       it('should identify SDK errors by message patterns', () => {
         const testCases = [
           {
+            expected: AgentRuntimeErrorType.ComfyUIBizError,
             message: 'SDK error: operation failed',
-            expected: AgentRuntimeErrorType.ComfyUIBizError,
           },
           {
+            expected: AgentRuntimeErrorType.ComfyUIBizError,
             message: 'Call wrapper timeout occurred',
-            expected: AgentRuntimeErrorType.ComfyUIBizError,
           },
           {
+            expected: AgentRuntimeErrorType.ComfyUIBizError,
             message: 'Execution interrupted by user',
-            expected: AgentRuntimeErrorType.ComfyUIBizError,
           },
           {
+            expected: AgentRuntimeErrorType.ComfyUIBizError,
             message: 'Missing node type in workflow',
-            expected: AgentRuntimeErrorType.ComfyUIBizError,
           },
           {
+            expected: AgentRuntimeErrorType.ComfyUIBizError,
             message: 'Invalid model configuration detected',
-            expected: AgentRuntimeErrorType.ComfyUIBizError,
           },
           {
+            expected: AgentRuntimeErrorType.ComfyUIBizError,
             message: 'SDK timeout after 30 seconds',
-            expected: AgentRuntimeErrorType.ComfyUIBizError,
           },
           {
-            message: 'SDK configuration error in settings',
             expected: AgentRuntimeErrorType.ComfyUIBizError,
+            message: 'SDK configuration error in settings',
           },
         ];
 
@@ -477,23 +587,23 @@ describe('ComfyUIErrorParser', () => {
         const testCases = [
           {
             code: 'WS_CONNECTION_FAILED',
-            message: 'WebSocket connection failed',
             expected: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
+            message: 'WebSocket connection failed',
           },
           {
             code: 'WS_TIMEOUT',
-            message: 'WebSocket timeout occurred',
             expected: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
+            message: 'WebSocket timeout occurred',
           },
           {
             code: 'WS_HANDSHAKE_FAILED',
-            message: 'WebSocket handshake failed',
             expected: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
+            message: 'WebSocket handshake failed',
           },
         ];
 
         testCases.forEach(({ code, message, expected }) => {
-          const error = { message, code };
+          const error = { code, message };
           const result = parseComfyUIErrorMessage(error);
           expect(result.errorType).toBe(expected);
           expect(result.error.message).toBe(message);
@@ -521,9 +631,9 @@ describe('ComfyUIErrorParser', () => {
     describe('enhanced workflow errors', () => {
       it('should identify workflow errors by node_id field', () => {
         const error = {
+          details: { nodeType: 'KSampler' },
           message: 'Node execution failed',
           node_id: '5',
-          details: { nodeType: 'KSampler' },
         };
         const result = parseComfyUIErrorMessage(error);
 
@@ -572,8 +682,8 @@ describe('ComfyUIErrorParser', () => {
 
       it('should extract exception_message from root level', () => {
         const error = {
-          message: 'General error occurred',
           exception_message: 'Detailed exception information',
+          message: 'General error occurred',
         };
         const result = parseComfyUIErrorMessage(error);
 
@@ -582,10 +692,10 @@ describe('ComfyUIErrorParser', () => {
 
       it('should extract exception_message from nested error', () => {
         const error = {
-          message: 'General error occurred',
           error: {
             exception_message: 'Nested exception details',
           },
+          message: 'General error occurred',
         };
         const result = parseComfyUIErrorMessage(error);
 
@@ -594,10 +704,10 @@ describe('ComfyUIErrorParser', () => {
 
       it('should handle deeply nested error.error.error', () => {
         const error = {
-          message: 'Top level message',
           error: {
             error: 'Deeply nested error message',
           },
+          message: 'Top level message',
         };
         const result = parseComfyUIErrorMessage(error);
 
@@ -606,10 +716,10 @@ describe('ComfyUIErrorParser', () => {
 
       it('should handle combined node fields and exception_message', () => {
         const error = {
-          message: 'General error',
-          node_id: '7',
-          nodeType: 'VAEDecode',
           exception_message: 'VAE decoding failed: invalid tensor shape',
+          message: 'General error',
+          nodeType: 'VAEDecode',
+          node_id: '7',
         };
         const result = parseComfyUIErrorMessage(error);
 
@@ -645,10 +755,10 @@ describe('ComfyUIErrorParser', () => {
     describe('structured error objects', () => {
       it('should handle already structured ComfyUI errors', () => {
         const error = {
-          message: 'Structured error message',
           code: 'WORKFLOW_ERROR',
-          status: 400,
           details: { nodeId: '5', nodeName: 'KSampler' },
+          message: 'Structured error message',
+          status: 400,
           type: 'workflow_error',
         };
         const result = parseComfyUIErrorMessage(error);
@@ -669,8 +779,8 @@ describe('ComfyUIErrorParser', () => {
       it('should handle nested error objects', () => {
         const error = {
           error: {
-            message: 'Nested error message',
             code: 'NESTED_ERROR',
+            message: 'Nested error message',
             status: 500,
           },
         };
@@ -749,10 +859,10 @@ describe('ComfyUIErrorParser', () => {
     describe('edge cases for status extraction', () => {
       it('should extract status from error.error.status', () => {
         const error = {
-          message: 'Error occurred',
           error: {
             status: 503,
           },
+          message: 'Error occurred',
         };
         const result = parseComfyUIErrorMessage(error);
         expect(result.error.status).toBe(503);
@@ -761,10 +871,10 @@ describe('ComfyUIErrorParser', () => {
 
       it('should extract status from error.error.statusCode', () => {
         const error = {
-          message: 'Error occurred',
           error: {
             statusCode: 429,
           },
+          message: 'Error occurred',
         };
         const result = parseComfyUIErrorMessage(error);
         expect(result.error.status).toBe(429);
@@ -772,10 +882,10 @@ describe('ComfyUIErrorParser', () => {
 
       it('should extract code from error.error.code', () => {
         const error = {
-          message: 'Error occurred',
           error: {
             code: 'RATE_LIMIT',
           },
+          message: 'Error occurred',
         };
         const result = parseComfyUIErrorMessage(error);
         expect(result.error.code).toBe('RATE_LIMIT');
@@ -884,9 +994,9 @@ describe('ComfyUIErrorParser', () => {
       it('should handle generic object with node_id and node_type in other object branch', () => {
         // This specifically tests lines 254-260 in the generic object branch
         const error = {
+          message: 'Node execution failed',
           node_id: 'node_123',
           node_type: 'LoadImageNode',
-          message: 'Node execution failed',
           // Ensure we're not in structured error branch
           unknownField: 'force generic object path',
         };
@@ -902,9 +1012,9 @@ describe('ComfyUIErrorParser', () => {
       it('should handle generic object with nodeId and nodeType fields', () => {
         // Test alternative field names in generic object branch
         const error = {
+          message: 'Text encoding failed',
           nodeId: 'node_456',
           nodeType: 'CLIPTextEncodeNode',
-          message: 'Text encoding failed',
           randomField: 'ensure generic path',
         };
         const result = parseComfyUIErrorMessage(error);
@@ -918,23 +1028,23 @@ describe('ComfyUIErrorParser', () => {
 
       it('should merge node fields with existing details from response.data', () => {
         const error = {
+          message: 'Sampling failed',
+          node_id: 'node_789',
+          node_type: 'SamplerNode',
           response: {
             data: {
               existingData: 'preserved',
               workflow_id: 'wf_123',
             },
           },
-          node_id: 'node_789',
-          node_type: 'SamplerNode',
-          message: 'Sampling failed',
         };
         const result = parseComfyUIErrorMessage(error);
         // Enhanced feature adds timestamp (no nodeInfo from "Sampling failed")
         expect(result.error.details).toMatchObject({
           existingData: 'preserved',
-          workflow_id: 'wf_123',
           node_id: 'node_789',
           node_type: 'SamplerNode',
+          workflow_id: 'wf_123',
         });
       });
 
@@ -943,8 +1053,8 @@ describe('ComfyUIErrorParser', () => {
           error: {
             someError: 'data',
           },
-          nodeId: 'mixed_node',
           message: 'Mixed error scenario',
+          nodeId: 'mixed_node',
         };
         const result = parseComfyUIErrorMessage(error);
         // Node fields are added to details
@@ -956,9 +1066,9 @@ describe('ComfyUIErrorParser', () => {
 
       it('should handle only node_type without node_id', () => {
         const error = {
-          node_type: 'VAEDecode',
-          message: 'VAE decoding failed',
           extraField: 'test',
+          message: 'VAE decoding failed',
+          node_type: 'VAEDecode',
         };
         const result = parseComfyUIErrorMessage(error);
         // Enhanced feature adds timestamp

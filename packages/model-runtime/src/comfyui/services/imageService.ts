@@ -151,10 +151,12 @@ export class ImageService {
         originalWidth = metadata.width;
         originalHeight = metadata.height;
       } else {
-        // Fallback for client-side (should never happen in production)
-        log('Warning: Running in browser environment, cannot read image dimensions');
-        originalWidth = 1024;
-        originalHeight = 1024;
+        // Sharp was incorrectly bundled to client-side - this is a build configuration error
+        throw new Error(
+          'FATAL: Sharp module was bundled to browser environment. This is a build configuration error. ' +
+            'Sharp is a native Node.js module and cannot run in the browser. ' +
+            'Please check your Next.js or webpack configuration.',
+        );
       }
 
       if (!originalWidth || !originalHeight) {
@@ -230,16 +232,6 @@ export class ImageService {
       log('Successfully replaced imageUrl with ComfyUI filename');
     } catch (error) {
       log('Failed to process image URL:', error);
-
-      // Re-throw with more context if it's a fetch error
-      if ((error as Error).message?.includes('fetch')) {
-        throw new ServicesError(
-          `Unable to fetch image from URL: ${imageUrl}`,
-          ServicesError.Reasons.IMAGE_FETCH_FAILED,
-          { imageUrl, originalError: (error as Error).message },
-        );
-      }
-
       throw error;
     }
   }

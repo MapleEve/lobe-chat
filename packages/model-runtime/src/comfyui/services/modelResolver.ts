@@ -34,6 +34,16 @@ export interface ModelValidationResult {
 }
 
 /**
+ * Internal model resolution details
+ */
+interface ModelResolutionDetails {
+  cleanId: string;
+  expectedFiles: string[];
+  fileName?: string;
+  variant?: string;
+}
+
+/**
  * Model Resolver Service
  * Provides model resolution, validation, and component selection
  *
@@ -55,75 +65,109 @@ export class ModelResolverService {
   }
 
   /**
+   * Internal method to resolve model details with all information
+   * This eliminates DRY violations between resolveModelFileName and validateModel
+   */
+  private async _resolveModelDetails(modelId: string): Promise<ModelResolutionDetails> {
+    log('Resolving model details:', modelId);
+
+    // Clean model ID (remove prefix)
+    const cleanId = modelId.replace(/^comfyui\//, '');
+
+    // Get mapped variant and expected files
+    const mappedVariant = MODEL_ID_VARIANT_MAP[cleanId];
+    const expectedFiles = mappedVariant ? getModelsByVariant(mappedVariant) : [];
+
+    // Special handling for custom SD models - force fixed filename
+    if (cleanId === 'stable-diffusion-custom' || cleanId === 'stable-diffusion-custom-refiner') {
+      const fixedFileName = CUSTOM_SD_CONFIG.MODEL_FILENAME;
+
+      // Verify the custom model file exists on server
+      const serverModels = await this.getAvailableModelFiles();
+      const fileName = serverModels.includes(fixedFileName) ? fixedFileName : undefined;
+
+      if (fileName) {
+        log('Resolved custom SD model to fixed filename:', fileName);
+      }
+
+      return {
+        cleanId,
+        expectedFiles,
+        fileName,
+        variant: mappedVariant,
+      };
+    }
+
+    // 1. Try model ID mapping first
+    log('Checking MODEL_ID_VARIANT_MAP for:', cleanId);
+    log('Mapped variant result:', mappedVariant);
+
+    if (mappedVariant) {
+      log('Found model ID mapping:', cleanId, '->', mappedVariant);
+      log('Prioritized models for variant', mappedVariant, ':', expectedFiles);
+
+      const serverModels = await this.getAvailableModelFiles();
+
+      // Find first available model from prioritized list
+      for (const filename of expectedFiles) {
+        if (serverModels.includes(filename)) {
+          log('Found available model by variant:', filename);
+          return {
+            cleanId,
+            expectedFiles,
+            fileName: filename,
+            variant: mappedVariant,
+          };
+        }
+      }
+
+      log('No prioritized models available on server for variant:', mappedVariant);
+    } else {
+      log('No mapping found for cleanId:', cleanId);
+    }
+
+    // 2. Direct registry lookup (filename is the registry key)
+    if (MODEL_REGISTRY[cleanId]) {
+      log('Found in registry:', cleanId);
+      return {
+        cleanId,
+        expectedFiles,
+        fileName: cleanId,
+        variant: mappedVariant,
+      };
+    }
+
+    // 3. If it's already a model file format, check if it exists on server
+    if (isModelFile(cleanId)) {
+      const serverModels = await this.getAvailableModelFiles();
+      if (serverModels.includes(cleanId)) {
+        log('Found on server:', cleanId);
+        return {
+          cleanId,
+          expectedFiles,
+          fileName: cleanId,
+          variant: mappedVariant,
+        };
+      }
+    }
+
+    // 4. Not found
+    return {
+      cleanId,
+      expectedFiles,
+      fileName: undefined,
+      variant: mappedVariant,
+    };
+  }
+
+  /**
    * Resolve a model ID to its actual filename
    * Fixed: removed over-defensive programming and guessing strategies
    */
   async resolveModelFileName(modelId: string): Promise<string | undefined> {
-    log('Resolving model:', modelId);
-
     return this.cacheManager.get(`model:${modelId}`, async () => {
-      // Clean model ID (remove prefix)
-      const cleanId = modelId.replace(/^comfyui\//, '');
-
-      // Special handling for custom SD models - force fixed filename
-      if (cleanId === 'stable-diffusion-custom' || cleanId === 'stable-diffusion-custom-refiner') {
-        // Both custom models use the same filename
-        const fixedFileName = CUSTOM_SD_CONFIG.MODEL_FILENAME;
-
-        // Verify the custom model file exists on server
-        const serverModels = await this.getAvailableModelFiles();
-        if (!serverModels.includes(fixedFileName)) {
-          return undefined;
-        }
-
-        log('Resolved custom SD model to fixed filename:', fixedFileName);
-        return fixedFileName;
-      }
-
-      // 1. Try model ID mapping first
-      log('Checking MODEL_ID_VARIANT_MAP for:', cleanId);
-      const mappedVariant = MODEL_ID_VARIANT_MAP[cleanId];
-      log('Mapped variant result:', mappedVariant);
-
-      if (mappedVariant) {
-        log('Found model ID mapping:', cleanId, '->', mappedVariant);
-
-        const prioritizedModels = getModelsByVariant(mappedVariant);
-        log('Prioritized models for variant', mappedVariant, ':', prioritizedModels);
-
-        const serverModels = await this.getAvailableModelFiles();
-
-        // Find first available model from prioritized list
-        for (const filename of prioritizedModels) {
-          if (serverModels.includes(filename)) {
-            log('Found available model by variant:', filename);
-            return filename;
-          }
-        }
-
-        log('No prioritized models available on server for variant:', mappedVariant);
-      } else {
-        log('No mapping found for cleanId:', cleanId);
-      }
-
-      // 2. Direct registry lookup (filename is the registry key)
-      if (MODEL_REGISTRY[cleanId]) {
-        log('Found in registry:', cleanId);
-        return cleanId;
-      }
-
-      // 3. If it's already a model file format, check if it exists on server
-      if (isModelFile(cleanId)) {
-        const serverModels = await this.getAvailableModelFiles();
-        if (serverModels.includes(cleanId)) {
-          log('Found on server:', cleanId);
-          return cleanId;
-        }
-        // Don't throw error yet, try other methods
-      }
-
-      // 4. Not found - return undefined
-      return undefined;
+      const details = await this._resolveModelDetails(modelId);
+      return details.fileName;
     });
   }
 
@@ -214,17 +258,26 @@ export class ModelResolverService {
 
   /**
    * Validate if a model exists
-   * @throws ModelResolverError if model not found
+   * @throws ModelResolverError if model not found with details about expected files
    */
   async validateModel(modelId: string): Promise<ModelValidationResult> {
-    const fileName = await this.resolveModelFileName(modelId);
-    if (!fileName) {
-      throw new ModelResolverError(
-        ModelResolverError.Reasons.MODEL_NOT_FOUND,
-        `Model not found: ${modelId}`,
-        { modelId },
-      );
+    // Use the internal method to get all resolution details
+    const details = await this._resolveModelDetails(modelId);
+
+    if (!details.fileName) {
+      // Create simplified error message with only top priority models
+      // expectedFiles are already sorted by priority from getModelsByVariant
+      const topPriorityFiles = details.expectedFiles.slice(0, 1); // Show top priority options
+
+      let errorMessage = `Model not found: ${topPriorityFiles.join(', ')}, please install one first.`;
+
+      throw new ModelResolverError(ModelResolverError.Reasons.MODEL_NOT_FOUND, errorMessage, {
+        expectedFiles: details.expectedFiles,
+        modelId,
+        variant: details.variant,
+      });
     }
-    return { actualFileName: fileName, exists: true };
+
+    return { actualFileName: details.fileName, exists: true };
   }
 }

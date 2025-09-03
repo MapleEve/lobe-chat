@@ -37,7 +37,7 @@ vi.mock('../../services/comfyuiClient', () => {
         },
       },
     }),
-    getPathImage: vi.fn().mockReturnValue('http://localhost:8188/view?filename=test.png'),
+    getPathImage: vi.fn().mockReturnValue('http://localhost:8000/view?filename=test.png'),
     validateConnection: vi.fn().mockResolvedValue(true),
   }));
   return { ComfyUIClientService: MockComfyUIClientService };
@@ -255,7 +255,7 @@ describe('LobeComfyUI - Core Functionality', () => {
       const result = await instance.createImage(payload);
 
       expect(result).toEqual({
-        imageUrl: 'http://localhost:8188/view?filename=test.png',
+        imageUrl: 'http://localhost:8000/view?filename=test.png',
       });
     });
 
@@ -274,7 +274,7 @@ describe('LobeComfyUI - Core Functionality', () => {
       const result = await instance.createImage(payload);
 
       expect(result).toEqual({
-        imageUrl: 'http://localhost:8188/view?filename=test.png',
+        imageUrl: 'http://localhost:8000/view?filename=test.png',
       });
     });
 
@@ -293,7 +293,7 @@ describe('LobeComfyUI - Core Functionality', () => {
       const result = await instance.createImage(payload);
 
       expect(result).toEqual({
-        imageUrl: 'http://localhost:8188/view?filename=test.png',
+        imageUrl: 'http://localhost:8000/view?filename=test.png',
       });
     });
 
@@ -309,7 +309,7 @@ describe('LobeComfyUI - Core Functionality', () => {
 
       // Should return a valid result
       expect(result).toEqual({
-        imageUrl: 'http://localhost:8188/view?filename=test.png',
+        imageUrl: 'http://localhost:8000/view?filename=test.png',
       });
     });
 
@@ -326,7 +326,7 @@ describe('LobeComfyUI - Core Functionality', () => {
       const result = await instance.createImage(payload);
 
       expect(result).toEqual({
-        imageUrl: 'http://localhost:8188/view?filename=test.png',
+        imageUrl: 'http://localhost:8000/view?filename=test.png',
       });
     });
   });

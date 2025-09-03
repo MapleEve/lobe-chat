@@ -285,7 +285,7 @@ describe('ComfyUI Internal Error System', () => {
         {
           attempts: 3,
           error: 'ECONNREFUSED',
-          url: 'http://localhost:8188',
+          url: 'http://localhost:8000',
         },
       );
 

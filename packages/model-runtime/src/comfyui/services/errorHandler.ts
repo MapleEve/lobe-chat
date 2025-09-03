@@ -123,7 +123,7 @@ export class ErrorHandlerService {
         [ServicesError.Reasons.INVALID_ARGS]: AgentRuntimeErrorType.InvalidComfyUIArgs,
         [ServicesError.Reasons.INVALID_AUTH]: AgentRuntimeErrorType.InvalidProviderAPIKey,
         [ServicesError.Reasons.INVALID_CONFIG]: AgentRuntimeErrorType.InvalidComfyUIArgs,
-        [ServicesError.Reasons.CONNECTION_FAILED]: AgentRuntimeErrorType.ComfyUIServiceUnavailable,
+        [ServicesError.Reasons.CONNECTION_FAILED]: AgentRuntimeErrorType.InvalidProviderAPIKey, // Trigger auth dialog for connection issues
         [ServicesError.Reasons.UPLOAD_FAILED]: AgentRuntimeErrorType.ComfyUIBizError,
         [ServicesError.Reasons.EXECUTION_FAILED]: AgentRuntimeErrorType.ComfyUIWorkflowError,
         [ServicesError.Reasons.MODEL_NOT_FOUND]: AgentRuntimeErrorType.ModelNotFound,

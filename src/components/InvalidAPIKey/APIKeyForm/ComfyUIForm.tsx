@@ -2,36 +2,60 @@
 
 import { ComfyUI } from '@lobehub/icons';
 import { Button, Icon, Select } from '@lobehub/ui';
-import { useTheme } from 'antd-style';
+import { createStyles, useTheme } from 'antd-style';
 import { Loader2Icon, Network } from 'lucide-react';
-import Image from 'next/image';
-import { memo, useEffect, useState } from 'react';
+import { memo, useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Center, Flexbox } from 'react-layout-kit';
 
 import { FormInput, FormPassword } from '@/components/FormInput';
 import KeyValueEditor from '@/components/KeyValueEditor';
-import { ErrorActionContainer, FormAction } from '@/features/Conversation/Error/style';
+import { FormAction } from '@/features/Conversation/Error/style';
 import { useAiInfraStore } from '@/store/aiInfra';
 import { ComfyUIKeyVault } from '@/types/user/settings';
 
-interface ComfyUIAuthProps {
-  onClose?: () => void;
-  onRecreate?: () => void;
+import { LoadingContext } from './LoadingContext';
+
+interface ComfyUIFormProps {
+  description: string;
 }
 
-const ComfyUIAuth = memo<ComfyUIAuthProps>(({ onClose, onRecreate }) => {
+const useStyles = createStyles(({ css, token }) => ({
+  comfyuiFormWide: css`
+    max-width: 900px !important;
+
+    /* Hide the avatar - target the first child which is the Avatar component */
+    > *:first-child {
+      display: none !important;
+    }
+  `,
+  container: css`
+    width: 100%;
+    max-width: 900px;
+    border: 1px solid ${token.colorSplit};
+    border-radius: 8px;
+
+    color: ${token.colorText};
+
+    background: ${token.colorBgContainer};
+  `,
+}));
+
+const ComfyUIForm = memo<ComfyUIFormProps>(({ description }) => {
   const { t } = useTranslation('error');
   const { t: s } = useTranslation('modelProvider');
   const theme = useTheme();
+  const { styles } = useStyles();
 
   // Use aiInfraStore for updating config (same as settings page)
   const updateAiProviderConfig = useAiInfraStore((s) => s.updateAiProviderConfig);
   const useFetchAiProviderRuntimeState = useAiInfraStore((s) => s.useFetchAiProviderRuntimeState);
 
+  const { loading, setLoading } = useContext(LoadingContext);
+
   // Fetch the runtime state to ensure config is loaded
-  // Pass true to force fetching from server (since we need user's configuration)
-  useFetchAiProviderRuntimeState(true);
+  // Pass true since this is for auth dialog (not initialization)
+  const fetchRuntimeState = useFetchAiProviderRuntimeState(true);
 
   // Get ComfyUI config from aiInfraStore (same as settings page)
   const comfyUIConfig = useAiInfraStore(
@@ -40,7 +64,6 @@ const ComfyUIAuth = memo<ComfyUIAuthProps>(({ onClose, onRecreate }) => {
 
   // State for showing base URL input - initially hidden
   const [showBaseURL, setShowBaseURL] = useState(false);
-  const [loading, setLoading] = useState(false);
 
   // State management for form values - initialize without config first
   const [formValues, setFormValues] = useState({
@@ -82,68 +105,44 @@ const ComfyUIAuth = memo<ComfyUIAuthProps>(({ onClose, onRecreate }) => {
     { label: s('comfyui.authType.options.custom'), value: 'custom' },
   ];
 
-  const handleValueChange = (field: string, value: any) => {
-    setFormValues((prev) => ({
-      ...prev,
+  const handleValueChange = async (field: string, value: any) => {
+    const newValues = {
+      ...formValues,
       [field]: value,
-    }));
-  };
+    };
+    setFormValues(newValues);
 
-  const handleSave = async () => {
+    // Skip validation for certain fields that can be empty
+    const skipValidation = ['customHeaders', 'apiKey', 'username', 'password'];
+
+    // Basic validation before saving
+    if (!skipValidation.includes(field) && field === 'baseURL' && !value) {
+      return; // Don't save if baseURL is empty
+    }
+
+    // Real-time save like other providers
+    setLoading(true);
     try {
-      setLoading(true);
-      // Basic validation
-      if (!formValues.baseURL) {
-        return;
-      }
-
-      if (formValues.authType === 'basic' && (!formValues.username || !formValues.password)) {
-        return;
-      }
-
-      if (formValues.authType === 'bearer' && !formValues.apiKey) {
-        return;
-      }
-
-      if (
-        formValues.authType === 'custom' &&
-        (!formValues.customHeaders || Object.keys(formValues.customHeaders).length === 0)
-      ) {
-        return;
-      }
-
-      // Update provider config using aiInfraStore
       await updateAiProviderConfig('comfyui', {
-        keyVaults: formValues,
+        keyVaults: newValues,
       });
-
-      // Refresh the runtime state after saving
-      await useAiInfraStore.getState().refreshAiProviderRuntimeState();
-
-      // Recreate the image generation
-      if (onRecreate) {
-        onRecreate();
-      }
+      // Refetch the runtime state to ensure config is synced
+      await fetchRuntimeState.mutate();
     } catch (error) {
-      console.error('Failed to save ComfyUI config:', error);
+      console.error('Failed to update ComfyUI config:', error);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleClose = () => {
-    if (onClose) {
-      onClose();
-    }
-  };
-
   return (
-    <ErrorActionContainer>
+    <Center className={styles.container} gap={24} padding={24}>
       <Center gap={16} paddingBlock={32} style={{ width: '100%' }}>
         <ComfyUI.Combine size={64} type={'color'} />
         <FormAction
-          avatar={<Image alt="LobeHub" height={42} src="/favicon.ico" width={42} />}
-          description={t('unlock.comfyui.description', { name: 'ComfyUI' })}
+          avatar={<div />}
+          className={styles.comfyuiFormWide}
+          description={description}
           title={t('unlock.comfyui.title', { name: 'ComfyUI' })}
         >
           <Flexbox gap={16} width="100%">
@@ -242,15 +241,11 @@ const ComfyUIAuth = memo<ComfyUIAuthProps>(({ onClose, onRecreate }) => {
             )}
           </Flexbox>
         </FormAction>
-        <Flexbox gap={12} style={{ maxWidth: 300 }} width={'100%'}>
-          <Button block onClick={handleSave} style={{ marginTop: 8 }} type={'primary'}>
-            {t('unlock.confirm')}
-          </Button>
-          <Button onClick={handleClose}>{t('unlock.closeMessage')}</Button>
-        </Flexbox>
       </Center>
-    </ErrorActionContainer>
+    </Center>
   );
 });
 
-export default ComfyUIAuth;
+ComfyUIForm.displayName = 'ComfyUIForm';
+
+export default ComfyUIForm;

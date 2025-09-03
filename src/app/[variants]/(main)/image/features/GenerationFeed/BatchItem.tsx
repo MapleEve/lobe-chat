@@ -19,7 +19,6 @@ import { useImageStore } from '@/store/image';
 import { AsyncTaskErrorType } from '@/types/asyncTask';
 import { GenerationBatch } from '@/types/generation';
 
-import ComfyUIAuth from './ComfyUIAuth';
 import { GenerationItem } from './GenerationItem';
 import { DEFAULT_MAX_ITEM_WIDTH } from './GenerationItem/utils';
 import { ReferenceImages } from './ReferenceImages';
@@ -116,21 +115,7 @@ export const GenerationBatchItem = memo<GenerationBatchItemProps>(({ batch }) =>
   );
 
   if (isInvalidApiKey) {
-    // Use custom ComfyUIAuth component for ComfyUI provider
-    if (batch.provider === 'comfyui') {
-      return (
-        <ComfyUIAuth
-          onClose={() => {
-            removeGenerationBatch(batch.id, activeTopicId!);
-          }}
-          onRecreate={() => {
-            recreateImage(batch.id);
-          }}
-        />
-      );
-    }
-
-    // Use default InvalidAPIKey for other providers
+    // Use unified InvalidAPIKey component for all providers (including ComfyUI)
     return (
       <InvalidAPIKey
         bedrockDescription={t('bedrock.unlock.imageGenerationDescription', { ns: 'modelProvider' })}

@@ -357,7 +357,7 @@ describe('ComfyUIClientService', () => {
       // Verify
       expect(result).toBe(true);
       expect(global.fetch).toHaveBeenCalledWith(
-        'http://localhost:8188/system_stats',
+        'http://localhost:8000/system_stats',
         expect.objectContaining({
           method: 'GET',
           headers: expect.objectContaining({

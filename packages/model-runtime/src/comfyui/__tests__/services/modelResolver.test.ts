@@ -19,31 +19,36 @@ vi.mock('../../config/modelRegistry', () => {
     'flux1-dev.safetensors': {
       family: 'flux',
       modelFamily: 'FLUX',
-      variant: 'flux-1-dev',
+      variant: 'dev',
+    },
+    'flux1-schnell.safetensors': {
+      family: 'flux',
+      modelFamily: 'FLUX',
+      variant: 'schnell',
     },
     'sd3.5_large.safetensors': {
       family: 'sd35',
       features: { inclclip: false },
       modelFamily: 'SD3.5',
-      variant: 'stable-diffusion-35',
+      variant: 'sd35',
     },
     'sd3.5_large_inclclip.safetensors': {
       family: 'sd35',
       features: { inclclip: true },
       modelFamily: 'SD3.5',
-      variant: 'stable-diffusion-35-inclclip',
+      variant: 'sd35-inclclip',
     },
     'sdxl_base.safetensors': {
       family: 'sdxl',
       modelFamily: 'SDXL',
-      variant: 'stable-diffusion-xl-base',
+      variant: 'sdxl-t2i',
     },
   };
 
   return {
     MODEL_ID_VARIANT_MAP: {
-      'flux-dev': 'flux-1-dev',
-      'flux-schnell': 'flux-1-schnell',
+      'flux-dev': 'dev',
+      'flux-schnell': 'schnell', // Fixed to match actual mapping
       'stable-diffusion-35': 'sd35',
     },
     MODEL_REGISTRY: configs,
@@ -56,24 +61,29 @@ vi.mock('../../utils/staticModelLookup', () => {
     'flux1-dev.safetensors': {
       family: 'flux',
       modelFamily: 'FLUX',
-      variant: 'flux-1-dev',
+      variant: 'dev',
+    },
+    'flux1-schnell.safetensors': {
+      family: 'flux',
+      modelFamily: 'FLUX',
+      variant: 'schnell',
     },
     'sd3.5_large.safetensors': {
       family: 'sd35',
       features: { inclclip: false },
       modelFamily: 'SD3.5',
-      variant: 'stable-diffusion-35',
+      variant: 'sd35',
     },
     'sd3.5_large_inclclip.safetensors': {
       family: 'sd35',
       features: { inclclip: true },
       modelFamily: 'SD3.5',
-      variant: 'stable-diffusion-35-inclclip',
+      variant: 'sd35-inclclip',
     },
     'sdxl_base.safetensors': {
       family: 'sdxl',
       modelFamily: 'SDXL',
-      variant: 'stable-diffusion-xl-base',
+      variant: 'sdxl-t2i',
     },
   };
 
@@ -214,7 +224,7 @@ describe('ModelResolverService', () => {
       mockClientService.getCheckpoints.mockResolvedValue([TEST_SD35_MODELS.LARGE]);
 
       await expect(service.validateModel(TEST_MODEL_SETS.NON_EXISTENT[0])).rejects.toThrow(
-        `Model not found: ${TEST_MODEL_SETS.NON_EXISTENT[0]}`,
+        'Model not found: , please install one first.',
       );
     });
 
@@ -392,6 +402,50 @@ describe('ModelResolverService', () => {
 
       await expect(service.validateModel('test-model.safetensors')).rejects.toThrow(
         ModelResolverError,
+      );
+    });
+
+    it('should include expected files in error message when model not found', async () => {
+      // Mock getCheckpoints to return empty array (no models available)
+      mockClientService.getCheckpoints.mockResolvedValue([]);
+
+      // Validate a known variant should throw with expected files
+      await expect(service.validateModel('comfyui/flux-schnell')).rejects.toMatchObject({
+        details: {
+          // The actual variant from MODEL_ID_VARIANT_MAP
+          expectedFiles: expect.arrayContaining(['flux1-schnell.safetensors']),
+
+          modelId: 'comfyui/flux-schnell',
+          variant: 'schnell',
+        },
+        message: expect.stringContaining(
+          'Model not found: flux1-schnell.safetensors, please install one first.',
+        ),
+      });
+
+      // Also verify the message contains expected files
+      await expect(service.validateModel('comfyui/flux-schnell')).rejects.toThrow(
+        'Model not found: flux1-schnell.safetensors, please install one first.',
+      );
+    });
+
+    it('should not include expected files for unknown models', async () => {
+      // Mock getCheckpoints to return empty array
+      mockClientService.getCheckpoints.mockResolvedValue([]);
+
+      // Validate an unknown model should throw without expected files
+      await expect(service.validateModel('comfyui/unknown-model')).rejects.toMatchObject({
+        details: {
+          expectedFiles: [],
+          modelId: 'comfyui/unknown-model',
+          variant: undefined,
+        },
+        message: 'Model not found: , please install one first.',
+      });
+
+      // Verify the message doesn't contain expected files
+      await expect(service.validateModel('comfyui/unknown-model')).rejects.toThrow(
+        'Model not found: , please install one first.',
       );
     });
   });

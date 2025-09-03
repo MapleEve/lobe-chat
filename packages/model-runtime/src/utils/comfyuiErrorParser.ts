@@ -1,16 +1,94 @@
+import { getComponentInfo, isSystemComponent } from '../comfyui/utils/componentInfo';
 import { AgentRuntimeErrorType, ILobeAgentRuntimeErrorType } from '../types/error';
 
 export interface ComfyUIError {
   code?: number | string;
   details?: any;
   message: string;
+  missingFileName?: string;
+  missingFileType?: 'model' | 'component';
   status?: number;
   type?: string;
+  userGuidance?: string;
 }
 
 export interface ParsedError {
   error: ComfyUIError;
   errorType: ILobeAgentRuntimeErrorType;
+}
+
+/**
+ * Generate user guidance message based on missing file info
+ * @param fileName - The missing file name
+ * @param fileType - The type of missing file
+ * @returns User-friendly guidance message
+ */
+function generateUserGuidance(fileName: string, fileType: 'model' | 'component'): string {
+  if (fileType === 'component') {
+    // Use centralized component info utility (DRY principle)
+    const componentInfo = getComponentInfo(fileName);
+
+    if (componentInfo) {
+      return `Missing ${componentInfo.displayName}: ${fileName}. Please download and place it in the ${componentInfo.folderPath} folder.`;
+    }
+
+    // Fallback for unknown components
+    return `Missing component file: ${fileName}. Please download and place it in the appropriate ComfyUI models folder.`;
+  }
+
+  // Main model files
+  return `Missing model file: ${fileName}. Please download and place it in the models/checkpoints folder.`;
+}
+
+/**
+ * Extract missing file information from error message
+ * @param message - Error message that may contain file names
+ * @returns Object with extracted file name and type, or null if no file found
+ */
+function extractMissingFileInfo(message: string): {
+  fileName: string;
+  fileType: 'model' | 'component';
+} | null {
+  if (!message) return null;
+
+  // Check for "Expected one of:" pattern from enhanced model errors
+  const expectedPattern = /expected one of:\s*([^.]+\.(?:safetensors|ckpt|pt|pth))/i;
+  const expectedMatch = message.match(expectedPattern);
+
+  if (expectedMatch) {
+    // Extract the first file from the match
+    const fileName = expectedMatch[1].trim().split(',')[0].trim();
+    if (fileName) {
+      return {
+        fileName,
+        fileType: 'model',
+      };
+    }
+  }
+
+  // Common model file extensions - allow dots in filename
+  const modelFilePattern = /([\w.-]+\.(?:safetensors|ckpt|pt|pth))\b/gi;
+  const fileMatch = message.match(modelFilePattern);
+
+  if (fileMatch) {
+    const fileName = fileMatch[0];
+
+    // Use centralized utility to check if it's a system component
+    if (isSystemComponent(fileName)) {
+      return {
+        fileName,
+        fileType: 'component',
+      };
+    }
+
+    // If not found in SYSTEM_COMPONENTS, treat as main model
+    return {
+      fileName,
+      fileType: 'model',
+    };
+  }
+
+  return null;
 }
 
 /**
@@ -35,15 +113,23 @@ function isModelError(error: any): boolean {
   const message = error?.message || String(error);
   const lowerMessage = message.toLowerCase();
 
-  return (
+  // Check for explicit model error patterns
+  const hasModelErrorPattern =
     lowerMessage.includes('model not found') ||
     lowerMessage.includes('checkpoint not found') ||
     lowerMessage.includes('model file not found') ||
     lowerMessage.includes('ckpt_name') ||
     lowerMessage.includes('no models available') ||
     lowerMessage.includes('safetensors') ||
-    error?.code === 'MODEL_NOT_FOUND'
-  );
+    error?.code === 'MODEL_NOT_FOUND';
+
+  // Also check if the error contains a model file that's missing
+  if (!hasModelErrorPattern) {
+    const fileInfo = extractMissingFileInfo(message);
+    return fileInfo !== null; // Any missing model file is considered a model error
+  }
+
+  return hasModelErrorPattern;
 }
 
 /**
@@ -162,8 +248,16 @@ function isWorkflowError(error: any): boolean {
 function extractComfyUIErrorInfo(error: any): ComfyUIError {
   // Handle string errors
   if (typeof error === 'string') {
+    const cleanedMessage = cleanComfyUIErrorMessage(error);
+    const fileInfo = extractMissingFileInfo(cleanedMessage);
+
     return {
-      message: cleanComfyUIErrorMessage(error),
+      message: cleanedMessage,
+      missingFileName: fileInfo?.fileName,
+      missingFileType: fileInfo?.fileType,
+      userGuidance: fileInfo
+        ? generateUserGuidance(fileInfo.fileName, fileInfo.fileType)
+        : undefined,
     };
   }
 
@@ -181,11 +275,19 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
       };
     }
 
+    const cleanedMessage = cleanComfyUIErrorMessage(error.message);
+    const fileInfo = extractMissingFileInfo(cleanedMessage);
+
     return {
       code: (error as any).code,
-      message: cleanComfyUIErrorMessage(error.message),
+      message: cleanedMessage,
+      missingFileName: fileInfo?.fileName,
+      missingFileType: fileInfo?.fileType,
       status: (error as any).status || (error as any).statusCode,
       type: error.name,
+      userGuidance: fileInfo
+        ? generateUserGuidance(fileInfo.fileName, fileInfo.fileType)
+        : undefined,
     };
   }
 
@@ -244,18 +346,32 @@ function extractComfyUIErrorInfo(error: any): ComfyUIError {
       };
     }
 
+    const cleanedMessage = cleanComfyUIErrorMessage(message);
+    const fileInfo = extractMissingFileInfo(cleanedMessage);
+
     return {
       code,
       details,
-      message: cleanComfyUIErrorMessage(message),
+      message: cleanedMessage,
+      missingFileName: fileInfo?.fileName,
+      missingFileType: fileInfo?.fileType,
       status: possibleStatus,
       type: error.type || error.name || error.constructor?.name,
+      userGuidance: fileInfo
+        ? generateUserGuidance(fileInfo.fileName, fileInfo.fileType)
+        : undefined,
     };
   }
 
   // Fallback handling
+  const cleanedMessage = cleanComfyUIErrorMessage(String(error));
+  const fileInfo = extractMissingFileInfo(cleanedMessage);
+
   return {
-    message: cleanComfyUIErrorMessage(String(error)),
+    message: cleanedMessage,
+    missingFileName: fileInfo?.fileName,
+    missingFileType: fileInfo?.fileType,
+    userGuidance: fileInfo ? generateUserGuidance(fileInfo.fileName, fileInfo.fileType) : undefined,
   };
 }
 
@@ -270,6 +386,24 @@ export function parseComfyUIErrorMessage(error: any): ParsedError {
 
   // Default error type
   let errorType: ILobeAgentRuntimeErrorType = AgentRuntimeErrorType.ComfyUIBizError;
+
+  // Check for JSON parsing errors (indicates non-ComfyUI service)
+  if (error instanceof SyntaxError || error?.name === 'SyntaxError') {
+    const message = error?.message || String(error);
+    if (message.includes('JSON') || message.includes('Unexpected token')) {
+      // JSON parsing failed - service is not ComfyUI
+      errorType = AgentRuntimeErrorType.InvalidProviderAPIKey;
+      return {
+        error: {
+          ...errorInfo,
+          message: 'Service is not ComfyUI - received non-JSON response',
+          userGuidance:
+            'The service at this URL is not a ComfyUI server. Please check your baseURL configuration.',
+        },
+        errorType,
+      };
+    }
+  }
 
   // 1. HTTP status code errors (priority check)
   const status = errorInfo.status;

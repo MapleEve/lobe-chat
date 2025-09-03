@@ -190,7 +190,7 @@ describe('LobeComfyUI - Constructor', () => {
     it('should initialize with default baseURL and no credentials', () => {
       new LobeComfyUI({});
 
-      expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8188', undefined, {
+      expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8000', undefined, {
         credentials: undefined,
       });
       // baseURL property test removed as instance is not used
@@ -276,7 +276,7 @@ describe('LobeComfyUI - Constructor', () => {
         username: 'testuser',
       });
 
-      expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8188', undefined, {
+      expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8000', undefined, {
         credentials: {
           password: 'testpass',
           type: 'basic',
@@ -291,7 +291,7 @@ describe('LobeComfyUI - Constructor', () => {
         authType: 'bearer',
       });
 
-      expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8188', undefined, {
+      expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8000', undefined, {
         credentials: {
           token: 'my-bearer-token',
           type: 'bearer_token',
@@ -308,7 +308,7 @@ describe('LobeComfyUI - Constructor', () => {
         },
       });
 
-      expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8188', undefined, {
+      expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8000', undefined, {
         credentials: {
           headers: {
             'Authorization': 'Custom token456',
@@ -324,7 +324,7 @@ describe('LobeComfyUI - Constructor', () => {
         authType: 'none',
       });
 
-      expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8188', undefined, {
+      expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8000', undefined, {
         credentials: undefined,
       });
     });
@@ -354,7 +354,7 @@ describe('LobeComfyUI - Constructor', () => {
         username: 'newuser',
       });
 
-      expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8188', undefined, {
+      expect(ComfyApi).toHaveBeenCalledWith('http://localhost:8000', undefined, {
         credentials: {
           password: 'newpass',
           type: 'basic',

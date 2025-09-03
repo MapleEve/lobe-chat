@@ -19,7 +19,7 @@ vi.mock('../../utils/workflowDetector');
 // Mock sharp module for image processing
 vi.mock('sharp', () => ({
   default: vi.fn((buffer) => ({
-    metadata: vi.fn().mockResolvedValue({ width: 1024, height: 1024 }),
+    metadata: vi.fn().mockResolvedValue({ height: 1024, width: 1024 }),
     resize: vi.fn().mockReturnThis(),
     toBuffer: vi.fn().mockResolvedValue(Buffer.from(buffer)),
   })),
@@ -286,7 +286,7 @@ describe('ImageService', () => {
 
       // Execute and verify
       await expect(imageService.createImage(payload)).rejects.toThrow(
-        /Unable to fetch image from URL/,
+        /Failed to fetch image: 404 Not Found/,
       );
     });
 
@@ -384,7 +384,7 @@ describe('ImageService', () => {
       });
 
       // Execute and verify
-      await expect(imageService.createImage(payload)).rejects.toThrow(/Unable to fetch image/);
+      await expect(imageService.createImage(payload)).rejects.toThrow(/Failed to fetch/);
     });
 
     it('should handle imageUrls array format', async () => {

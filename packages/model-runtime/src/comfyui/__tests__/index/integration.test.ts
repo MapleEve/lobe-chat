@@ -47,7 +47,7 @@ describe('LobeComfyUI - Integration Tests', () => {
         },
       }),
       getRawClient: vi.fn().mockReturnValue({
-        getPathImage: vi.fn().mockReturnValue('http://localhost:8188/image.png'),
+        getPathImage: vi.fn().mockReturnValue('http://localhost:8000/image.png'),
       }),
       validateConnection: vi.fn().mockResolvedValue(true),
     };
@@ -71,7 +71,7 @@ describe('LobeComfyUI - Integration Tests', () => {
     (WorkflowBuilderService as any).mockImplementation(() => mockWorkflowBuilderService);
 
     instance = new LobeComfyUI({
-      baseURL: 'http://localhost:8188',
+      baseURL: 'http://localhost:8000',
     });
   });
 
@@ -119,7 +119,7 @@ describe('LobeComfyUI - Integration Tests', () => {
       });
 
       // Mock getPathImage on the raw client
-      mockClientService.getPathImage = vi.fn().mockReturnValue('http://localhost:8188/image.png');
+      mockClientService.getPathImage = vi.fn().mockReturnValue('http://localhost:8000/image.png');
 
       const result = await instance.createImage({
         model: TEST_FLUX_MODELS.DEV,
@@ -142,7 +142,7 @@ describe('LobeComfyUI - Integration Tests', () => {
     });
 
     it('should execute workflow through client service', async () => {
-      mockClientService.getPathImage = vi.fn().mockReturnValue('http://localhost:8188/image.png');
+      mockClientService.getPathImage = vi.fn().mockReturnValue('http://localhost:8000/image.png');
 
       const result = await instance.createImage({
         model: TEST_FLUX_MODELS.DEV,
@@ -156,7 +156,7 @@ describe('LobeComfyUI - Integration Tests', () => {
       expect(mockClientService.validateConnection).toHaveBeenCalled();
       expect(mockClientService.executeWorkflow).toHaveBeenCalled();
       expect(result).toMatchObject({
-        imageUrl: 'http://localhost:8188/image.png',
+        imageUrl: 'http://localhost:8000/image.png',
       });
     });
 
@@ -199,7 +199,7 @@ describe('LobeComfyUI - Integration Tests', () => {
   describe('Service Integration', () => {
     it('should initialize all services correctly', () => {
       expect(ComfyUIClientService).toHaveBeenCalledWith({
-        baseURL: 'http://localhost:8188',
+        baseURL: 'http://localhost:8000',
       });
       expect(ModelResolverService).toHaveBeenCalledWith(mockClientService);
       expect(WorkflowBuilderService).toHaveBeenCalledWith(
@@ -216,7 +216,7 @@ describe('LobeComfyUI - Integration Tests', () => {
         exists: true,
       });
 
-      mockClientService.getPathImage = vi.fn().mockReturnValue('http://localhost:8188/image.png');
+      mockClientService.getPathImage = vi.fn().mockReturnValue('http://localhost:8000/image.png');
 
       await instance.createImage({
         model: TEST_FLUX_MODELS.SCHNELL,

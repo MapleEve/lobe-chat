@@ -75,7 +75,7 @@ export function createMockComfyApi() {
         },
       },
     }),
-    getPathImage: vi.fn().mockReturnValue('http://localhost:8188/view?filename=test.png'),
+    getPathImage: vi.fn().mockReturnValue('http://localhost:8000/view?filename=test.png'),
     init: vi.fn(),
     waitForReady: vi.fn().mockResolvedValue(undefined),
   };

@@ -1,5 +1,4 @@
 // @vitest-environment node
-import { CallWrapper, ComfyApi, PromptBuilder } from '@saintno/comfyui-sdk';
 import { Mock, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AgentRuntimeErrorType } from '../../../types/error';
@@ -42,7 +41,7 @@ vi.mock('../../services/comfyuiClient', () => {
           },
         },
       }),
-      getPathImage: vi.fn().mockReturnValue('http://localhost:8188/view?filename=test.png'),
+      getPathImage: vi.fn().mockReturnValue('http://localhost:8000/view?filename=test.png'),
       validateConnection: vi.fn().mockResolvedValue(true),
     };
     return mockClientService;
@@ -95,7 +94,7 @@ const serviceUnavailableErrorType = 'ComfyUIServiceUnavailable';
 const modelNotFoundErrorType = 'ModelNotFound';
 
 describe('LobeComfyUI - Error Handling', () => {
-  const { inputCalls } = setupAllMocks();
+  setupAllMocks();
   let instance: LobeComfyUI;
 
   beforeEach(async () => {
@@ -117,22 +116,31 @@ describe('LobeComfyUI - Error Handling', () => {
     it('should throw ModelNotFound error when validation fails', async () => {
       // Mock service to throw ModelResolverError for model not found
       const { ModelResolverError } = await import('../../errors/modelResolverError');
+
+      // Test with known model that has expected files
       mockModelResolverService.validateModel.mockRejectedValue(
         new ModelResolverError(
           ModelResolverError.Reasons.MODEL_NOT_FOUND,
-          'Model not found: comfyui/unknown-model',
-          { modelId: 'comfyui/unknown-model' },
+          'Model not found: comfyui/flux-schnell. Expected one of: flux1-schnell.safetensors, flux-schnell-fp8.safetensors',
+          {
+            expectedFiles: ['flux1-schnell.safetensors', 'flux-schnell-fp8.safetensors'],
+            modelId: 'comfyui/flux-schnell',
+            variant: 'schnell',
+          },
         ),
       );
 
       const payload: CreateImagePayload = {
-        model: 'comfyui/unknown-model',
+        model: 'comfyui/flux-schnell',
         params: {
           prompt: 'Test no models',
         },
       };
 
       await expect(instance.createImage(payload)).rejects.toMatchObject({
+        error: expect.objectContaining({
+          message: expect.stringContaining('Expected one of:'),
+        }),
         errorType: modelNotFoundErrorType,
       });
     });
@@ -157,7 +165,7 @@ describe('LobeComfyUI - Error Handling', () => {
     it('should validate even with authType=none', async () => {
       const noneAuthInstance = new LobeComfyUI({
         authType: 'none',
-        baseURL: 'http://secure-server:8188',
+        baseURL: 'http://secure-server:8000',
       });
 
       // Mock validation to fail for this instance
@@ -266,7 +274,7 @@ describe('LobeComfyUI - Error Handling', () => {
       mockClientService.validateConnection.mockRejectedValue(
         new ModelResolverError(
           ModelResolverError.Reasons.CONNECTION_ERROR,
-          'connect ECONNREFUSED 127.0.0.1:8188',
+          'connect ECONNREFUSED 127.0.0.1:8000',
         ),
       );
 
@@ -332,7 +340,7 @@ describe('LobeComfyUI - Error Handling', () => {
     it('should throw InvalidProviderAPIKey for 401 status with basic auth', async () => {
       const comfyuiWithBasicAuth = new LobeComfyUI({
         authType: 'basic',
-        baseURL: 'http://localhost:8188',
+        baseURL: 'http://localhost:8000',
         password: 'pass',
         username: 'user',
       });
@@ -358,7 +366,7 @@ describe('LobeComfyUI - Error Handling', () => {
       const comfyuiWithBearer = new LobeComfyUI({
         apiKey: 'invalid-token',
         authType: 'bearer',
-        baseURL: 'http://localhost:8188',
+        baseURL: 'http://localhost:8000',
       });
 
       mockClientService.validateConnection.mockRejectedValue(
