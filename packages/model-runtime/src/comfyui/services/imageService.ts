@@ -10,7 +10,6 @@ import debug from 'debug';
 import type { CreateImagePayload, CreateImageResponse } from '../../types/image';
 import { nanoid } from '../../utils/uuid';
 import { ServicesError } from '../errors';
-import { imageResizer } from '../utils/imageResizer';
 import { WorkflowDetector } from '../utils/workflowDetector';
 import { ComfyUIClientService } from './comfyuiClient';
 import { ErrorHandlerService } from './errorHandler';
@@ -53,11 +52,14 @@ export class ImageService {
       const modelFileName = validation.actualFileName!;
 
       // Get architecture from workflow detection for image resizing
-      const detectionResult = WorkflowDetector.detectModelType(modelFileName);
+      // const detectionResult = WorkflowDetector.detectModelType(modelFileName);
 
       // Process image with architecture info for proper resizing
       // Note: This is fast if no imageUrl exists, so keeping it sequential is fine
-      await this.processImageFetch(params, detectionResult.architecture);
+      await this.processImageFetch(
+        params,
+        // , detectionResult.architecture
+      );
 
       // Build workflow with processed params (imageUrl already replaced with ComfyUI filename)
       const workflow = await this.buildWorkflow(model, modelFileName, params);
@@ -95,7 +97,7 @@ export class ImageService {
    */
   private async processImageFetch(
     params: Record<string, any>,
-    architecture?: string,
+    // architecture?: string, // TODO: Will be used when server-side resizing is re-enabled
   ): Promise<void> {
     const imageUrl = params.imageUrl || params.imageUrls?.[0];
 
@@ -138,82 +140,23 @@ export class ImageService {
         });
       }
 
-      // Get image metadata using sharp (only on server-side)
-      let originalWidth: number | undefined;
-      let originalHeight: number | undefined;
+      // TODO: [TEMPORARY REMOVAL] Image dimension detection has been temporarily removed.
+      // The server-side upload function should handle dimension detection and preprocessing.
+      log('Skipping image dimension detection - will be handled by server-side upload function');
 
-      // Only use sharp on server-side (Node.js environment)
-      if (typeof window === 'undefined') {
-        const sharpModule = await import('sharp');
-        const sharp = sharpModule.default;
-        const sharpInstance = sharp(buffer);
-        const metadata = await sharpInstance.metadata();
-        originalWidth = metadata.width;
-        originalHeight = metadata.height;
-      } else {
-        // Sharp was incorrectly bundled to client-side - this is a build configuration error
-        throw new Error(
-          'FATAL: Sharp module was bundled to browser environment. This is a build configuration error. ' +
-            'Sharp is a native Node.js module and cannot run in the browser. ' +
-            'Please check your Next.js or webpack configuration.',
-        );
-      }
-
-      if (!originalWidth || !originalHeight) {
-        throw new ServicesError(
-          'Unable to read image dimensions',
-          ServicesError.Reasons.IMAGE_FETCH_FAILED,
-          { url: imageUrl },
-        );
-      }
-
-      // Save original dimensions to params for frontend progress rendering
-      // This ensures the progress block has the correct aspect ratio
-      if (!params.width) {
-        params.width = originalWidth;
-      }
-      if (!params.height) {
-        params.height = originalHeight;
-      }
-
-      log('Original image dimensions:', { height: originalHeight, width: originalWidth });
-
-      // Check if image needs resizing based on architecture
-      // Architecture is guaranteed to exist from WorkflowDetector
-      if (architecture) {
-        const resizeResult = imageResizer.calculateTargetDimensions(
-          originalWidth,
-          originalHeight,
-          architecture,
-        );
-
-        if (resizeResult.needsResize) {
-          log('Image needs resizing for architecture:', {
-            architecture,
-            original: { height: originalHeight, width: originalWidth },
-            target: { height: resizeResult.height, width: resizeResult.width },
-          });
-
-          // Resize image using sharp (only on server-side)
-          if (typeof window === 'undefined') {
-            const sharpModule = await import('sharp');
-            const sharp = sharpModule.default;
-            buffer = Buffer.from(
-              await sharp(buffer)
-                .resize(resizeResult.width, resizeResult.height, {
-                  fit: 'inside', // Maintain aspect ratio, fit within bounds
-                  withoutEnlargement: false, // Allow enlargement if needed
-                })
-                .toBuffer(),
-            );
-            log('Image resized successfully, new size:', buffer.length);
-          } else {
-            log('Warning: Cannot resize image in browser environment');
-          }
-        } else {
-          log('Image dimensions are within model limits, no resize needed');
-        }
-      }
+      // TODO: [ARCHITECTURE CHANGE] Image resizing functionality has been completely disabled.
+      // All image preprocessing (including dimension detection and resizing) should be handled
+      // by a server-side upload function that supports native modules.
+      //
+      // Future Implementation Plan:
+      // - The server-side upload function should:
+      //   1. Receive the image buffer
+      //   2. Perform dimension detection and resizing based on model architecture requirements
+      //   3. Upload the processed image to ComfyUI
+      //   4. Return the ComfyUI filename for workflow execution
+      //
+      // For now, images are used at their original dimensions.
+      log('Image resizing disabled - will be handled by server-side upload function');
 
       // Upload to ComfyUI - use timestamp + 4-char random ID to prevent conflicts
       const fileName = `LobeChat_img2img_${Date.now()}_${nanoid(4)}.png`;

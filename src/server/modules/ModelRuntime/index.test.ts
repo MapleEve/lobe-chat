@@ -429,7 +429,7 @@ describe('initModelRuntimeWithUserPayload method', () => {
       expect(runtime).toBeInstanceOf(ModelRuntime);
       expect(runtime['_runtime']).toBeInstanceOf(LobeComfyUI);
       // Should use environment variable defaults
-      expect(runtime['_runtime'].baseURL).toBe('http://localhost:8188');
+      expect(runtime['_runtime'].baseURL).toBe('http://127.0.0.1:8000');
     });
 
     it('ComfyUI provider: partial payload (mixed with env vars)', async () => {

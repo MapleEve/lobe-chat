@@ -16,15 +16,6 @@ vi.mock('../../services/workflowBuilder');
 vi.mock('../../services/errorHandler');
 vi.mock('../../utils/workflowDetector');
 
-// Mock sharp module for image processing
-vi.mock('sharp', () => ({
-  default: vi.fn((buffer) => ({
-    metadata: vi.fn().mockResolvedValue({ height: 1024, width: 1024 }),
-    resize: vi.fn().mockReturnThis(),
-    toBuffer: vi.fn().mockResolvedValue(Buffer.from(buffer)),
-  })),
-}));
-
 describe('ImageService', () => {
   let imageService: ImageService;
   let mockClientService: any;
