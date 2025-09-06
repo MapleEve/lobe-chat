@@ -79,6 +79,7 @@ export interface UserKeyVaults extends SearchEngineKeyVaults {
   modelscope?: OpenAICompatibleKeyVault;
   moonshot?: OpenAICompatibleKeyVault;
   nebius?: OpenAICompatibleKeyVault;
+  newapi?: OpenAICompatibleKeyVault;
   novita?: OpenAICompatibleKeyVault;
   nvidia?: OpenAICompatibleKeyVault;
   ollama?: OpenAICompatibleKeyVault;

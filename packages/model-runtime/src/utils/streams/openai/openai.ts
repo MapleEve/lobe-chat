@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import type { Stream } from 'openai/streaming';
 
-import { ChatMessageError, CitationItem } from '@/types/message';
+import { ChatCitationItem, ChatMessageError } from '@/types/message';
 
 import { ChatStreamCallbacks } from '../../../types';
 import { AgentRuntimeErrorType, ILobeAgentRuntimeErrorType } from '../../../types/error';
@@ -19,6 +19,28 @@ import {
   createTokenSpeedCalculator,
   generateToolCallId,
 } from '../protocol';
+
+// Process markdown base64 images: extract URLs and clean text in one pass
+const processMarkdownBase64Images = (text: string): { cleanedText: string; urls: string[] } => {
+  if (!text) return { cleanedText: text, urls: [] };
+
+  const urls: string[] = [];
+  const mdRegex = /!\[[^\]]*]\(\s*(data:image\/[\d+.A-Za-z-]+;base64,[^\s)]+)\s*\)/g;
+  let cleanedText = text;
+  let m: RegExpExecArray | null;
+
+  // Reset regex lastIndex to ensure we start from the beginning
+  mdRegex.lastIndex = 0;
+
+  while ((m = mdRegex.exec(text)) !== null) {
+    if (m[1]) urls.push(m[1]);
+  }
+
+  // Remove all markdown base64 image segments
+  cleanedText = text.replaceAll(mdRegex, '').trim();
+
+  return { cleanedText, urls };
+};
 
 const transformOpenAIStream = (
   chunk: OpenAI.ChatCompletionChunk,
@@ -137,7 +159,22 @@ const transformOpenAIStream = (
           return { data: null, id: chunk.id, type: 'text' };
         }
 
-        return { data: item.delta.content, id: chunk.id, type: 'text' };
+        const text = item.delta.content as string;
+        const { urls: images, cleanedText: cleaned } = processMarkdownBase64Images(text);
+        if (images.length > 0) {
+          const arr: StreamProtocolChunk[] = [];
+          if (cleaned) arr.push({ data: cleaned, id: chunk.id, type: 'text' });
+          arr.push(
+            ...images.map((url: string) => ({
+              data: url,
+              id: chunk.id,
+              type: 'base64_image' as const,
+            })),
+          );
+          return arr;
+        }
+
+        return { data: text, id: chunk.id, type: 'text' };
       }
 
       // OpenAI Search Preview 模型返回引用源
@@ -153,7 +190,7 @@ const transformOpenAIStream = (
                   ({
                     title: item.url_citation.title,
                     url: item.url_citation.url,
-                  }) as CitationItem,
+                  }) as ChatCitationItem,
               ),
             },
             id: chunk.id,
@@ -175,7 +212,7 @@ const transformOpenAIStream = (
                   ({
                     title: item.url,
                     url: item.url,
-                  }) as CitationItem,
+                  }) as ChatCitationItem,
               ),
             },
             id: chunk.id,
@@ -202,7 +239,7 @@ const transformOpenAIStream = (
                   ({
                     title: item,
                     url: item,
-                  }) as CitationItem,
+                  }) as ChatCitationItem,
               ),
             },
             id: chunk.id,
@@ -284,7 +321,7 @@ const transformOpenAIStream = (
           if (citations) {
             streamContext.returnedCitation = true;
 
-            return [
+            const baseChunks: StreamProtocolChunk[] = [
               {
                 data: {
                   citations: (citations as any[])
@@ -303,6 +340,24 @@ const transformOpenAIStream = (
                 type: streamContext?.thinkingInContent ? 'reasoning' : 'text',
               },
             ];
+            return baseChunks;
+          }
+        }
+
+        // 非思考模式下，额外解析 markdown 中的 base64 图片，按顺序输出 text -> base64_image
+        if (!streamContext?.thinkingInContent) {
+          const { urls, cleanedText: cleaned } = processMarkdownBase64Images(thinkingContent);
+          if (urls.length > 0) {
+            const arr: StreamProtocolChunk[] = [];
+            if (cleaned) arr.push({ data: cleaned, id: chunk.id, type: 'text' });
+            arr.push(
+              ...urls.map((url: string) => ({
+                data: url,
+                id: chunk.id,
+                type: 'base64_image' as const,
+              })),
+            );
+            return arr;
           }
         }
 
