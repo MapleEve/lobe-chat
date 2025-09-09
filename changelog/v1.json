@@ -1,5 +1,17 @@
 [
   {
+    "children": {},
+    "date": "2025-09-08",
+    "version": "1.126.0"
+  },
+  {
+    "children": {
+      "features": ["Add Math and TaskList to Editor."]
+    },
+    "date": "2025-09-08",
+    "version": "1.125.0"
+  },
+  {
     "children": {
       "fixes": ["Revert V1 Mobile."]
     },
