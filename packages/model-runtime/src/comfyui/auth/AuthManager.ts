@@ -25,14 +25,12 @@ export class AuthManager {
   private authHeaders: Record<string, string> | undefined;
 
   constructor(options: ComfyUIKeyVault) {
-    // 🔑 完全保持原有实现，不做任何修改
     this.validateOptions(options);
     this.credentials = this.createCredentials(options);
     this.authHeaders = this.createAuthHeaders(options);
   }
 
   getAuthHeaders(): Record<string, string> | undefined {
-    // 🔑 完全保持原有实现
     return this.authHeaders;
   }
 

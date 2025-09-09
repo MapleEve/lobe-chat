@@ -13,15 +13,10 @@ import type { WorkflowContext } from '@/server/services/comfyui/types';
 const ComfyUIParamsSchema = z.object({
   // Optional standard parameters
   aspectRatio: z.string().optional(),
-
   cfg: z.number().optional(),
-
   height: z.number().optional(),
-
   imageUrl: z.string().nullable().optional(),
-
   imageUrls: z.array(z.string()).optional(),
-  // Required parameter
   prompt: z.string(),
   samplerName: z.string().optional(),
   scheduler: z.string().optional(),

@@ -58,53 +58,30 @@ export class LobeComfyUI implements LobeRuntimeAI, AuthenticatedImageRuntime {
   }
 
   /**
-   * Create image using integrated Framework services (no tRPC overhead)
+   * Create image using tRPC to Framework services
    */
   async createImage(payload: CreateImagePayload): Promise<CreateImageResponse> {
     log('🎨 Creating image with model: %s', payload.model);
 
     try {
-      // Import Framework services dynamically to avoid circular dependencies
-      const { ComfyUIClientService } = await import(
-        '@/server/services/comfyui/core/comfyUIClientService'
-      );
-      const { ModelResolverService } = await import(
-        '@/server/services/comfyui/core/modelResolverService'
-      );
-      const { WorkflowBuilderService } = await import(
-        '@/server/services/comfyui/core/workflowBuilderService'
-      );
-      const { ImageService } = await import('@/server/services/comfyui/core/imageService');
+      // Use tRPC caller to invoke Framework services (Edge Runtime compatible)
+      const { createCallerFactory } = await import('@/libs/trpc/lambda');
+      const { lambdaRouter } = await import('@/server/routers/lambda');
 
-      // Initialize Framework layer services directly (no tRPC)
-      const clientService = new ComfyUIClientService(this.options);
-      const modelResolverService = new ModelResolverService(clientService);
+      // The tRPC router handles authentication through keyVaults middleware
+      const createCaller = createCallerFactory(lambdaRouter);
+      const caller = createCaller({});
 
-      // Create workflow context
-      const context = {
-        clientService,
-        modelResolverService,
-      };
-
-      const workflowBuilderService = new WorkflowBuilderService(context);
-
-      // Initialize image service with all dependencies
-      const imageService = new ImageService(
-        clientService,
-        modelResolverService,
-        workflowBuilderService,
-      );
-
-      // Execute image creation
-      const response = await imageService.createImage({
+      // Call Framework services through tRPC
+      const result = await caller.comfyui.createImage({
         model: payload.model,
+        options: this.options,
         params: payload.params,
       });
 
-      log('✅ Image creation completed successfully');
-      return response;
+      return result;
     } catch (error) {
-      log('❌ Image creation failed:', error);
+      log('❌ ComfyUI createImage error: %O', error);
       throw error;
     }
   }
