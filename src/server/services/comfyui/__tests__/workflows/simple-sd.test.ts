@@ -11,18 +11,13 @@ import { mockContext } from '@/server/services/comfyui/__tests__/helpers/mockCon
 import { setupAllMocks } from '@/server/services/comfyui/__tests__/setup/unifiedMocks';
 import { buildSimpleSDWorkflow } from '@/server/services/comfyui/workflows/simple-sd';
 
-// Mock utility functions
+// Setup basic mocks
 vi.mock('@/server/services/comfyui/utils/seedGenerator', () => ({
-  generateUniqueSeeds: vi.fn(() => ({
-    seed: 123456,
-    noiseSeed: 654321,
-  })),
+  generateUniqueSeeds: vi.fn(() => ({ seed: 123456, noiseSeed: 654321 })),
 }));
-
 vi.mock('../utils/workflowUtils', () => ({
   getWorkflowFilenamePrefix: vi.fn(() => 'simple-sd'),
 }));
-
 vi.mock('../utils/staticModelLookup', () => ({
   getModelConfig: vi.fn((modelName: string) => {
     // Mock model configuration mapping

@@ -21,8 +21,8 @@ export const TEST_SD35_MODELS = {
 
 // Real SDXL models from registry
 export const TEST_SDXL_MODELS = {
-  BASE: 'sdxl_base.safetensors',
-  TURBO: 'sdxl_turbo.safetensors',
+  BASE: 'sd_xl_base_1.0.safetensors',
+  TURBO: 'sd_xl_turbo_1.0_fp16.safetensors',
 } as const;
 
 // Custom SD model

@@ -10,8 +10,10 @@ import { ComfyUIClientService } from '@/server/services/comfyui/core/comfyUIClie
 import { ModelResolverService } from '@/server/services/comfyui/core/modelResolverService';
 import { ModelResolverError } from '@/server/services/comfyui/errors/modelResolverError';
 
-// Mock the client service
-vi.mock('@/server/services/comfyui/core/comfyUIClientService');
+// Mock ComfyUI Client Service
+vi.mock('@/server/services/comfyui/core/comfyUIClientService', () => ({
+  ComfyUIClientService: vi.fn(),
+}));
 
 // Mock the config module
 vi.mock('@/server/services/comfyui/config/modelRegistry', () => {

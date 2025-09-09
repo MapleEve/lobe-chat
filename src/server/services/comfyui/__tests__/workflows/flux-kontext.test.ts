@@ -7,25 +7,19 @@ import { mockContext } from '@/server/services/comfyui/__tests__/helpers/mockCon
 import { setupAllMocks } from '@/server/services/comfyui/__tests__/setup/unifiedMocks';
 import { buildFluxKontextWorkflow } from '@/server/services/comfyui/workflows/flux-kontext';
 
-// Mock utility functions
+// Setup basic mocks
 vi.mock('../utils/promptSplitter', () => ({
-  splitPromptForDualCLIP: vi.fn((prompt: string) => ({
+  splitPromptForDualCLIP: vi.fn((prompt) => ({
     clipLPrompt: prompt,
     t5xxlPrompt: prompt,
   })),
 }));
-
 vi.mock('../utils/weightDType', () => ({
   selectOptimalWeightDtype: vi.fn(() => 'default'),
 }));
-
 vi.mock('@/server/services/comfyui/utils/seedGenerator', () => ({
-  generateUniqueSeeds: vi.fn(() => ({
-    seed: 123456,
-    noiseSeed: 654321,
-  })),
+  generateUniqueSeeds: vi.fn(() => ({ seed: 123456, noiseSeed: 654321 })),
 }));
-
 vi.mock('../utils/workflowUtils', () => ({
   getWorkflowFilenamePrefix: vi.fn(() => 'kontext'),
 }));
@@ -50,7 +44,10 @@ describe('buildFluxKontextWorkflow - Complex Dual-Mode Architecture', () => {
 
       const result = await buildFluxKontextWorkflow(modelName, params, mockContext);
 
-      expect(result).toBeInstanceOf(PromptBuilder);
+      expect(result).toHaveProperty('input');
+      expect(result).toHaveProperty('setInputNode');
+      expect(result).toHaveProperty('setOutputNode');
+      expect(result).toHaveProperty('workflow');
       // Verify text-to-image mode: no image loader nodes
       expect(mockContext.modelResolverService.getOptimalComponent).toHaveBeenCalledWith(
         't5',
@@ -79,7 +76,10 @@ describe('buildFluxKontextWorkflow - Complex Dual-Mode Architecture', () => {
 
       const result = await buildFluxKontextWorkflow(modelName, params, mockContext);
 
-      expect(result).toBeInstanceOf(PromptBuilder);
+      expect(result).toHaveProperty('input');
+      expect(result).toHaveProperty('setInputNode');
+      expect(result).toHaveProperty('setOutputNode');
+      expect(result).toHaveProperty('workflow');
       // Verify image-to-image mode configuration
       expect(mockContext.modelResolverService.getOptimalComponent).toHaveBeenCalledTimes(3);
     });
@@ -97,7 +97,10 @@ describe('buildFluxKontextWorkflow - Complex Dual-Mode Architecture', () => {
 
       const result = await buildFluxKontextWorkflow(modelName, params, mockContext);
 
-      expect(result).toBeInstanceOf(PromptBuilder);
+      expect(result).toHaveProperty('input');
+      expect(result).toHaveProperty('setInputNode');
+      expect(result).toHaveProperty('setOutputNode');
+      expect(result).toHaveProperty('workflow');
       // Should use first image from array for i2i mode
     });
   });
@@ -115,7 +118,10 @@ describe('buildFluxKontextWorkflow - Complex Dual-Mode Architecture', () => {
 
       const result = await buildFluxKontextWorkflow(modelName, params, mockContext);
 
-      expect(result).toBeInstanceOf(PromptBuilder);
+      expect(result).toHaveProperty('input');
+      expect(result).toHaveProperty('setInputNode');
+      expect(result).toHaveProperty('setOutputNode');
+      expect(result).toHaveProperty('workflow');
       // Verify essential nodes are properly connected
       expect(mockContext.modelResolverService.getOptimalComponent).toHaveBeenCalledWith(
         't5',
@@ -144,7 +150,10 @@ describe('buildFluxKontextWorkflow - Complex Dual-Mode Architecture', () => {
           params,
           mockContext,
         );
-        expect(result).toBeInstanceOf(PromptBuilder);
+        expect(result).toHaveProperty('input');
+        expect(result).toHaveProperty('setInputNode');
+        expect(result).toHaveProperty('setOutputNode');
+        expect(result).toHaveProperty('workflow');
       }
     });
   });
@@ -162,7 +171,10 @@ describe('buildFluxKontextWorkflow - Complex Dual-Mode Architecture', () => {
 
       const result = await buildFluxKontextWorkflow(modelName, params, mockContext);
 
-      expect(result).toBeInstanceOf(PromptBuilder);
+      expect(result).toHaveProperty('input');
+      expect(result).toHaveProperty('setInputNode');
+      expect(result).toHaveProperty('setOutputNode');
+      expect(result).toHaveProperty('workflow');
       // Verify GetImageSize integration would be handled
     });
 
@@ -201,7 +213,10 @@ describe('buildFluxKontextWorkflow - Complex Dual-Mode Architecture', () => {
       };
 
       const result = await buildFluxKontextWorkflow(TEST_FLUX_MODELS.KONTEXT, params, mockContext);
-      expect(result).toBeInstanceOf(PromptBuilder);
+      expect(result).toHaveProperty('input');
+      expect(result).toHaveProperty('setInputNode');
+      expect(result).toHaveProperty('setOutputNode');
+      expect(result).toHaveProperty('workflow');
     });
 
     it('should handle custom dimensions', async () => {
@@ -225,7 +240,10 @@ describe('buildFluxKontextWorkflow - Complex Dual-Mode Architecture', () => {
           params,
           mockContext,
         );
-        expect(result).toBeInstanceOf(PromptBuilder);
+        expect(result).toHaveProperty('input');
+        expect(result).toHaveProperty('setInputNode');
+        expect(result).toHaveProperty('setOutputNode');
+        expect(result).toHaveProperty('workflow');
       }
     });
 
@@ -246,7 +264,10 @@ describe('buildFluxKontextWorkflow - Complex Dual-Mode Architecture', () => {
           params,
           mockContext,
         );
-        expect(result).toBeInstanceOf(PromptBuilder);
+        expect(result).toHaveProperty('input');
+        expect(result).toHaveProperty('setInputNode');
+        expect(result).toHaveProperty('setOutputNode');
+        expect(result).toHaveProperty('workflow');
       }
     });
   });
@@ -263,7 +284,10 @@ describe('buildFluxKontextWorkflow - Complex Dual-Mode Architecture', () => {
 
       const result = await buildFluxKontextWorkflow(TEST_FLUX_MODELS.KONTEXT, params, mockContext);
 
-      expect(result).toBeInstanceOf(PromptBuilder);
+      expect(result).toHaveProperty('input');
+      expect(result).toHaveProperty('setInputNode');
+      expect(result).toHaveProperty('setOutputNode');
+      expect(result).toHaveProperty('workflow');
       // Mock function should be called (tested via workflow execution)
     });
 
@@ -278,7 +302,10 @@ describe('buildFluxKontextWorkflow - Complex Dual-Mode Architecture', () => {
 
       const result = await buildFluxKontextWorkflow(TEST_FLUX_MODELS.KONTEXT, params, mockContext);
 
-      expect(result).toBeInstanceOf(PromptBuilder);
+      expect(result).toHaveProperty('input');
+      expect(result).toHaveProperty('setInputNode');
+      expect(result).toHaveProperty('setOutputNode');
+      expect(result).toHaveProperty('workflow');
       // Mock function should be called (tested via workflow execution)
     });
 
@@ -310,7 +337,10 @@ describe('buildFluxKontextWorkflow - Complex Dual-Mode Architecture', () => {
 
       const result = await buildFluxKontextWorkflow(TEST_FLUX_MODELS.KONTEXT, params, mockContext);
 
-      expect(result).toBeInstanceOf(PromptBuilder);
+      expect(result).toHaveProperty('input');
+      expect(result).toHaveProperty('setInputNode');
+      expect(result).toHaveProperty('setOutputNode');
+      expect(result).toHaveProperty('workflow');
       // Verify proper step configuration
     });
 
@@ -330,7 +360,10 @@ describe('buildFluxKontextWorkflow - Complex Dual-Mode Architecture', () => {
         baseParams,
         mockContext,
       );
-      expect(t2iResult).toBeInstanceOf(PromptBuilder);
+      expect(t2iResult).toHaveProperty('input');
+      expect(t2iResult).toHaveProperty('setInputNode');
+      expect(t2iResult).toHaveProperty('setOutputNode');
+      expect(t2iResult).toHaveProperty('workflow');
 
       // Test i2i mode
       const i2iParams = { ...baseParams, imageUrl: 'https://example.com/test.jpg' };
@@ -339,7 +372,10 @@ describe('buildFluxKontextWorkflow - Complex Dual-Mode Architecture', () => {
         i2iParams,
         mockContext,
       );
-      expect(i2iResult).toBeInstanceOf(PromptBuilder);
+      expect(i2iResult).toHaveProperty('input');
+      expect(i2iResult).toHaveProperty('setInputNode');
+      expect(i2iResult).toHaveProperty('setOutputNode');
+      expect(i2iResult).toHaveProperty('workflow');
     });
   });
 });

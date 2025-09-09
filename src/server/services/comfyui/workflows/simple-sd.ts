@@ -64,7 +64,7 @@ function shouldAttachVAE(modelConfig: ModelConfig | null): boolean {
     return false;
   }
 
-  // SD1 and SDXL models need external VAE
+  // SD1 and SDXL models typically need external VAE
   return modelConfig.modelFamily === 'SD1' || modelConfig.modelFamily === 'SDXL';
 }
 

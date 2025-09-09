@@ -99,7 +99,13 @@ export function resolveModel(modelName: string): ModelConfig | null {
   const cleanName = modelName.replace(/^comfyui\//, '');
 
   // First try exact match with filename
-  const config = getModelConfig(cleanName);
+  let config = getModelConfig(cleanName);
+  if (config) {
+    return config;
+  }
+
+  // Try case-insensitive match
+  config = getModelConfig(cleanName, { caseInsensitive: true });
   if (config) {
     return config;
   }

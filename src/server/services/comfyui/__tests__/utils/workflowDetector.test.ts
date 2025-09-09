@@ -7,9 +7,10 @@ import {
   WorkflowDetector,
 } from '@/server/services/comfyui/utils/workflowDetector';
 
-// Mock the staticModelLookup module
-vi.mock('../utils/staticModelLookup', () => ({
+// Mock static model lookup functions
+vi.mock('../../utils/staticModelLookup', () => ({
   resolveModel: vi.fn(),
+  getModelConfig: vi.fn(),
 }));
 
 describe('WorkflowDetector', () => {

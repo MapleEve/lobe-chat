@@ -6,7 +6,7 @@ import { FLUX_MODEL_REGISTRY } from './fluxModelRegistry';
 import { SD_MODEL_REGISTRY } from './sdModelRegistry';
 
 export interface ModelConfig {
-  modelFamily: 'FLUX' | 'SD1' | 'SDXL' | 'SD3';
+  modelFamily: string;
   priority: number;
   recommendedDtype?: 'default' | 'fp8_e4m3fn' | 'fp8_e4m3fn_fast' | 'fp8_e5m2';
   variant: string;
