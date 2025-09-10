@@ -5,7 +5,7 @@ import {
   sd15T2iParamsSchema,
   sd35ParamsSchema,
   sdxlT2iParamsSchema,
-} from '@/server/services/comfyui/../../../../packages/model-bank/src/aiModels/comfyui';
+} from 'model-bank/comfyui';
 
 export const parametersFixture = {
   models: {
