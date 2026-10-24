@@ -1,26 +1,17 @@
 'use client';
 
-import { memo, Suspense } from 'react';
+import { Suspense } from 'react';
 
-import Loading from '@/components/Loading/BrandTextLoading';
+import { delayed } from '@/components/Skeleton/Delayed';
+import SurfaceSkeleton from '@/components/Skeleton/Surface';
 import PageExplorerPlaceholder from '@/features/PageExplorer/PageExplorerPlaceholder';
-import { PageTitle } from '@/features/Pages';
 
-/**
- * Pages route - dedicated page for managing documents/pages
- * This is extracted from the /resource route to have its own dedicated space
- */
-const PagesPage = memo(() => {
+const PagesPage = () => {
   return (
-    <>
-      <PageTitle />
-      <Suspense fallback={<Loading debugId="PagesPage" />}>
-        <PageExplorerPlaceholder />
-      </Suspense>
-    </>
+    <Suspense fallback={delayed(<SurfaceSkeleton variant={'editor'} />)}>
+      <PageExplorerPlaceholder />
+    </Suspense>
   );
-});
-
-PagesPage.displayName = 'PagesPage';
+};
 
 export default PagesPage;

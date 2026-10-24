@@ -1,6 +1,6 @@
 ---
 name: version-release
-description: "Version release workflow. Use when the user mentions 'release', 'hotfix', 'version upgrade', 'weekly release', or '发版'/'发布'/'小班车'. This skill is for release process and GitHub Release notes (not docs/changelog page writing)."
+description: 'Version release workflow — release process and GitHub Release notes (not docs/changelog pages).'
 disable-model-invocation: true
 argument-hint: '[minor|patch] [version?]'
 ---
@@ -24,11 +24,11 @@ If the user asks for website changelog pages, load `../docs-changelog/SKILL.md`.
 
 For every `/version-release` execution, you MUST load and apply:
 
-- `../microcopy/SKILL.md`
+- `../../../DESIGN.md` (Voice & Content)
 
 ## Overview
 
-The primary development branch is **canary**. All day-to-day development happens on canary. When releasing, canary is merged into main. After merge, `auto-tag-release.yml` automatically handles tagging, version bumping, creating a GitHub Release, and syncing back to the canary branch.
+The primary development branch is **canary**. All day-to-day development happens on canary. When releasing, canary is merged into main. Conventional release PRs (`🚀 release: …`, `release/*`, `hotfix/*`) get a `package.json` bump commit from `release-pr-version.yml` while the PR is open. After merge, `auto-tag-release.yml` tags the merge commit and creates the GitHub Release. `sync-main-to-canary` runs on push to `main`.
 
 Only two release types are used in practice (major releases are extremely rare and can be ignored):
 
@@ -64,12 +64,11 @@ Triggered by the following priority:
 
 PRs that don't match any conditions above (e.g. `docs`, `chore`, `ci`, `test`) will not trigger a release when merged into main.
 
-## Post-Release Automated Actions
+## Automated Actions
 
-1. **Bump `package.json`** — commits `🔖 chore(release): release version v{x.y.z} [skip ci]`
-2. **Create annotated tag** — `v{x.y.z}`
-3. **Create GitHub Release**
-4. **Dispatch `sync-main-to-canary`** — syncs main back to canary
+1. **On the release PR** (`release-pr-version.yml`) — if `package.json` is behind, commit `🔖 chore(release): release version v{x.y.z}` to the PR head. Minor titles `🚀 release: v{x.y.z}` use that version; weekly / `release/*` / `hotfix/*` use latest stable tag + patch.
+2. **After merge** (`auto-tag-release.yml`) — tag `v{x.y.z}` on the merge commit and create the GitHub Release. Patch version is latest stable tag +1, not `package.json` +1.
+3. **`sync-main-to-canary`** — runs on push to `main`.
 
 ## Agent Action Guide
 

@@ -1,9 +1,8 @@
-import { ProviderIcon } from '@lobehub/icons';
-import { Block, Flexbox, Text } from '@lobehub/ui';
-import { createStaticStyles } from 'antd-style';
+import { Block, createStaticStyles, Flexbox, Text } from '@lobehub/ui';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ProviderIcon } from '@/components/LobeIcons';
 import { type DiscoverModelDetailProviderItem } from '@/types/discover';
 
 const styles = createStaticStyles(({ css, cssVar }) => {
@@ -26,7 +25,7 @@ const styles = createStaticStyles(({ css, cssVar }) => {
   };
 });
 
-const RelatedItem = memo<DiscoverModelDetailProviderItem>(({ id, name }) => {
+const RelatedItem = memo<DiscoverModelDetailProviderItem>(({ description, id, name }) => {
   const { t } = useTranslation('providers');
   return (
     <Block horizontal gap={12} key={id} padding={12} variant={'outlined'}>
@@ -48,7 +47,7 @@ const RelatedItem = memo<DiscoverModelDetailProviderItem>(({ id, name }) => {
             rows: 2,
           }}
         >
-          {t(`${id}.description`)}
+          {description && t(`${id}.description`, { defaultValue: description })}
         </Text>
       </Flexbox>
     </Block>

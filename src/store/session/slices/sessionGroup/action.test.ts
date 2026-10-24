@@ -8,15 +8,6 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-vi.mock('@/components/AntdStaticMethods', () => ({
-  message: {
-    loading: vi.fn(),
-    success: vi.fn(),
-    error: vi.fn(),
-    destroy: vi.fn(),
-  },
-}));
-
 describe('createSessionGroupSlice', () => {
   describe('addSessionGroup', () => {
     it('should add a session group and refresh sessions', async () => {
@@ -35,24 +26,6 @@ describe('createSessionGroupSlice', () => {
       expect(sessionService.createSessionGroup).toHaveBeenCalledWith(mockName);
       expect(spyOnRefreshSessions).toHaveBeenCalled();
       expect(returnedId).toBe(mockId);
-    });
-  });
-
-  describe('clearSessionGroups', () => {
-    it('should clear session groups and refresh sessions', async () => {
-      const spyOn = vi
-        .spyOn(sessionService, 'removeSessionGroups')
-        .mockResolvedValueOnce(undefined as any);
-      const spyOnRefreshSessions = vi.spyOn(useSessionStore.getState(), 'refreshSessions');
-
-      const { result } = renderHook(() => useSessionStore());
-
-      await act(async () => {
-        await result.current.clearSessionGroups();
-      });
-
-      expect(spyOn).toHaveBeenCalled();
-      expect(spyOnRefreshSessions).toHaveBeenCalled();
     });
   });
 

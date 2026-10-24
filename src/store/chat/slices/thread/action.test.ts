@@ -1,9 +1,11 @@
-import { type UIChatMessage } from '@lobechat/types';
+import { LOADING_FLAT } from '@lobechat/const';
+import { RequestTrigger, type UIChatMessage } from '@lobechat/types';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { type Mock } from 'vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { mutate } from '@/libs/swr';
+import { aiChatService } from '@/services/aiChat';
 import { chatService } from '@/services/chat';
 import { threadService } from '@/services/thread';
 import { type ThreadItem } from '@/types/topic';
@@ -20,10 +22,9 @@ vi.mock('@/libs/swr', async () => {
   };
 });
 
-vi.mock('zustand/traditional');
-
 // Mock version constants
-vi.mock('@/const/version', () => ({
+vi.mock(import('@/const/version'), async (importOriginal) => ({
+  ...(await importOriginal()),
   isDeprecatedEdition: false,
   isDesktop: false,
 }));
@@ -42,6 +43,12 @@ vi.mock('@/services/thread', () => ({
 vi.mock('@/services/chat', () => ({
   chatService: {
     fetchPresetTaskResult: vi.fn(),
+  },
+}));
+
+vi.mock('@/services/aiChat', () => ({
+  aiChatService: {
+    generateJSON: vi.fn(),
   },
 }));
 
@@ -139,165 +146,6 @@ describe('thread action', () => {
       });
 
       expect(useChatStore.getState()).toBe(stateBefore);
-    });
-  });
-
-  describe('openThreadCreator', () => {
-    it('should set thread creator state and open portal', () => {
-      const { result } = renderHook(() => useChatStore());
-      const pushPortalViewSpy = vi.spyOn(result.current, 'pushPortalView');
-
-      act(() => {
-        result.current.openThreadCreator('message-id');
-      });
-
-      expect(result.current.threadStartMessageId).toBe('message-id');
-      expect(result.current.portalThreadId).toBeUndefined();
-      expect(result.current.startToForkThread).toBe(true);
-      expect(pushPortalViewSpy).toHaveBeenCalledWith({
-        type: 'thread',
-        startMessageId: 'message-id',
-      });
-    });
-
-    it('should initialize optimistic parent messages from main scope messages', () => {
-      const { result } = renderHook(() => useChatStore());
-
-      const mainMessages: UIChatMessage[] = [
-        {
-          id: 'msg-1',
-          role: 'user',
-          content: 'first',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          agentId: 'test-session-id',
-        },
-        {
-          id: 'msg-2',
-          role: 'assistant',
-          content: 'reply',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          agentId: 'test-session-id',
-        },
-        {
-          id: 'msg-3',
-          role: 'user',
-          content: 'second',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          agentId: 'test-session-id',
-        },
-      ];
-
-      act(() => {
-        useChatStore.setState({
-          messagesMap: {
-            'main_test-session-id_test-topic-id': mainMessages,
-          },
-        });
-      });
-
-      const replaceMessagesSpy = vi.spyOn(result.current, 'replaceMessages');
-
-      act(() => {
-        result.current.openThreadCreator('msg-3');
-      });
-
-      // Should call replaceMessages with all 3 parent messages (continuation mode)
-      expect(replaceMessagesSpy).toHaveBeenCalledWith(
-        mainMessages,
-        expect.objectContaining({ action: 'initThreadMessages' }),
-      );
-    });
-
-    it('should use main scope messages even when activeThreadId is set (LOBE-5023)', () => {
-      const { result } = renderHook(() => useChatStore());
-
-      const mainMessages: UIChatMessage[] = [
-        {
-          id: 'msg-1',
-          role: 'user',
-          content: 'first',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          agentId: 'test-session-id',
-        },
-        {
-          id: 'msg-2',
-          role: 'assistant',
-          content: 'reply',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          agentId: 'test-session-id',
-        },
-        {
-          id: 'msg-3',
-          role: 'user',
-          content: 'second',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          agentId: 'test-session-id',
-        },
-      ];
-
-      const threadMessages: UIChatMessage[] = [
-        {
-          id: 'msg-1',
-          role: 'user',
-          content: 'first',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          agentId: 'test-session-id',
-        },
-        {
-          id: 'thread-msg-1',
-          role: 'user',
-          content: 'thread msg',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          agentId: 'test-session-id',
-          threadId: 'existing-thread',
-        },
-        {
-          id: 'thread-msg-2',
-          role: 'assistant',
-          content: 'thread reply',
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-          agentId: 'test-session-id',
-          threadId: 'existing-thread',
-        },
-      ];
-
-      act(() => {
-        useChatStore.setState({
-          activeThreadId: 'existing-thread',
-          messagesMap: {
-            // Main scope has all messages including msg-3
-            'main_test-session-id_test-topic-id': mainMessages,
-            // Thread scope does NOT have msg-3
-            'thread_test-session-id_test-topic-id_existing-thread': threadMessages,
-          },
-        });
-      });
-
-      const replaceMessagesSpy = vi.spyOn(result.current, 'replaceMessages');
-
-      act(() => {
-        // Fork from msg-3 which only exists in main scope
-        result.current.openThreadCreator('msg-3');
-      });
-
-      // BUG: if openThreadCreator uses activeDisplayMessages (which includes activeThreadId),
-      // it gets thread-scoped messages that don't contain msg-3,
-      // genParentMessages returns [], and replaceMessages is never called.
-      //
-      // FIX: openThreadCreator should always use main scope key to get messages.
-      expect(replaceMessagesSpy).toHaveBeenCalledWith(
-        mainMessages,
-        expect.objectContaining({ action: 'initThreadMessages' }),
-      );
     });
   });
 
@@ -473,7 +321,7 @@ describe('thread action', () => {
         await result.current.refreshThreads();
       });
 
-      expect(mutate).toHaveBeenCalledWith(['SWR_USE_FETCH_THREADS', 'test-topic-id']);
+      expect(mutate).toHaveBeenCalledWith(['thread:list', 'test-topic-id']);
     });
 
     it('should not mutate when activeTopicId is undefined', async () => {
@@ -597,14 +445,10 @@ describe('thread action', () => {
         },
       ];
 
-      (chatService.fetchPresetTaskResult as Mock).mockImplementation(
-        async ({ onMessageHandle, onFinish }) => {
-          await onMessageHandle?.({ text: 'New', type: 'text' });
-          await onMessageHandle?.({ text: ' Generated', type: 'text' });
-          await onMessageHandle?.({ text: ' Title', type: 'text' });
-          await onFinish?.('New Generated Title');
-        },
-      );
+      (aiChatService.generateJSON as Mock).mockResolvedValue({
+        data: { title: 'New Generated Title' },
+        tracingId: 'tracing-1',
+      });
 
       const internalUpdateSpy = vi
         .spyOn(result.current, 'internal_updateThread')
@@ -614,7 +458,14 @@ describe('thread action', () => {
         await result.current.summaryThreadTitle('thread-id', messages);
       });
 
-      expect(chatService.fetchPresetTaskResult).toHaveBeenCalled();
+      // Structured generation, not a chat completion — the raw text used to be
+      // written straight to the title, which leaked `{"title":"..."}`.
+      expect(chatService.fetchPresetTaskResult).not.toHaveBeenCalled();
+      expect((aiChatService.generateJSON as Mock).mock.calls[0][0]).toMatchObject({
+        metadata: { trigger: RequestTrigger.ThreadTitle },
+        schema: { name: 'topic_title' },
+        tracing: { scenario: 'topic_title' },
+      });
       expect(internalUpdateSpy).toHaveBeenCalledWith('thread-id', {
         title: 'New Generated Title',
       });
@@ -645,13 +496,11 @@ describe('thread action', () => {
         });
       });
 
-      (chatService.fetchPresetTaskResult as Mock).mockImplementation(
-        async ({ onLoadingChange, onFinish }) => {
-          await onLoadingChange?.(true);
-          await onFinish?.('Title');
-          await onLoadingChange?.(false);
-        },
-      );
+      const loadingSpy = vi.spyOn(result.current, 'internal_updateThreadLoading');
+      (aiChatService.generateJSON as Mock).mockResolvedValue({
+        data: { title: 'Title' },
+        tracingId: 'tracing-1',
+      });
 
       vi.spyOn(result.current, 'internal_updateThread').mockResolvedValue(undefined);
 
@@ -659,7 +508,8 @@ describe('thread action', () => {
         await result.current.summaryThreadTitle('thread-id', []);
       });
 
-      expect(chatService.fetchPresetTaskResult).toHaveBeenCalled();
+      expect(loadingSpy).toHaveBeenNthCalledWith(1, 'thread-id', true);
+      expect(loadingSpy).toHaveBeenLastCalledWith('thread-id', false);
     });
 
     it('should revert title on error', async () => {
@@ -687,9 +537,9 @@ describe('thread action', () => {
         });
       });
 
-      (chatService.fetchPresetTaskResult as Mock).mockImplementation(async ({ onError }) => {
-        await onError?.();
-      });
+      const titleSpy = vi.spyOn(result.current, 'internal_updateThreadTitleInSummary');
+      (aiChatService.generateJSON as Mock).mockRejectedValue(new Error('provider down'));
+      vi.spyOn(console, 'error').mockImplementation(() => {});
 
       vi.spyOn(result.current, 'internal_updateThread').mockResolvedValue(undefined);
 
@@ -697,8 +547,9 @@ describe('thread action', () => {
         await result.current.summaryThreadTitle('thread-id', []);
       });
 
-      // Should have called with LOADING_FLAT first, then reverted to old title on error
-      expect(chatService.fetchPresetTaskResult).toHaveBeenCalled();
+      // LOADING_FLAT first, then reverted to the old title on error
+      expect(titleSpy).toHaveBeenNthCalledWith(1, 'thread-id', LOADING_FLAT);
+      expect(titleSpy).toHaveBeenLastCalledWith('thread-id', 'Old Title');
     });
 
     it('should not run if no portal thread found', async () => {

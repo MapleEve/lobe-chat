@@ -1,4 +1,10 @@
-import type { LobeAgentConfig, MetaData } from '@lobechat/types';
+import type {
+  AssistantMarketSource,
+  DiscoverAssistantDetail,
+  HeterogeneousProviderConfig,
+  LobeAgentConfig,
+  MetaData,
+} from '@lobechat/types';
 import type { PartialDeep } from 'type-fest';
 
 // ==================== Service Interfaces ====================
@@ -8,13 +14,18 @@ import type { PartialDeep } from 'type-fest';
  * Can be implemented by client-side or server-side services
  */
 export interface IAgentService {
+  countAgents: (params?: { includeInbox?: boolean; keyword?: string }) => Promise<number>;
   createAgent: (params: { config: Record<string, unknown> }) => Promise<{
     agentId?: string;
-    sessionId?: string;
   }>;
   duplicateAgent: (agentId: string, newTitle?: string) => Promise<{ agentId: string } | null>;
   getAgentConfigById: (agentId: string) => Promise<LobeAgentConfig | null>;
-  queryAgents: (params: { keyword?: string; limit?: number }) => Promise<
+  queryAgents: (params: {
+    includeInbox?: boolean;
+    keyword?: string;
+    limit?: number;
+    offset?: number;
+  }) => Promise<
     Array<{
       avatar?: string | null;
       backgroundColor?: string | null;
@@ -40,6 +51,12 @@ export interface IDiscoverService {
     }>;
     totalCount: number;
   }>;
+  getAssistantDetail?: (params: {
+    identifier: string;
+    locale?: string;
+    source?: AssistantMarketSource;
+    version?: string;
+  }) => Promise<DiscoverAssistantDetail | undefined>;
   getMcpList: (params: { category?: string; pageSize?: number; q?: string }) => Promise<{
     items: Array<{
       author?: string;
@@ -133,6 +150,8 @@ export interface SearchAgentParams {
   category?: string;
   keyword?: string;
   limit?: number;
+  /** Number of workspace agents to skip, for paginating beyond the per-call limit */
+  offset?: number;
   source?: SearchAgentSource;
 }
 
@@ -140,6 +159,12 @@ export interface AgentSearchItem {
   avatar?: string;
   backgroundColor?: string;
   description?: string;
+  /**
+   * Heterogeneous agent runtime type (e.g. `claude-code`, `codex`), set only when
+   * the agent delegates execution to an external CLI/device runtime. Absent for
+   * normal model-runtime agents.
+   */
+  heteroType?: HeterogeneousProviderConfig['type'];
   id: string;
   isMarket?: boolean;
   title?: string;
@@ -147,8 +172,13 @@ export interface AgentSearchItem {
 
 export interface SearchAgentState {
   agents: AgentSearchItem[];
+  /** Whether more workspace agents exist beyond the returned page */
+  hasMore?: boolean;
   keyword?: string;
+  /** The offset used for this page of workspace agents */
+  offset?: number;
   source: SearchAgentSource;
+  /** Real total of matching agents across the searched sources (not just the returned page) */
   totalCount: number;
 }
 
@@ -228,11 +258,11 @@ export interface InstallPluginState {
   awaitingApproval?: boolean;
   error?: string;
   installed: boolean;
-  isKlavis?: boolean;
+  isComposio?: boolean;
   isLobehubSkill?: boolean;
-  oauthUrl?: string;
   pluginId: string;
   pluginName?: string;
+  redirectUrl?: string;
   serverName?: string;
   serverStatus?: 'connected' | 'pending_auth' | 'error' | 'not_connected';
   success: boolean;

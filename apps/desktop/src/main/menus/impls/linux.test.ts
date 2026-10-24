@@ -1,4 +1,5 @@
-import { app, dialog, Menu, shell } from 'electron';
+import { DOWNLOAD_URL } from '@lobechat/const/url';
+import { app, BrowserWindow, dialog, Menu, shell } from 'electron';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { App } from '@/core/App';
@@ -7,6 +8,9 @@ import { LinuxMenu } from './linux';
 
 // Mock Electron modules
 vi.mock('electron', () => ({
+  BrowserWindow: class BrowserWindow {
+    static getFocusedWindow = vi.fn();
+  },
   Menu: {
     buildFromTemplate: vi.fn((template) => ({ template })),
     setApplicationMenu: vi.fn(),
@@ -36,6 +40,8 @@ const createMockApp = () => {
       'file.preferences': 'Preferences',
       'file.quit': 'Quit',
       'common.checkUpdates': 'Check for Updates',
+      'common.restartToUpdate': 'Restart to update',
+      'common.updateUnsupported': 'Download latest version...',
       'window.close': 'Close',
       'window.minimize': 'Minimize',
       'window.title': 'Window',
@@ -95,6 +101,11 @@ const createMockApp = () => {
       }),
     },
     browserManager: {
+      getMainWindow: vi.fn(() => ({
+        broadcast: vi.fn(),
+        loadUrl: vi.fn(),
+        show: vi.fn(),
+      })),
       showMainWindow: vi.fn(),
       retrieveByIdentifier: vi.fn(() => ({
         show: vi.fn(),
@@ -102,6 +113,12 @@ const createMockApp = () => {
     },
     updaterManager: {
       checkForUpdates: vi.fn(),
+      getUpdaterState: vi.fn(() => ({ stage: 'idle' })),
+      installNow: vi.fn(),
+    },
+    storeManager: {
+      get: vi.fn(),
+      set: vi.fn(),
     },
   } as unknown as App;
 };
@@ -223,6 +240,9 @@ describe('LinuxMenu', () => {
 
   describe('menu item click handlers', () => {
     it('should handle preferences click', () => {
+      const mainWindow = { broadcast: vi.fn(), loadUrl: vi.fn(), show: vi.fn() };
+      (mockApp.browserManager.getMainWindow as any).mockReturnValue(mainWindow);
+
       linuxMenu.buildAndSetAppMenu();
 
       const template = (Menu.buildFromTemplate as any).mock.calls[0][0];
@@ -231,7 +251,9 @@ describe('LinuxMenu', () => {
 
       expect(preferencesItem).toBeDefined();
       preferencesItem.click();
-      expect(mockApp.browserManager.retrieveByIdentifier).toHaveBeenCalledWith('settings');
+      expect(mockApp.browserManager.getMainWindow).toHaveBeenCalled();
+      expect(mainWindow.show).toHaveBeenCalled();
+      expect(mainWindow.broadcast).toHaveBeenCalledWith('navigate', { path: '/settings' });
     });
 
     it('should handle check for updates click', () => {
@@ -246,6 +268,37 @@ describe('LinuxMenu', () => {
       expect(checkUpdatesItem).toBeDefined();
       checkUpdatesItem.click();
       expect(mockApp.updaterManager.checkForUpdates).toHaveBeenCalledWith({ manual: true });
+    });
+
+    // Regression: the Linux menu used to hard-code "Check for Updates" and never
+    // read the updater stage, so a downloaded update could not be installed from
+    // the menu at all — unlike macOS and Windows. Issue #19564.
+    it('offers restart-to-update once an update is downloaded', () => {
+      mockApp.updaterManager.getUpdaterState = vi.fn(() => ({ stage: 'downloaded' })) as any;
+      linuxMenu.buildAndSetAppMenu();
+
+      const template = (Menu.buildFromTemplate as any).mock.calls.at(-1)[0];
+      const fileMenu = template.find((item: any) => item.label === 'File');
+      const item = fileMenu.submenu.find((entry: any) => entry.label === 'Restart to update');
+
+      expect(item).toBeDefined();
+      item.click();
+      expect(mockApp.updaterManager.installNow).toHaveBeenCalled();
+    });
+
+    it('sends the user to the download page when the install format cannot self-update', () => {
+      mockApp.updaterManager.getUpdaterState = vi.fn(() => ({ stage: 'unsupported' })) as any;
+      linuxMenu.buildAndSetAppMenu();
+
+      const template = (Menu.buildFromTemplate as any).mock.calls.at(-1)[0];
+      const fileMenu = template.find((item: any) => item.label === 'File');
+      const item = fileMenu.submenu.find(
+        (entry: any) => entry.label === 'Download latest version...',
+      );
+
+      expect(item).toBeDefined();
+      item.click();
+      expect(shell.openExternal).toHaveBeenCalledWith(DOWNLOAD_URL.default);
     });
 
     it('should handle visit website click', async () => {
@@ -325,6 +378,100 @@ describe('LinuxMenu', () => {
       expect(closeItem.role).toBeUndefined();
     });
 
+    it('should close open DevTools before delegating CmdOrCtrl+W to renderer window logic', () => {
+      linuxMenu.buildAndSetAppMenu();
+
+      const template = (Menu.buildFromTemplate as any).mock.calls[0][0];
+      const fileMenu = template.find((item: any) => item.label === 'File');
+      const closeItem = fileMenu.submenu.find((item: any) => item.label === 'Close');
+      const focusedWindow = {
+        close: vi.fn(),
+        webContents: {
+          closeDevTools: vi.fn(),
+          isDevToolsOpened: vi.fn(() => true),
+        },
+      };
+
+      closeItem.click(undefined, focusedWindow);
+
+      expect(focusedWindow.webContents.closeDevTools).toHaveBeenCalled();
+      expect(focusedWindow.close).not.toHaveBeenCalled();
+      expect(mockApp.browserManager.getMainWindow).not.toHaveBeenCalled();
+    });
+
+    it('should broadcast tab close when CmdOrCtrl+W targets the main window', () => {
+      linuxMenu.buildAndSetAppMenu();
+
+      const template = (Menu.buildFromTemplate as any).mock.calls[0][0];
+      const fileMenu = template.find((item: any) => item.label === 'File');
+      const closeItem = fileMenu.submenu.find((item: any) => item.label === 'Close');
+      const mainBrowserWindow = {
+        close: vi.fn(),
+        webContents: {
+          closeDevTools: vi.fn(),
+          isDevToolsOpened: vi.fn(() => false),
+        },
+      };
+      const broadcast = vi.fn();
+      vi.mocked(mockApp.browserManager.getMainWindow).mockReturnValue({
+        broadcast,
+        browserWindow: mainBrowserWindow,
+      } as any);
+
+      closeItem.click(undefined, mainBrowserWindow);
+
+      expect(broadcast).toHaveBeenCalledWith('closeCurrentTabOrWindow');
+      expect(mainBrowserWindow.close).not.toHaveBeenCalled();
+    });
+
+    it('should close non-main windows when CmdOrCtrl+W has no DevTools panel to close', () => {
+      linuxMenu.buildAndSetAppMenu();
+
+      const template = (Menu.buildFromTemplate as any).mock.calls[0][0];
+      const fileMenu = template.find((item: any) => item.label === 'File');
+      const closeItem = fileMenu.submenu.find((item: any) => item.label === 'Close');
+      const mainBrowserWindow = {
+        webContents: {
+          isDevToolsOpened: vi.fn(() => false),
+        },
+      };
+      const focusedWindow = {
+        close: vi.fn(),
+        webContents: {
+          closeDevTools: vi.fn(),
+          isDevToolsOpened: vi.fn(() => false),
+        },
+      };
+      vi.mocked(mockApp.browserManager.getMainWindow).mockReturnValue({
+        broadcast: vi.fn(),
+        browserWindow: mainBrowserWindow,
+      } as any);
+
+      closeItem.click(undefined, focusedWindow);
+
+      expect(focusedWindow.close).toHaveBeenCalled();
+    });
+
+    it('should use the focused window when Electron does not pass a menu target window', () => {
+      linuxMenu.buildAndSetAppMenu();
+
+      const template = (Menu.buildFromTemplate as any).mock.calls[0][0];
+      const fileMenu = template.find((item: any) => item.label === 'File');
+      const closeItem = fileMenu.submenu.find((item: any) => item.label === 'Close');
+      const focusedWindow = {
+        close: vi.fn(),
+        webContents: {
+          closeDevTools: vi.fn(),
+          isDevToolsOpened: vi.fn(() => true),
+        },
+      };
+      vi.mocked(BrowserWindow.getFocusedWindow).mockReturnValue(focusedWindow as any);
+
+      closeItem.click();
+
+      expect(focusedWindow.webContents.closeDevTools).toHaveBeenCalled();
+    });
+
     it('should use role for minimize (accelerator handled by Electron)', () => {
       linuxMenu.buildAndSetAppMenu();
 
@@ -356,6 +503,18 @@ describe('LinuxMenu', () => {
 
       expect(fullscreenItem.role).toBe('togglefullscreen');
     });
+
+    it('should bind F12 to the explicit DevTools handler', () => {
+      linuxMenu.buildAndSetAppMenu();
+
+      const template = (Menu.buildFromTemplate as any).mock.calls[0][0];
+      const viewMenu = template.find((item: any) => item.label === 'View');
+      const devToolsItem = viewMenu.submenu.find((item: any) => item.label === 'Developer Tools');
+
+      expect(devToolsItem.accelerator).toBe('F12');
+      expect(typeof devToolsItem.click).toBe('function');
+      expect(devToolsItem.role).toBeUndefined();
+    });
   });
 
   describe('developer menu items', () => {
@@ -381,14 +540,15 @@ describe('LinuxMenu', () => {
       expect(mockApp.browserManager.retrieveByIdentifier).toHaveBeenCalledWith('devtools');
     });
 
-    it('should use role for developer tools (accelerator handled by Electron)', () => {
+    it('should use explicit handler for developer tools', () => {
       linuxMenu.buildAndSetAppMenu({ showDevItems: true });
 
       const template = (Menu.buildFromTemplate as any).mock.calls[0][0];
       const devMenu = template.find((item: any) => item.label === 'Developer');
       const devToolsItem = devMenu.submenu.find((item: any) => item.label === 'Developer Tools');
 
-      expect(devToolsItem.role).toBe('toggleDevTools');
+      expect(typeof devToolsItem.click).toBe('function');
+      expect(devToolsItem.role).toBeUndefined();
     });
 
     it('should include reload options in developer menu', () => {
@@ -486,13 +646,20 @@ describe('LinuxMenu', () => {
       const template = (Menu.buildFromTemplate as any).mock.calls[0][0];
       const viewMenu = template.find((item: any) => item.label === 'View');
 
-      const resetZoomItem = viewMenu.submenu.find((item: any) => item.role === 'resetZoom');
-      const zoomInItem = viewMenu.submenu.find((item: any) => item.role === 'zoomIn');
-      const zoomOutItem = viewMenu.submenu.find((item: any) => item.role === 'zoomOut');
+      const resetZoomItem = viewMenu.submenu.find((item: any) => item.label === 'Reset Zoom');
+      const zoomInItems = viewMenu.submenu.filter((item: any) => item.label === 'Zoom In');
+      const zoomInItem = zoomInItems.find((item: any) => item.visible !== false);
+      const alternateZoomInItem = zoomInItems.find((item: any) => item.visible === false);
+      const zoomOutItem = viewMenu.submenu.find((item: any) => item.label === 'Zoom Out');
 
-      expect(resetZoomItem).toBeDefined();
-      expect(zoomInItem).toBeDefined();
-      expect(zoomOutItem).toBeDefined();
+      expect(resetZoomItem.accelerator).toBe('CmdOrCtrl+0');
+      expect(typeof resetZoomItem.click).toBe('function');
+      expect(zoomInItem.accelerator).toBe('CmdOrCtrl+=');
+      expect(typeof zoomInItem.click).toBe('function');
+      expect(alternateZoomInItem.accelerator).toBe('CmdOrCtrl+Plus');
+      expect(typeof alternateZoomInItem.click).toBe('function');
+      expect(zoomOutItem.accelerator).toBe('CmdOrCtrl+-');
+      expect(typeof zoomOutItem.click).toBe('function');
     });
   });
 

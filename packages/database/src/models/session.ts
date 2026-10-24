@@ -1,31 +1,115 @@
-import { DEFAULT_AGENT_CONFIG, DEFAULT_INBOX_AVATAR, INBOX_SESSION_ID } from '@lobechat/const';
+import { DEFAULT_AGENT_CONFIG, INBOX_SESSION_ID } from '@lobechat/const';
 import type {
   ChatSessionList,
   LobeAgentConfig,
   LobeAgentSession,
   LobeGroupSession,
-  SessionRankItem,
 } from '@lobechat/types';
-import { and, asc, count, desc, eq, gt, inArray, isNull, not, or, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, exists, inArray, not, notExists, or, sql } from 'drizzle-orm';
 import type { PartialDeep } from 'type-fest';
 
 import { merge } from '@/utils/merge';
 
+import type { FtsSearchCandidateSource } from '../repositories/ftsSearch';
 import type { AgentItem, NewAgent, NewSession, SessionItem } from '../schemas';
-import { agents, agentsToSessions, sessionGroups, sessions, topics } from '../schemas';
+import { agents, agentsToSessions, sessionGroups, sessions } from '../schemas';
 import type { LobeChatDatabase } from '../type';
 import { sanitizeBm25Query } from '../utils/bm25';
 import { genEndDateWhere, genRangeWhere, genStartDateWhere, genWhere } from '../utils/genWhere';
 import { idGenerator } from '../utils/idGenerator';
+import { inJsonStringArray } from '../utils/inJsonStringArray';
+import { isTrashed, notTrashed } from '../utils/softDelete';
+import { buildWorkspacePayload, buildWorkspaceWhere } from '../utils/workspace';
 
+/**
+ * ParadeDB's BM25 (`@@@`) ordering rejects a `LIMIT` above 8192 with
+ * `error: min > max. min = 9999, max = 8192`.
+ *
+ * A page size used as "no pagination" therefore has to be clamped instead of
+ * passed through: `findSessionsByKeywords` swallows database errors, so an
+ * over-limit page size does not degrade gracefully — it silently returns *no*
+ * matches at all.
+ */
+const BM25_MAX_LIMIT = 8192;
+
+/**
+ * @deprecated Sessions are the legacy shell of an agent — see the `sessions`
+ * schema note. Reads here still exist for the mobile session list and legacy
+ * data; write paths should go through `AgentModel` / `TopicModel`.
+ */
 export class SessionModel {
   private userId: string;
   private db: LobeChatDatabase;
+  private ftsSearchCandidateSource?: FtsSearchCandidateSource;
+  private workspaceId?: string;
 
-  constructor(db: LobeChatDatabase, userId: string) {
+  constructor(
+    db: LobeChatDatabase,
+    userId: string,
+    workspaceId?: string,
+    ftsSearchCandidateSource?: FtsSearchCandidateSource,
+  ) {
     this.userId = userId;
     this.db = db;
+    this.workspaceId = workspaceId;
+    this.ftsSearchCandidateSource = ftsSearchCandidateSource;
   }
+
+  /** Compat scope only — used for the slug-uniqueness probe in {@link create}. */
+  private scope = () =>
+    buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, sessions);
+
+  /**
+   * Sessions carry no recycle-bin flag of their own (the agent is the
+   * restorable unit), so the gate goes through the linked agents' flags.
+   *
+   * Write gate: a shell with *any* trashed agent linked is not updatable in
+   * bulk, not hard-deletable through this model — deleting it would cascade
+   * away the topics the agent's restore needs — until the agent is restored
+   * (or the agent purge drops the shell with it).
+   */
+  private noTrashedAgent = () =>
+    notExists(
+      this.db
+        .select({ id: agentsToSessions.agentId })
+        .from(agentsToSessions)
+        .innerJoin(agents, eq(agentsToSessions.agentId, agents.id))
+        .where(and(eq(agentsToSessions.sessionId, sessions.id), isTrashed(agents.isDeleted))),
+    );
+
+  /**
+   * Read gate: a single-agent shell whose agent sits in the bin is invisible
+   * (not listed, not resolvable by id / slug, not updatable). A legacy
+   * `type === 'group'` shell stays reachable while any member is live; reads
+   * that join agents drop the trashed members via {@link liveAgentRow}.
+   */
+  private visible = () =>
+    or(
+      this.noTrashedAgent(),
+      and(
+        eq(sessions.type, 'group'),
+        exists(
+          this.db
+            .select({ id: agentsToSessions.agentId })
+            .from(agentsToSessions)
+            .innerJoin(agents, eq(agentsToSessions.agentId, agents.id))
+            .where(and(eq(agentsToSessions.sessionId, sessions.id), notTrashed(agents.isDeleted))),
+        ),
+      ),
+    );
+
+  /** For reads left-joining `agents`: drop rows of trashed members (null agent = no link, kept). */
+  private liveAgentRow = () => notTrashed(agents.isDeleted);
+
+  private ownership = () => and(this.scope(), this.visible());
+
+  private writeOwnership = () => and(this.scope(), this.noTrashedAgent());
+
+  private agentsOwnership = () =>
+    buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, agents);
+
+  private agentsToSessionsOwnership = () =>
+    buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, agentsToSessions);
   // **************** Query *************** //
 
   query = async ({ current = 0, pageSize = 9999 } = {}) => {
@@ -45,7 +129,7 @@ export class SessionModel {
       .leftJoin(agentsToSessions, eq(sessions.id, agentsToSessions.sessionId))
       .leftJoin(agents, eq(agentsToSessions.agentId, agents.id))
       .leftJoin(sessionGroups, eq(sessions.groupId, sessionGroups.id))
-      .where(and(eq(sessions.userId, this.userId), not(eq(sessions.slug, INBOX_SESSION_ID))))
+      .where(and(this.ownership(), this.liveAgentRow(), not(eq(sessions.slug, INBOX_SESSION_ID))))
       .orderBy(desc(sessions.updatedAt))
       .limit(pageSize)
       .offset(offset);
@@ -77,7 +161,10 @@ export class SessionModel {
 
     const groups = await this.db.query.sessionGroups.findMany({
       orderBy: [asc(sessionGroups.sort), desc(sessionGroups.createdAt)],
-      where: eq(sessions.userId, this.userId),
+      where: buildWorkspaceWhere(
+        { userId: this.userId, workspaceId: this.workspaceId },
+        sessionGroups,
+      ),
     });
 
     const mappedSessions = result.map((item) => this.mapSessionItem(item as any));
@@ -112,7 +199,8 @@ export class SessionModel {
       .where(
         and(
           or(eq(sessions.id, idOrSlug), eq(sessions.slug, idOrSlug)),
-          eq(sessions.userId, this.userId),
+          this.ownership(),
+          this.liveAgentRow(),
         ),
       )
       .leftJoin(agentsToSessions, eq(sessions.id, agentsToSessions.sessionId))
@@ -137,7 +225,7 @@ export class SessionModel {
       .from(sessions)
       .where(
         genWhere([
-          eq(sessions.userId, this.userId),
+          this.ownership(),
           params?.range
             ? genRangeWhere(params.range, sessions.createdAt, (date) => date.toDate())
             : undefined,
@@ -153,58 +241,11 @@ export class SessionModel {
     return result[0].count;
   };
 
-  _rank = async (limit: number = 10): Promise<SessionRankItem[]> => {
-    return this.db
-      .select({
-        avatar: agents.avatar,
-        backgroundColor: agents.backgroundColor,
-        count: count(topics.id).as('count'),
-        id: sessions.id,
-        title: agents.title,
-      })
-      .from(sessions)
-      .where(and(eq(sessions.userId, this.userId)))
-      .leftJoin(topics, eq(sessions.id, topics.sessionId))
-      .leftJoin(agentsToSessions, eq(sessions.id, agentsToSessions.sessionId))
-      .leftJoin(agents, eq(agentsToSessions.agentId, agents.id))
-      .groupBy(sessions.id, agentsToSessions.agentId, agents.id)
-      .having(({ count }) => gt(count, 0))
-      .orderBy(desc(sql`count`))
-      .limit(limit);
-  };
-
-  // TODO: In the future, once Inbox ID is stored in the database, we can directly use the _rank method
-  rank = async (limit: number = 10): Promise<SessionRankItem[]> => {
-    const inboxResult = await this.db
-      .select({
-        count: count(topics.id).as('count'),
-      })
-      .from(topics)
-      .where(and(eq(topics.userId, this.userId), isNull(topics.sessionId)));
-
-    const inboxCount = inboxResult[0].count;
-
-    if (!inboxCount || inboxCount === 0) return this._rank(limit);
-
-    const result = await this._rank(limit ? limit - 1 : undefined);
-
-    return [
-      {
-        avatar: DEFAULT_INBOX_AVATAR,
-        backgroundColor: null,
-        count: inboxCount,
-        id: INBOX_SESSION_ID,
-        title: 'inbox.title',
-      },
-      ...result,
-    ].sort((a, b) => b.count - a.count);
-  };
-
   hasMoreThanN = async (n: number): Promise<boolean> => {
     const result = await this.db
       .select({ id: sessions.id })
       .from(sessions)
-      .where(eq(sessions.userId, this.userId))
+      .where(and(this.ownership()))
       .limit(n + 1);
 
     return result.length > n;
@@ -231,8 +272,11 @@ export class SessionModel {
   }): Promise<SessionItem> => {
     return this.db.transaction(async (trx) => {
       if (slug) {
+        // Probe with the bare scope: a shell whose agent is in the bin still
+        // holds its slug (the unique index is not partial), so hiding it here
+        // would make the insert below collide.
         const existResult = await trx.query.sessions.findFirst({
-          where: and(eq(sessions.slug, slug), eq(sessions.userId, this.userId)),
+          where: and(eq(sessions.slug, slug), this.scope()),
         });
 
         if (existResult) return existResult;
@@ -268,15 +312,19 @@ export class SessionModel {
       if (type === 'group') {
         const result = await trx
           .insert(sessions)
-          .values({
-            ...session,
-            createdAt: new Date(),
-            id,
-            slug,
-            type,
-            updatedAt: new Date(),
-            userId: this.userId,
-          })
+          .values(
+            buildWorkspacePayload(
+              { userId: this.userId, workspaceId: this.workspaceId },
+              {
+                ...session,
+                createdAt: new Date(),
+                id,
+                slug,
+                type,
+                updatedAt: new Date(),
+              },
+            ),
+          )
           .returning();
 
         return result[0];
@@ -284,48 +332,57 @@ export class SessionModel {
 
       const newAgents = await trx
         .insert(agents)
-        .values({
-          avatar,
-          backgroundColor,
-          chatConfig: chatConfig || {},
-          createdAt: new Date(),
-          description,
-          editorData: editorData || null,
-          fewShots: examples || null, // Map examples to fewShots field
-          id: idGenerator('agents'),
-          marketIdentifier: identifier || marketIdentifier,
-          model: typeof model === 'string' ? model : null,
-          openingMessage,
-          openingQuestions,
-          params: params || {},
-          plugins,
-          provider,
-          systemRole,
-          tags,
-          title,
-          tts: tts || {},
-          updatedAt: new Date(),
-          userId: this.userId,
-        })
+        .values(
+          buildWorkspacePayload(
+            { userId: this.userId, workspaceId: this.workspaceId },
+            {
+              avatar,
+              backgroundColor,
+              chatConfig: chatConfig || {},
+              createdAt: new Date(),
+              description,
+              editorData: editorData || null,
+              fewShots: examples || null, // Map examples to fewShots field
+              id: idGenerator('agents'),
+              marketIdentifier: identifier || marketIdentifier,
+              model: typeof model === 'string' ? model : null,
+              openingMessage,
+              openingQuestions,
+              params: params || {},
+              plugins,
+              provider,
+              systemRole,
+              tags,
+              title,
+              tts: tts || {},
+              updatedAt: new Date(),
+            },
+          ),
+        )
         .returning();
 
       const result = await trx
         .insert(sessions)
-        .values({
-          ...session,
-          createdAt: new Date(),
-          id,
-          slug,
-          type,
-          updatedAt: new Date(),
-          userId: this.userId,
-        })
+        .values(
+          buildWorkspacePayload(
+            { userId: this.userId, workspaceId: this.workspaceId },
+            {
+              ...session,
+              createdAt: new Date(),
+              id,
+              slug,
+              type,
+              updatedAt: new Date(),
+            },
+          ),
+        )
         .returning();
 
       await trx.insert(agentsToSessions).values({
         agentId: newAgents[0].id,
         sessionId: id,
         userId: this.userId,
+        workspaceId: this.workspaceId ?? null,
       });
 
       return result[0];
@@ -334,26 +391,33 @@ export class SessionModel {
 
   createInbox = async (defaultAgentConfig: PartialDeep<LobeAgentConfig>) => {
     const item = await this.db.query.sessions.findFirst({
-      where: and(eq(sessions.userId, this.userId), eq(sessions.slug, INBOX_SESSION_ID)),
+      where: and(this.ownership(), eq(sessions.slug, INBOX_SESSION_ID)),
     });
 
     if (item) return;
 
     return await this.create({
-      config: merge(DEFAULT_AGENT_CONFIG, defaultAgentConfig),
+      // `merge` returns the `@lobechat/types` LobeAgentConfig shape
+      // (plugins: AgentPluginEntry[]); `create`'s `config` is the DB-layer
+      // NewAgent, whose `plugins` column type is intentionally left as
+      // `string[]` (only the domain types are widened for the tri-state
+      // rollout, not the JSONB column's compile-time annotation).
+      config: merge(DEFAULT_AGENT_CONFIG, defaultAgentConfig) as Partial<NewAgent>,
       slug: INBOX_SESSION_ID,
       type: 'agent',
     });
   };
 
   batchCreate = async (newSessions: NewSession[]) => {
-    const sessionsToInsert = newSessions.map((s) => {
-      return {
-        ...s,
-        id: this.genId(),
-        userId: this.userId,
-      };
-    });
+    const sessionsToInsert = newSessions.map((s) =>
+      buildWorkspacePayload(
+        { userId: this.userId, workspaceId: this.workspaceId },
+        {
+          ...s,
+          id: this.genId(),
+        },
+      ),
+    );
 
     return this.db.insert(sessions).values(sessionsToInsert);
   };
@@ -363,8 +427,7 @@ export class SessionModel {
 
     if (!result) return;
 
-    // eslint-disable-next-line unused-imports/no-unused-vars
-    const { agent, clientId, ...session } = result;
+    const { agent, clientId: _clientId, ...session } = result;
     const sessionId = this.genId();
 
     const { id: _, slug: __, ...config } = agent;
@@ -387,28 +450,38 @@ export class SessionModel {
    */
   delete = async (id: string) => {
     return this.db.transaction(async (trx) => {
+      // Resolve visibility BEFORE touching the links: the recycle-bin gate is
+      // evaluated through those links, so dropping them first would un-hide a
+      // shell whose agent is in the bin and let the cascade take its topics.
+      const [target] = await trx
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(and(eq(sessions.id, id), this.writeOwnership()))
+        .limit(1);
+      if (!target) return { orphanedAgentIds: [] as string[], result: { count: 0 } };
+
       // First get the agent IDs associated with this session
       const links = await trx
         .select({ agentId: agentsToSessions.agentId })
         .from(agentsToSessions)
-        .where(and(eq(agentsToSessions.sessionId, id), eq(agentsToSessions.userId, this.userId)));
+        .where(and(eq(agentsToSessions.sessionId, id), this.agentsToSessionsOwnership()));
 
       const agentIds = links.map((link) => link.agentId);
 
       // Delete links in agentsToSessions
       await trx
         .delete(agentsToSessions)
-        .where(and(eq(agentsToSessions.sessionId, id), eq(agentsToSessions.userId, this.userId)));
+        .where(and(eq(agentsToSessions.sessionId, id), this.agentsToSessionsOwnership()));
 
       // Delete the session (this will cascade delete messages, topics, etc.)
       const result = await trx
         .delete(sessions)
-        .where(and(eq(sessions.id, id), eq(sessions.userId, this.userId)));
+        .where(and(eq(sessions.id, id), this.writeOwnership()));
 
       // Delete orphaned agents
-      await this.clearOrphanAgent(agentIds, trx);
+      const orphanedAgentIds = await this.clearOrphanAgent(agentIds, trx);
 
-      return result;
+      return { orphanedAgentIds, result };
     });
   };
 
@@ -416,35 +489,40 @@ export class SessionModel {
    * Batch delete sessions and their associated agent data if no longer referenced.
    */
   batchDelete = async (ids: string[]) => {
-    if (ids.length === 0) return { count: 0 };
+    if (ids.length === 0) return { orphanedAgentIds: [] as string[], result: { count: 0 } };
 
     return this.db.transaction(async (trx) => {
+      // Same ordering rule as `delete`: settle which shells are visible before
+      // the links (that the visibility gate reads through) are removed.
+      const visible = await trx
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(and(inArray(sessions.id, ids), this.writeOwnership()));
+      ids = visible.map((row) => row.id);
+      if (ids.length === 0) return { orphanedAgentIds: [] as string[], result: { count: 0 } };
+
       // Get agent IDs associated with these sessions
       const links = await trx
         .select({ agentId: agentsToSessions.agentId })
         .from(agentsToSessions)
-        .where(
-          and(inArray(agentsToSessions.sessionId, ids), eq(agentsToSessions.userId, this.userId)),
-        );
+        .where(and(inArray(agentsToSessions.sessionId, ids), this.agentsToSessionsOwnership()));
 
       const agentIds = [...new Set(links.map((link) => link.agentId))];
 
       // Delete links in agentsToSessions
       await trx
         .delete(agentsToSessions)
-        .where(
-          and(inArray(agentsToSessions.sessionId, ids), eq(agentsToSessions.userId, this.userId)),
-        );
+        .where(and(inArray(agentsToSessions.sessionId, ids), this.agentsToSessionsOwnership()));
 
       // Delete the sessions
       const result = await trx
         .delete(sessions)
-        .where(and(inArray(sessions.id, ids), eq(sessions.userId, this.userId)));
+        .where(and(inArray(sessions.id, ids), this.writeOwnership()));
 
       // Delete orphaned agents
-      await this.clearOrphanAgent(agentIds, trx);
+      const orphanedAgentIds = await this.clearOrphanAgent(agentIds, trx);
 
-      return result;
+      return { orphanedAgentIds, result };
     });
   };
 
@@ -453,19 +531,52 @@ export class SessionModel {
    */
   deleteAll = async () => {
     return this.db.transaction(async (trx) => {
-      // Delete all agentsToSessions for this user
-      await trx.delete(agentsToSessions).where(eq(agentsToSessions.userId, this.userId));
-
-      // Delete all agents that were only used by this user's sessions
-      await trx.delete(agents).where(eq(agents.userId, this.userId));
-
-      // Delete all sessions for this user
-      return trx.delete(sessions).where(eq(sessions.userId, this.userId));
+      // Shells of trashed agents stay (their agent is still restorable); only
+      // visible shells and their links go.
+      const visible = await trx
+        .select({ id: sessions.id })
+        .from(sessions)
+        .where(this.writeOwnership());
+      const ids = visible.map((row) => row.id);
+      if (ids.length === 0) return { count: 0 };
+      await trx
+        .delete(agentsToSessions)
+        .where(and(inArray(agentsToSessions.sessionId, ids), this.agentsToSessionsOwnership()));
+      await trx.delete(agents).where(this.agentsOwnership());
+      return trx.delete(sessions).where(and(inArray(sessions.id, ids), this.scope()));
     });
   };
 
-  clearOrphanAgent = async (agentIds: string[], trx: any) => {
-    if (agentIds.length === 0) return;
+  /** Agents linked to a session — lets `removeSession` route through the agent trash handler. */
+  findLinkedAgentIds = async (sessionId: string): Promise<string[]> => {
+    const links = await this.db
+      .select({ agentId: agentsToSessions.agentId })
+      .from(agentsToSessions)
+      .where(and(eq(agentsToSessions.sessionId, sessionId), this.agentsToSessionsOwnership()));
+    return links.map((link) => link.agentId);
+  };
+
+  /**
+   * Whether `sessionId` is the agent's one and only shell and carries no other
+   * agent — i.e. removing the session means removing the agent. The schema
+   * allows an agent to be linked to several sessions (and a group shell to
+   * several agents); in either case only the selected shell may go. Link
+   * counting mirrors {@link clearOrphanAgent}: every link counts, so an agent
+   * is never treated as orphaned while anything still points at it.
+   */
+  isSoleShellOfAgent = async (sessionId: string, agentId: string): Promise<boolean> => {
+    const links = await this.db
+      .select({ agentId: agentsToSessions.agentId, sessionId: agentsToSessions.sessionId })
+      .from(agentsToSessions)
+      .where(or(eq(agentsToSessions.agentId, agentId), eq(agentsToSessions.sessionId, sessionId)));
+    return (
+      links.length > 0 &&
+      links.every((link) => link.agentId === agentId && link.sessionId === sessionId)
+    );
+  };
+
+  clearOrphanAgent = async (agentIds: string[], trx: any): Promise<string[]> => {
+    if (agentIds.length === 0) return [];
 
     // Batch query to find which agents still have sessions
     const remainingLinks = (await trx
@@ -483,8 +594,20 @@ export class SessionModel {
     if (orphanedAgentIds.length > 0) {
       await trx
         .delete(agents)
-        .where(and(inArray(agents.id, orphanedAgentIds), eq(agents.userId, this.userId)));
+        .where(and(inArray(agents.id, orphanedAgentIds), this.agentsOwnership()));
     }
+
+    return orphanedAgentIds;
+  };
+
+  /**
+   * Drop the legacy session shells of an agent being purged from the recycle
+   * bin. Their links are already gone by then, so the trashed-agent gate no
+   * longer applies; the trash handler composes this with the agent purge.
+   */
+  deleteShellsByIds = async (ids: string[]) => {
+    if (ids.length === 0) return;
+    await this.db.delete(sessions).where(and(inArray(sessions.id, ids), this.scope()));
   };
 
   // **************** Update *************** //
@@ -493,7 +616,7 @@ export class SessionModel {
     return this.db
       .update(sessions)
       .set(data)
-      .where(and(eq(sessions.id, id), eq(sessions.userId, this.userId)))
+      .where(and(eq(sessions.id, id), this.ownership()))
       .returning();
   };
 
@@ -553,7 +676,7 @@ export class SessionModel {
     return this.db
       .update(agents)
       .set(mergedValue)
-      .where(and(eq(agents.id, session.agent.id), eq(agents.userId, this.userId)));
+      .where(and(eq(agents.id, session.agent.id), this.agentsOwnership()));
   };
 
   // **************** Helper *************** //
@@ -570,8 +693,7 @@ export class SessionModel {
     type,
     ...res
   }: SessionItem & { agentsToSessions?: { agent: AgentItem }[] }):
-    | LobeAgentSession
-    | LobeGroupSession => {
+    LobeAgentSession | LobeGroupSession => {
     const meta = {
       avatar: avatar ?? undefined,
       backgroundColor: backgroundColor ?? undefined,
@@ -634,8 +756,48 @@ export class SessionModel {
     keyword: string;
     pageSize?: number;
   }) => {
-    const { keyword, pageSize = 9999, current = 0 } = params;
+    const { keyword, current = 0 } = params;
+    // "No pagination" must stay under ParadeDB's BM25 ceiling — see BM25_MAX_LIMIT.
+    const pageSize = Math.min(params.pageSize ?? BM25_MAX_LIMIT, BM25_MAX_LIMIT);
     const offset = current * pageSize;
+
+    if (this.ftsSearchCandidateSource?.ftsSearchCandidateEnabled) {
+      const { candidates } = await this.ftsSearchCandidateSource.ftsSearchCandidates({
+        entity: 'agents',
+        filters: {},
+        pagination: {},
+        query: { fields: ['title', 'description'], text: keyword },
+      });
+      const candidateIds = candidates.map(({ id }) => id);
+      if (candidateIds.length === 0) return [];
+
+      const matchingAgents = await this.db
+        .select({ id: agents.id })
+        .from(agents)
+        .where(and(this.agentsOwnership(), inJsonStringArray(agents.id, candidateIds)))
+        .orderBy(asc(agents.id))
+        .limit(pageSize)
+        .offset(offset);
+      const matchingAgentIds = matchingAgents.map(({ id }) => id);
+      if (matchingAgentIds.length === 0) return [];
+
+      const agentSessions = await this.db
+        .select({ agentId: agentsToSessions.agentId, session: sessions })
+        .from(agentsToSessions)
+        .leftJoin(sessions, eq(agentsToSessions.sessionId, sessions.id))
+        .where(inArray(agentsToSessions.agentId, matchingAgentIds));
+      const firstSessionByAgentId = new Map<string, SessionItem>();
+
+      for (const { agentId, session } of agentSessions) {
+        if (session && !firstSessionByAgentId.has(agentId)) {
+          firstSessionByAgentId.set(agentId, session as SessionItem);
+        }
+      }
+
+      return matchingAgents
+        .map(({ id }) => firstSessionByAgentId.get(id))
+        .filter((session): session is SessionItem => session !== undefined);
+    }
 
     try {
       const bm25Query = sanitizeBm25Query(keyword);
@@ -646,20 +808,21 @@ export class SessionModel {
         // Keep deterministic ordering for keyword search results
         orderBy: [asc(agents.id)],
         where: and(
-          eq(agents.userId, this.userId),
+          this.agentsOwnership(),
           sql`(${agents.title} @@@ ${bm25Query} OR ${agents.description} @@@ ${bm25Query})`,
         ),
         with: { agentsToSessions: { columns: {}, with: { session: true } } },
       });
 
       // Filter and map results, ensuring valid session associations
-      return (
-        results
-          .filter((item) => item.agentsToSessions && item.agentsToSessions.length > 0)
-          // @ts-expect-error
-          .map((item) => item.agentsToSessions[0].session)
-          .filter((session) => session !== null && session !== undefined)
-      );
+      return results
+        .filter((item) => item.agentsToSessions && item.agentsToSessions.length > 0)
+        .map(
+          (item) =>
+            (item.agentsToSessions as Array<{ session: SessionItem | null | undefined }>)[0]
+              ?.session,
+        )
+        .filter((session) => session !== null && session !== undefined);
     } catch (e) {
       console.error('findSessionsByKeywords error:', e, { keyword });
       return [];

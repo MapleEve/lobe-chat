@@ -25,13 +25,18 @@ export const TaskManifest: BuiltinToolManifest = {
               'Optional agent ID to assign the task to. In task management context, omit it to create an unassigned task.',
             type: 'string',
           },
+          assigneeUserId: {
+            description:
+              "Optional workspace member (user ID) to set as the task's human owner. Coexists with assigneeAgentId — the agent executes the task, the member owns the outcome. Resolve the ID with listWorkspaceMembers first; never guess it.",
+            type: 'string',
+          },
           name: {
             description: 'A short, descriptive name for the task.',
             type: 'string',
           },
           parentIdentifier: {
             description:
-              'Identifier of the parent task (e.g. "TASK-1"). If provided, the new task becomes a subtask.',
+              'Identifier of the parent task (e.g. "T-1"). If provided, the new task becomes a subtask.',
             type: 'string',
           },
           priority: {
@@ -46,6 +51,10 @@ export const TaskManifest: BuiltinToolManifest = {
         },
         required: ['name', 'instruction'],
         type: 'object',
+      },
+      work: {
+        action: 'create',
+        resourceType: 'task',
       },
     },
     {
@@ -68,13 +77,18 @@ export const TaskManifest: BuiltinToolManifest = {
                     'Optional agent ID to assign the task to. In task management context, omit it to create an unassigned task.',
                   type: 'string',
                 },
+                assigneeUserId: {
+                  description:
+                    "Optional workspace member (user ID) to set as the task's human owner (coexists with assigneeAgentId). Resolve the ID with listWorkspaceMembers first.",
+                  type: 'string',
+                },
                 name: {
                   description: 'A short, descriptive name for the task.',
                   type: 'string',
                 },
                 parentIdentifier: {
                   description:
-                    'Identifier of the parent task (e.g. "TASK-1"). If provided, the new task becomes a subtask.',
+                    'Identifier of the parent task (e.g. "T-1"). If provided, the new task becomes a subtask.',
                   type: 'string',
                 },
                 priority: {
@@ -97,6 +111,10 @@ export const TaskManifest: BuiltinToolManifest = {
         required: ['tasks'],
         type: 'object',
       },
+      work: {
+        action: 'create',
+        resourceType: 'task',
+      },
     },
     {
       description:
@@ -113,7 +131,7 @@ export const TaskManifest: BuiltinToolManifest = {
           offset: { description: 'Pagination offset.', type: 'number' },
           parentIdentifier: {
             description:
-              'List subtasks of this parent (e.g. "TASK-1"). When omitted, no parent filter is applied unless listTasks is called without any filters, which defaults to top-level tasks.',
+              'List subtasks of this parent (e.g. "T-1"). When omitted, no parent filter is applied unless listTasks is called without any filters, which defaults to top-level tasks.',
             type: 'string',
           },
           priorities: {
@@ -136,13 +154,33 @@ export const TaskManifest: BuiltinToolManifest = {
     },
     {
       description:
+        'List the workspace members a task can be assigned to, with their user IDs, emails and, where available, linked IM identities (Discord/Slack/Telegram handles and platform user ids). Call this before setting assigneeUserId on createTask / createTasks / editTask so a person named by the user ("assign this to Alice", "assign to @neko", a `<@platformUserId>` mention) is resolved to a real ID instead of guessed — prefer an exact im/email match over name similarity. Pass `query` to narrow a large directory; the result is capped by `limit`, so refine the query rather than paging. Outside a workspace only the current user is returned.',
+      name: TaskApiName.listWorkspaceMembers,
+      parameters: {
+        properties: {
+          limit: {
+            description: 'Maximum number of members to return (default 50, max 100).',
+            type: 'number',
+          },
+          query: {
+            description:
+              'Case-insensitive filter matched against display name, @handle, email, linked IM identity, or an exact user ID. Native mentions may be passed as-is (`<@U123>`, `<@!4521>`). Omit to list the whole (capped) directory.',
+            type: 'string',
+          },
+        },
+        required: [],
+        type: 'object',
+      },
+    },
+    {
+      description:
         'View details of a specific task. If identifier is omitted, this only works when there is a current task context.',
       name: TaskApiName.viewTask,
       parameters: {
         properties: {
           identifier: {
             description:
-              'The task identifier to view (e.g. "TASK-1"). If omitted, the current task is used only when a current task context exists.',
+              'The task identifier to view (e.g. "T-1"). If omitted, the current task is used only when a current task context exists.',
             type: 'string',
           },
         },
@@ -163,7 +201,7 @@ export const TaskManifest: BuiltinToolManifest = {
           },
           identifier: {
             description:
-              'The task identifier to comment on (e.g. "TASK-1"). If omitted, the current task is used only when a current task context exists.',
+              'The task identifier to comment on (e.g. "T-1"). If omitted, the current task is used only when a current task context exists.',
             type: 'string',
           },
         },
@@ -207,18 +245,23 @@ export const TaskManifest: BuiltinToolManifest = {
     },
     {
       description:
-        "Edit a task's fields (name, description, instruction, priority), parent, or dependencies (batched). Status changes go through updateTaskStatus; schedule configuration goes through setTaskSchedule.",
+        "Edit a task's fields (name, description, instruction, priority), assignee (agent or workspace member), parent, or dependencies (batched). Status changes go through updateTaskStatus; schedule configuration goes through setTaskSchedule.",
       name: TaskApiName.editTask,
       parameters: {
         properties: {
           addDependencies: {
-            description:
-              'Identifiers of tasks this task should block on (e.g. ["TASK-2", "TASK-3"]).',
+            description: 'Identifiers of tasks this task should block on (e.g. ["T-2", "T-3"]).',
             items: { type: 'string' },
             type: 'array',
           },
           assigneeAgentId: {
-            description: 'Assign the task to this agent ID. Pass null to clear the assignee.',
+            description:
+              'Assign the task to this agent ID (the executing agent; independent of the human owner). Pass null to clear the agent assignee.',
+            type: ['string', 'null'],
+          },
+          assigneeUserId: {
+            description:
+              "Set this workspace member (user ID) as the task's human owner. Independent of assigneeAgentId — both can be set, and touching one never clears the other. Resolve the ID with listWorkspaceMembers first; never guess it. Pass null to clear the human owner.",
             type: ['string', 'null'],
           },
           description: {
@@ -240,7 +283,7 @@ export const TaskManifest: BuiltinToolManifest = {
           },
           parentIdentifier: {
             description:
-              'Set the parent task by identifier (e.g. "TASK-1"). Pass null to move this task to top level. Omit to keep the current parent.',
+              'Set the parent task by identifier (e.g. "T-1"). Pass null to move this task to top level. Omit to keep the current parent.',
             type: ['string', 'null'],
           },
           priority: {
@@ -256,6 +299,10 @@ export const TaskManifest: BuiltinToolManifest = {
         required: ['identifier'],
         type: 'object',
       },
+      work: {
+        action: 'update',
+        resourceType: 'task',
+      },
     },
     {
       description:
@@ -269,7 +316,7 @@ export const TaskManifest: BuiltinToolManifest = {
             type: 'string',
           },
           identifier: {
-            description: 'The task identifier to run (e.g. "TASK-1").',
+            description: 'The task identifier to run (e.g. "T-1").',
             type: 'string',
           },
           prompt: {
@@ -289,8 +336,7 @@ export const TaskManifest: BuiltinToolManifest = {
       parameters: {
         properties: {
           identifiers: {
-            description:
-              'Identifiers of tasks to run, in execution order (e.g. ["TASK-1", "TASK-2"]).',
+            description: 'Identifiers of tasks to run, in execution order (e.g. ["T-1", "T-2"]).',
             items: { type: 'string' },
             type: 'array',
           },
@@ -313,11 +359,11 @@ export const TaskManifest: BuiltinToolManifest = {
           },
           heartbeatInterval: {
             description:
-              'Periodic execution interval in seconds (heartbeat mode). Pass 0 to clear the interval. Recommend ≥600s.',
+              'Periodic execution interval in seconds (heartbeat mode). Pass 0 to clear the interval. Minimum 600s (10 minutes); the server rejects positive values below 600.',
             type: 'number',
           },
           identifier: {
-            description: 'The identifier of the task to configure (e.g. "TASK-1").',
+            description: 'The identifier of the task to configure (e.g. "T-1").',
             type: 'string',
           },
           maxExecutions: {
@@ -327,7 +373,7 @@ export const TaskManifest: BuiltinToolManifest = {
           },
           schedulePattern: {
             description:
-              'Cron expression for scheduled mode, e.g. "0 9 * * *" (every day at 09:00). Pass null to clear the pattern.',
+              'Standard 5-field cron expression "minute hour day-of-month month day-of-week" for scheduled mode, e.g. "0 9 * * *" (every day at 09:00), "30 9 * * 1-5" (weekdays at 09:30) or "0 10 27 9 *" (Sep 27 at 10:00; pair with maxExecutions=1 for a one-off). Invalid patterns are rejected; on success the result lists the next run times — check them against what the user asked for. Pass null to clear the pattern.',
             type: ['string', 'null'],
           },
           scheduleTimezone: {
@@ -338,6 +384,60 @@ export const TaskManifest: BuiltinToolManifest = {
         },
         required: ['identifier'],
         type: 'object',
+      },
+      work: {
+        action: 'update',
+        resourceType: 'task',
+      },
+    },
+    {
+      description:
+        'Configure (or clear) a task\'s delivery-acceptance (verify) gate — the evidence-driven check that runs when the task\'s topic completes, so the assigned agent\'s "done" is verified by a separate reviewer instead of blindly trusted. STRONGLY RECOMMENDED whenever you dispatch an executable task to another agent (assigneeAgentId set): turn the gate on with enabled=true and state a one-sentence `requirement` describing what "done" means; the server synthesizes acceptance criteria from it. Pass verifyRubricId to reuse a saved rubric, or verifyCriteriaIds for explicit criteria. Pass null to any field to clear it; omitted fields are left untouched.',
+      name: TaskApiName.setTaskVerify,
+      parameters: {
+        properties: {
+          enabled: {
+            description:
+              'Whether the verify gate runs when the task completes. Pass true to require verification, false to disable, null to clear.',
+            type: ['boolean', 'null'],
+          },
+          identifier: {
+            description: 'The identifier of the task to configure (e.g. "T-1").',
+            type: 'string',
+          },
+          maxIterations: {
+            description:
+              'Cap on verify repair / re-run iterations (1-10). Pass null to clear (uses the default).',
+            type: ['number', 'null'],
+          },
+          requirement: {
+            description:
+              'One-sentence acceptance requirement describing what "done" means for this task (e.g. "All unit tests pass and the new endpoint returns 200"). The server synthesizes acceptance criteria from it when no explicit criteria are given. Pass null to clear.',
+            type: ['string', 'null'],
+          },
+          verifierAgentId: {
+            description:
+              'Agent ID that executes the verify run. Omit to use the built-in verify agent. Pass null to clear an existing value.',
+            type: ['string', 'null'],
+          },
+          verifyCriteriaIds: {
+            description:
+              'Explicit acceptance criteria ids to check against. Pass null to clear; omit when relying on requirement-synthesized criteria.',
+            items: { type: 'string' },
+            type: ['array', 'null'],
+          },
+          verifyRubricId: {
+            description:
+              'Reuse a saved rubric template by id instead of ad-hoc criteria. Pass null to clear.',
+            type: ['string', 'null'],
+          },
+        },
+        required: ['identifier'],
+        type: 'object',
+      },
+      work: {
+        action: 'update',
+        resourceType: 'task',
       },
     },
     {
@@ -352,7 +452,7 @@ export const TaskManifest: BuiltinToolManifest = {
           },
           identifier: {
             description:
-              'The task identifier (e.g. "TASK-1"). If omitted, the current task is used only when a current task context exists.',
+              'The task identifier (e.g. "T-1"). If omitted, the current task is used only when a current task context exists.',
             type: 'string',
           },
           status: {
@@ -373,12 +473,16 @@ export const TaskManifest: BuiltinToolManifest = {
       parameters: {
         properties: {
           identifier: {
-            description: 'The identifier of the task to delete (e.g. "TASK-1").',
+            description: 'The identifier of the task to delete (e.g. "T-1").',
             type: 'string',
           },
         },
         required: ['identifier'],
         type: 'object',
+      },
+      work: {
+        action: 'delete',
+        resourceType: 'task',
       },
     },
   ],
@@ -389,5 +493,6 @@ export const TaskManifest: BuiltinToolManifest = {
     title: 'Task Tools',
   },
   systemRole: systemPrompt,
+
   type: 'builtin',
 };

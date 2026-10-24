@@ -1,23 +1,40 @@
 'use client';
 
-import { ActionIcon, Button, Flexbox, Text, TextArea } from '@lobehub/ui';
-import { createStaticStyles, cssVar } from 'antd-style';
+import {
+  ActionIcon,
+  Button,
+  createStaticStyles,
+  cssVar,
+  Flexbox,
+  Text,
+  TextArea,
+} from '@lobehub/ui';
 import { CheckIcon, PencilIcon, XIcon } from 'lucide-react';
 import type { ChangeEvent } from 'react';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useChatStore } from '@/store/chat';
-import { chatPortalSelectors } from '@/store/chat/selectors';
+import AsyncError from '@/components/AsyncError';
+import CodeEditorPane from '@/components/CodeEditorPane';
+import Loading from '@/components/Loading/CircleLoading';
+import FileNotFound from '@/features/FileNotFound';
+import { FileDocumentPreview } from '@/features/FileViewer/FileDocumentPreview';
+import WideScreenContainer from '@/features/WideScreenContainer';
+import { useClientDataSWR } from '@/libs/swr';
+import { portalKeys } from '@/libs/swr/keys';
+import { documentService } from '@/services/document';
 import { useDocumentStore } from '@/store/document';
+import { getDocumentRenderMode } from '@/utils/documentRenderMode';
 import {
   getSkillMarkdownMetadataError,
   parseSkillMarkdownFrontmatterFields,
-  parseSkillMarkdownMetadata,
 } from '@/utils/skillMarkdown';
 
+import { useDocumentViewFullPage, useResolvedDocumentId } from './documentViewContext';
 import EditorCanvas from './EditorCanvas';
+import SkillFrontmatterCard from './SkillFrontmatterCard';
 import TodoList from './TodoList';
+import { useHighlightSave } from './useHighlightSave';
 
 const styles = createStaticStyles(({ css }) => ({
   content: css`
@@ -25,34 +42,10 @@ const styles = createStaticStyles(({ css }) => ({
     flex: 1;
     padding-inline: 16px;
   `,
-  frontmatter: css`
-    margin-block: 16px 12px;
-    border: 1px solid ${cssVar.colorBorderSecondary};
-    border-radius: 8px;
-    background: ${cssVar.colorBgContainer};
-  `,
-  metadataKey: css`
-    flex-shrink: 0;
-    width: 112px;
-    font-family: ${cssVar.fontFamilyCode};
-    color: ${cssVar.colorTextSecondary};
-  `,
-  metadataRow: css`
-    padding-block: 10px;
-    padding-inline: 12px;
-
-    &:not(:last-child) {
-      border-block-end: 1px solid ${cssVar.colorBorderSecondary};
-    }
-  `,
-  metadataValue: css`
-    min-width: 0;
-    white-space: pre-wrap;
-  `,
-  sectionHeader: css`
-    padding-block: 10px;
-    padding-inline: 12px;
-    border-block-end: 1px solid ${cssVar.colorBorderSecondary};
+  contentFull: css`
+    /* Width is handled by WideScreenContainer; keep only the scroll host. */
+    overflow: auto;
+    flex: 1;
   `,
   textArea: css`
     font-family: ${cssVar.fontFamilyCode};
@@ -66,7 +59,6 @@ interface SkillFrontmatterBlockProps {
 
 const SkillFrontmatterBlock = memo<SkillFrontmatterBlockProps>(({ documentId, frontmatter }) => {
   const { t } = useTranslation('editor');
-  const metadata = useMemo(() => parseSkillMarkdownMetadata(frontmatter), [frontmatter]);
   const currentName = useMemo(
     () => parseSkillMarkdownFrontmatterFields(frontmatter).name,
     [frontmatter],
@@ -132,12 +124,12 @@ const SkillFrontmatterBlock = memo<SkillFrontmatterBlockProps>(({ documentId, fr
   }, [currentName, documentId, draft, performSave, t, updateSkillFrontmatter]);
 
   return (
-    <Flexbox className={styles.frontmatter}>
-      <Flexbox horizontal align="center" className={styles.sectionHeader} justify="space-between">
-        <Text type="secondary">{t('skillFrontmatter.title')}</Text>
-        {editing ? (
+    <SkillFrontmatterCard
+      frontmatter={frontmatter}
+      extra={
+        editing ? (
           <Flexbox horizontal gap={8}>
-            <Button icon={XIcon} size="small" variant="outlined" onClick={handleCancel}>
+            <Button icon={XIcon} size="small" onClick={handleCancel}>
               {t('cancel')}
             </Button>
             <Button
@@ -157,9 +149,10 @@ const SkillFrontmatterBlock = memo<SkillFrontmatterBlockProps>(({ documentId, fr
             title={t('skillFrontmatter.edit')}
             onClick={handleEdit}
           />
-        )}
-      </Flexbox>
-      {editing ? (
+        )
+      }
+    >
+      {editing && (
         <Flexbox gap={8} padding={12}>
           {/* Raw YAML is only exposed in edit mode so users can keep advanced frontmatter syntax. */}
           <TextArea
@@ -174,24 +167,65 @@ const SkillFrontmatterBlock = memo<SkillFrontmatterBlockProps>(({ documentId, fr
           />
           {error && <Text type="danger">{error}</Text>}
         </Flexbox>
-      ) : metadata.length > 0 ? (
-        metadata.map((item) => (
-          <Flexbox horizontal align="flex-start" className={styles.metadataRow} key={item.key}>
-            <Text className={styles.metadataKey}>{item.key}</Text>
-            <Text className={styles.metadataValue}>{item.value}</Text>
-          </Flexbox>
-        ))
-      ) : (
-        <Flexbox className={styles.metadataRow}>
-          <Text type="secondary">{t('skillFrontmatter.empty')}</Text>
-        </Flexbox>
       )}
-    </Flexbox>
+    </SkillFrontmatterCard>
   );
 });
 
+interface HighlightEditorProps {
+  content: string;
+  documentId: string;
+  filename: string;
+  onSaved: (newContent: string, updatedAt?: string) => void;
+  updatedAt?: Date;
+}
+
+const HighlightEditor = memo<HighlightEditorProps>(
+  ({ content, documentId, filename, onSaved, updatedAt }) => {
+    const { editingValue, handleChange, handleSave } = useHighlightSave({
+      content,
+      documentId,
+      onSaved,
+      updatedAt,
+    });
+
+    // Mirror the live buffer into the document store so consumers outside this
+    // component (the portal footer's Export) read the text currently on screen,
+    // not the last persisted SWR copy. `addDocument` upserts: the highlight
+    // editor path never goes through `useFetchDocument`, so the record may not
+    // exist yet. `lastSavedContent` stays at the persisted value so this mirror
+    // never marks the document dirty or triggers a save on its own.
+    const dispatchDocument = useDocumentStore((s) => s.internal_dispatchDocument);
+    const docExists = useDocumentStore((s) => !!s.documents[documentId]);
+    useEffect(() => {
+      dispatchDocument(
+        docExists
+          ? { id: documentId, type: 'updateDocument', value: { content: editingValue } }
+          : {
+              id: documentId,
+              type: 'addDocument',
+              value: { content: editingValue, lastSavedContent: content, sourceType: 'notebook' },
+            },
+      );
+    }, [content, dispatchDocument, docExists, documentId, editingValue]);
+
+    return (
+      <CodeEditorPane
+        showStatusBar
+        filePath={filename}
+        value={editingValue}
+        onChange={handleChange}
+        onSave={handleSave}
+      />
+    );
+  },
+);
+
+HighlightEditor.displayName = 'HighlightEditor';
+
 const DocumentBody = memo(() => {
-  const documentId = useChatStore(chatPortalSelectors.portalDocumentId);
+  const documentId = useResolvedDocumentId();
+  const fullPage = useDocumentViewFullPage();
   const [skillFrontmatter, contentFormat] = useDocumentStore((s) =>
     documentId
       ? [s.documents[documentId]?.skillFrontmatter ?? '', s.documents[documentId]?.contentFormat]
@@ -199,15 +233,74 @@ const DocumentBody = memo(() => {
   );
   const isSkillMarkdown = contentFormat === 'skillMarkdown';
 
+  const {
+    data: documentMeta,
+    error: documentError,
+    isLoading: documentLoading,
+    mutate: mutateDocumentMeta,
+  } = useClientDataSWR(documentId ? portalKeys.documentHeader(documentId) : null, () =>
+    documentService.getDocumentById(documentId!),
+  );
+  const renderMode = documentMeta
+    ? getDocumentRenderMode(documentMeta)
+    : { mode: 'editor' as const };
+
+  const handleHighlightSaved = useCallback(
+    (saved: string, updatedAt?: string) => {
+      mutateDocumentMeta(
+        (prev) =>
+          prev
+            ? { ...prev, content: saved, ...(updatedAt ? { updatedAt: new Date(updatedAt) } : {}) }
+            : prev,
+        { revalidate: false },
+      );
+    },
+    [mutateDocumentMeta],
+  );
+
+  const editorContent = (
+    <>
+      {renderMode.mode !== 'file' && documentId && isSkillMarkdown && (
+        <SkillFrontmatterBlock documentId={documentId} frontmatter={skillFrontmatter} />
+      )}
+      {renderMode.mode === 'file' ? (
+        <FileDocumentPreview fileId={documentMeta?.fileId} />
+      ) : renderMode.mode === 'highlight' && documentId ? (
+        <HighlightEditor
+          content={documentMeta?.content ?? ''}
+          documentId={documentId}
+          filename={documentMeta?.filename ?? ''}
+          key={documentId}
+          updatedAt={documentMeta?.updatedAt}
+          onSaved={handleHighlightSaved}
+        />
+      ) : (
+        <EditorCanvas />
+      )}
+    </>
+  );
+
+  if (documentLoading) return <Loading />;
+  if (documentError)
+    return (
+      <AsyncError
+        error={documentError}
+        variant={'page'}
+        onRetry={() => void mutateDocumentMeta()}
+      />
+    );
+  if (!documentMeta) return <FileNotFound />;
+
   return (
     <Flexbox flex={1} height={'100%'} style={{ overflow: 'hidden' }}>
-      <div className={styles.content}>
-        {documentId && isSkillMarkdown && (
-          <SkillFrontmatterBlock documentId={documentId} frontmatter={skillFrontmatter} />
+      <div className={fullPage ? styles.contentFull : styles.content}>
+        {fullPage && renderMode.mode !== 'file' ? (
+          <WideScreenContainer>{editorContent}</WideScreenContainer>
+        ) : (
+          editorContent
         )}
-        <EditorCanvas />
       </div>
-      <TodoList />
+      {renderMode.mode !== 'file' && <TodoList />}
     </Flexbox>
   );
 });

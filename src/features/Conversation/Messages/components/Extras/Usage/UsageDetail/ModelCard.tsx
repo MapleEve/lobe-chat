@@ -1,12 +1,11 @@
 import { getCachedTextInputUnitRate, getWriteCacheInputUnitRate } from '@lobechat/utils';
-import { ModelIcon } from '@lobehub/icons';
-import { Flexbox, Icon, Segmented, Tooltip } from '@lobehub/ui';
-import { createStaticStyles } from 'antd-style';
+import { createStaticStyles, Flexbox, Icon, Tabs, Tooltip } from '@lobehub/ui';
 import { ArrowDownToDot, ArrowUpFromDot, BookUp2Icon, CircleFadingArrowUp } from 'lucide-react';
 import { type LobeDefaultAiModelListItem } from 'model-bank';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ModelIcon } from '@/components/LobeIcons';
 import { useGlobalStore } from '@/store/global';
 import { systemStatusSelectors } from '@/store/global/selectors';
 
@@ -61,22 +60,22 @@ const ModelCard = memo<ModelCardProps>(({ pricing, id, provider, displayName }) 
         </Flexbox>
         {!!pricing && (
           <Flexbox>
-            <Segmented
+            <Tabs
+              activeKey={isShowCredit ? 'credit' : 'token'}
               size={'small'}
-              value={isShowCredit ? 'credit' : 'token'}
-              options={[
-                { label: 'Token', value: 'token' },
+              items={[
+                { key: 'token', label: 'Token' },
                 {
+                  key: 'credit',
                   label: (
                     <Tooltip title={t('messages.modelCard.creditTooltip')}>
                       <span>{t('messages.modelCard.credit')}</span>
                     </Tooltip>
                   ),
-                  value: 'credit',
                 },
               ]}
-              onChange={(value) => {
-                updateSystemStatus({ isShowCredit: value === 'credit' });
+              onChange={(key) => {
+                updateSystemStatus({ isShowCredit: key === 'credit' });
               }}
             />
           </Flexbox>

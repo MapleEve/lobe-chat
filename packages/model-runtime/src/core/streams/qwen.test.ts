@@ -1,3 +1,4 @@
+import type { Pricing } from 'model-bank';
 import type OpenAI from 'openai';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
@@ -81,6 +82,61 @@ describe('QwenAIStream', () => {
     expect(onCompletionMock).toHaveBeenCalledTimes(1);
   });
 
+  it('should expose missing usage diagnostics when terminal content chunk has no usage', async () => {
+    const mockOpenAIStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue({
+          choices: [
+            {
+              delta: { content: 'final text' },
+              finish_reason: 'stop',
+              index: 0,
+            },
+          ],
+          id: 'qwen-missing-usage',
+        });
+        controller.close();
+      },
+    });
+    const onFinal = vi.fn();
+
+    const protocolStream = QwenAIStream(mockOpenAIStream, {
+      callbacks: { onFinal },
+      payload: {
+        apiMode: 'chat_completions',
+        includeUsageRequested: true,
+        model: 'qwen-plus',
+        provider: 'qwen',
+      },
+    });
+
+    const decoder = new TextDecoder();
+    const chunks: string[] = [];
+
+    // @ts-ignore
+    for await (const chunk of protocolStream) {
+      chunks.push(decoder.decode(chunk, { stream: true }));
+    }
+
+    expect(chunks).toEqual(['id: qwen-missing-usage\n', 'event: text\n', 'data: "final text"\n\n']);
+    expect(onFinal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: 'final text',
+        usageMissingDiagnostics: expect.objectContaining({
+          apiMode: 'chat_completions',
+          finishReason: 'stop',
+          hasUsageMetadata: false,
+          includeUsageRequested: true,
+          model: 'qwen-plus',
+          provider: 'qwen',
+          responseId: 'qwen-missing-usage',
+          source: 'openai_chat_completions',
+          terminalEventType: 'chat.completion.chunk',
+        }),
+      }),
+    );
+  });
+
   it('should handle tool calls', async () => {
     const mockOpenAIStream = new ReadableStream({
       start(controller) {
@@ -155,6 +211,53 @@ describe('QwenAIStream', () => {
     }
 
     expect(chunks).toEqual([]);
+  });
+
+  it('should enrich usage cost when pricing payload is provided', async () => {
+    const pricing = {
+      units: [
+        { name: 'textInput', rate: 1, strategy: 'fixed', unit: 'millionTokens' },
+        { name: 'textOutput', rate: 2, strategy: 'fixed', unit: 'millionTokens' },
+      ],
+    } satisfies Pricing;
+    const mockOpenAIStream = new ReadableStream({
+      start(controller) {
+        controller.enqueue({
+          choices: [],
+          id: 'usage-cost-id',
+          model: 'qwen-test-model',
+          object: 'chat.completion.chunk',
+          usage: {
+            completion_tokens: 500_000,
+            prompt_tokens: 1_000_000,
+            total_tokens: 1_500_000,
+          },
+        });
+        controller.close();
+      },
+    });
+    const onFinalMock = vi.fn();
+
+    const protocolStream = QwenAIStream(mockOpenAIStream, {
+      callbacks: { onFinal: onFinalMock },
+      payload: { pricing },
+    });
+    const decoder = new TextDecoder();
+    const chunks = [];
+
+    // @ts-ignore
+    for await (const chunk of protocolStream) {
+      chunks.push(decoder.decode(chunk, { stream: true }));
+    }
+
+    expect(chunks.join('')).toContain('"cost":2');
+    expect(onFinalMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        usage: expect.objectContaining({
+          cost: 2,
+        }),
+      }),
+    );
   });
 
   it('should handle chunk with no choices', async () => {

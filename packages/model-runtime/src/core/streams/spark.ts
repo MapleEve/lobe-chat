@@ -3,12 +3,18 @@ import type { Stream } from 'openai/streaming';
 
 import type { ChatStreamCallbacks } from '../../types';
 import { convertOpenAIUsage } from '../usageConverters';
-import type { StreamProtocolChunk, StreamProtocolToolCallChunk } from './protocol';
+import type {
+  ChatPayloadForTransformStream,
+  StreamContext,
+  StreamProtocolChunk,
+  StreamProtocolToolCallChunk,
+} from './protocol';
 import {
   convertIterableToStream,
   createCallbacksTransformer,
   createSSEProtocolTransformer,
   generateToolCallId,
+  setOpenAIChatCompletionUsageMissingDiagnostics,
 } from './protocol';
 
 export function transformSparkResponseToStream(data: OpenAI.ChatCompletion) {
@@ -29,12 +35,16 @@ export function transformSparkResponseToStream(data: OpenAI.ChatCompletion) {
               content: choice.message.content,
               role: choice.message.role,
               tool_calls: toolCallsArray.map(
-                (tool, index): OpenAI.ChatCompletionChunk.Choice.Delta.ToolCall => ({
-                  function: tool.function,
-                  id: tool.id,
-                  index,
-                  type: tool.type,
-                }),
+                (tool, index): OpenAI.ChatCompletionChunk.Choice.Delta.ToolCall => {
+                  // OpenAI SDK v6 made tool calls a function|custom union; lobehub only emits function calls.
+                  const fnTool = tool as OpenAI.ChatCompletionMessageFunctionToolCall;
+                  return {
+                    function: fnTool.function,
+                    id: fnTool.id,
+                    index,
+                    type: fnTool.type,
+                  };
+                },
               ),
             },
             finish_reason: null,
@@ -80,7 +90,25 @@ export function transformSparkResponseToStream(data: OpenAI.ChatCompletion) {
   });
 }
 
-export const transformSparkStream = (chunk: OpenAI.ChatCompletionChunk): StreamProtocolChunk => {
+export const transformSparkStream = (
+  chunk: OpenAI.ChatCompletionChunk,
+  streamContext?: StreamContext,
+  payload?: ChatPayloadForTransformStream,
+): StreamProtocolChunk | StreamProtocolChunk[] => {
+  if (streamContext) {
+    if (streamContext.chunkIndex === undefined) {
+      streamContext.chunkIndex = 0;
+    } else {
+      streamContext.chunkIndex++;
+    }
+  }
+
+  if (Array.isArray(chunk.choices) && chunk.choices.length === 0 && chunk.usage) {
+    if (streamContext) delete streamContext.usageMissingDiagnostics;
+
+    return { data: convertOpenAIUsage(chunk.usage, payload), id: chunk.id, type: 'usage' };
+  }
+
   const item = chunk.choices[0];
 
   if (!item) {
@@ -107,12 +135,40 @@ export const transformSparkStream = (chunk: OpenAI.ChatCompletionChunk): StreamP
   }
 
   if (item.finish_reason) {
+    const usageChunk: StreamProtocolChunk | undefined = chunk.usage
+      ? { data: convertOpenAIUsage(chunk.usage, payload), id: chunk.id, type: 'usage' }
+      : undefined;
+    const appendUsageChunk = (
+      protocolChunk: StreamProtocolChunk | StreamProtocolChunk[],
+    ): StreamProtocolChunk | StreamProtocolChunk[] => {
+      if (!usageChunk) return protocolChunk;
+
+      if (streamContext) delete streamContext.usageMissingDiagnostics;
+
+      return Array.isArray(protocolChunk)
+        ? [...protocolChunk, usageChunk]
+        : [protocolChunk, usageChunk];
+    };
+
+    if (streamContext) {
+      if (usageChunk) {
+        delete streamContext.usageMissingDiagnostics;
+      } else {
+        setOpenAIChatCompletionUsageMissingDiagnostics(streamContext, payload, {
+          finishReason: item.finish_reason,
+          responseId: chunk.id,
+        });
+      }
+    }
+
     // one-api's streaming interface can have both finish_reason and content
     //  {"id":"demo","model":"deepl-en","choices":[{"index":0,"delta":{"role":"assistant","content":"Introduce yourself."},"finish_reason":"stop"}]}
 
     if (typeof item.delta?.content === 'string' && !!item.delta.content) {
-      return { data: item.delta.content, id: chunk.id, type: 'text' };
+      return appendUsageChunk({ data: item.delta.content, id: chunk.id, type: 'text' });
     }
+
+    if (usageChunk) return usageChunk;
 
     return { data: item.finish_reason, id: chunk.id, type: 'stop' };
   }
@@ -132,10 +188,12 @@ export const transformSparkStream = (chunk: OpenAI.ChatCompletionChunk): StreamP
     {"code":0,"message":"Success","sid":"cha000d05ef@dx196553ae415b80a432","id":"cha000d05ef@dx196553ae415b80a432","created":1745186655,"choices":[{"delta":{"role":"assistant","content":"😊"},"index":0}],"usage":{"prompt_tokens":1,"completion_tokens":418,"total_tokens":419}}
     */
     if (chunk.usage) {
+      if (streamContext) delete streamContext.usageMissingDiagnostics;
+
       return [
         { data: item.delta.content, id: chunk.id, type: 'text' },
-        { data: convertOpenAIUsage(chunk.usage), id: chunk.id, type: 'usage' },
-      ] as any;
+        { data: convertOpenAIUsage(chunk.usage, payload), id: chunk.id, type: 'usage' },
+      ];
     }
 
     return { data: item.delta.content, id: chunk.id, type: 'text' };
@@ -147,7 +205,9 @@ export const transformSparkStream = (chunk: OpenAI.ChatCompletionChunk): StreamP
 
   // Handle v2 endpoint usage
   if (chunk.usage) {
-    return { data: convertOpenAIUsage(chunk.usage), id: chunk.id, type: 'usage' };
+    if (streamContext) delete streamContext.usageMissingDiagnostics;
+
+    return { data: convertOpenAIUsage(chunk.usage, payload), id: chunk.id, type: 'usage' };
   }
 
   return {
@@ -160,13 +220,22 @@ export const transformSparkStream = (chunk: OpenAI.ChatCompletionChunk): StreamP
 export const SparkAIStream = (
   stream: Stream<OpenAI.ChatCompletionChunk> | ReadableStream,
   // TODO: preserve for RFC 097
-  // eslint-disable-next-line unused-imports/no-unused-vars
-  { callbacks, inputStartAt }: { callbacks?: ChatStreamCallbacks; inputStartAt?: number } = {},
+  {
+    callbacks,
+    payload,
+  }: {
+    callbacks?: ChatStreamCallbacks;
+    inputStartAt?: number;
+    payload?: ChatPayloadForTransformStream;
+  } = {},
 ) => {
+  const streamContext: StreamContext = { id: '' };
   const readableStream =
     stream instanceof ReadableStream ? stream : convertIterableToStream(stream);
+  const transformWithPayload = (chunk: OpenAI.ChatCompletionChunk, streamContext: StreamContext) =>
+    transformSparkStream(chunk, streamContext, payload);
 
   return readableStream
-    .pipeThrough(createSSEProtocolTransformer(transformSparkStream))
-    .pipeThrough(createCallbacksTransformer(callbacks));
+    .pipeThrough(createSSEProtocolTransformer(transformWithPayload, streamContext))
+    .pipeThrough(createCallbacksTransformer(callbacks, { streamStack: streamContext }));
 };

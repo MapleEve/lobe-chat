@@ -1,7 +1,6 @@
 import { type ModelPerformance, type ModelUsage } from '@lobechat/types';
-import { Center, Flexbox, Icon, Popover } from '@lobehub/ui';
-import { Divider } from 'antd';
-import { cssVar } from 'antd-style';
+import { formatUsageValue } from '@lobechat/utils';
+import { Center, cssVar, Divider, Flexbox, Icon, Popover } from '@lobehub/ui';
 import { BadgeCent, CoinsIcon } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -14,7 +13,7 @@ import { formatNumber, formatShortenNumber } from '@/utils/format';
 
 import AnimatedNumber from './AnimatedNumber';
 import ModelCard from './ModelCard';
-import { type TokenProgressItem } from './TokenProgress';
+import type { TokenProgressItem } from './TokenProgress';
 import TokenProgress from './TokenProgress';
 import { getDetailsToken } from './tokens';
 
@@ -127,7 +126,11 @@ const TokenDetail = memo<TokenDetailProps>(({ usage, performance, model, provide
       ? detailTokens.totalTokens.credit
       : detailTokens.totalTokens!.token;
 
-  const detailTotal = formatNumber(totalCount);
+  const detailTotal = formatUsageValue(totalCount);
+  const cacheRate =
+    typeof detailTokens.inputCacheRate === 'number'
+      ? `${formatNumber(detailTokens.inputCacheRate * 100, 1)}%`
+      : undefined;
 
   const averagePricing = formatNumber(
     detailTokens.totalTokens!.credit / detailTokens.totalTokens!.token,
@@ -181,6 +184,14 @@ const TokenDetail = memo<TokenDetailProps>(({ usage, performance, model, provide
             <Flexbox>
               <TokenProgress showIcon data={totalDetail} />
               <Divider style={{ marginBlock: 8 }} />
+              {cacheRate && (
+                <Flexbox horizontal align={'center'} gap={4} justify={'space-between'}>
+                  <div style={{ color: cssVar.colorTextSecondary }}>
+                    {t('messages.tokenDetails.cacheRate')}
+                  </div>
+                  <div style={{ fontWeight: 500 }}>{cacheRate}</div>
+                </Flexbox>
+              )}
               <Flexbox horizontal align={'center'} gap={4} justify={'space-between'}>
                 <div style={{ color: cssVar.colorTextSecondary }}>
                   {t('messages.tokenDetails.total')}

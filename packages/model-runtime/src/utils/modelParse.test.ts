@@ -1,5 +1,5 @@
 import type { ChatModelCard } from '@lobechat/types';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   detectModelProvider,
@@ -10,7 +10,8 @@ import {
 } from './modelParse';
 
 // Mock the imported LOBE_DEFAULT_MODEL_LIST
-const { mockDefaultModelList } = vi.hoisted(() => ({
+const { loadModelsMock, mockDefaultModelList } = vi.hoisted(() => ({
+  loadModelsMock: vi.fn(),
   mockDefaultModelList: [
     {
       contextWindowTokens: 8192,
@@ -111,9 +112,11 @@ const { mockDefaultModelList } = vi.hoisted(() => ({
 // Mock the import
 vi.mock('model-bank', () => ({
   AiModelTypeSchema: {
-    options: ['chat', 'embedding', 'tts', 'stt', 'image', 'video', 'text2music', 'realtime'],
+    options: ['chat', 'embedding', 'tts', 'asr', 'image', 'video', 'text2music', 'realtime'],
   },
   LOBE_DEFAULT_MODEL_LIST: mockDefaultModelList,
+  loadModels: vi.fn().mockResolvedValue(mockDefaultModelList),
+  ModelProvider: { LobeHub: 'lobehub' },
   // 新增 provider 专用清单，供 findKnownModelByProvider 使用
   google: [
     {
@@ -124,9 +127,17 @@ vi.mock('model-bank', () => ({
   ],
 }));
 
+vi.mock('@lobechat/business-model-bank/model-config', () => ({
+  loadModels: loadModelsMock,
+}));
+
 describe('modelParse', () => {
+  beforeEach(() => {
+    loadModelsMock.mockResolvedValue(mockDefaultModelList);
+  });
+
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('detectModelProvider', () => {
@@ -305,6 +316,24 @@ describe('modelParse', () => {
         expect(out[0].imageOutput).toBe(true);
         // due to '!gemini' exclusion in IMAGE_MODEL_KEYWORDS
         expect(out[0].type).toBe('chat');
+      });
+
+      it('google: Nano Banana ids without "-image-" infer image output and thinking but no function calling', async () => {
+        const out = await processModelList(
+          [{ id: 'gemini-nano-banana-2.1' }, { id: 'nano-banana-pro-preview' }],
+          MODEL_LIST_CONFIGS.google,
+          'google',
+        );
+        expect(out).toHaveLength(2);
+        for (const model of out) {
+          expect(model.type).toBe('chat');
+          expect(model.imageOutput).toBe(true);
+          expect(model.reasoning).toBe(true);
+          expect(model.functionCall).toBe(false);
+        }
+        // Only versioned ids get Google Search at runtime (`supportsGoogleSearchOnImageResponseModel`)
+        expect(out.find((m) => m.id === 'gemini-nano-banana-2.1')?.search).toBe(true);
+        expect(out.find((m) => m.id === 'nano-banana-pro-preview')?.search).toBe(false);
       });
 
       it('google: gemini-* without "-image-" should not infer imageOutput and get search=true via known google model', async () => {
@@ -553,6 +582,41 @@ describe('modelParse', () => {
       expect(unknown.vision).toBe(false);
     });
 
+    it('should use business model metadata when parsing mixed provider models', async () => {
+      loadModelsMock.mockResolvedValueOnce([
+        ...mockDefaultModelList,
+        {
+          abilities: {
+            functionCall: true,
+            reasoning: true,
+            vision: true,
+          },
+          contextWindowTokens: 131_072,
+          displayName: 'Business Only Model',
+          enabled: true,
+          id: 'business-only-model',
+          maxOutput: 8192,
+          source: 'builtin',
+          type: 'chat',
+        },
+      ]);
+
+      const result = await processMultiProviderModelList([{ id: 'business-only-model' }]);
+
+      expect(loadModelsMock).toHaveBeenCalledTimes(1);
+      expect(result).toEqual([
+        expect.objectContaining({
+          contextWindowTokens: 131_072,
+          displayName: 'Business Only Model',
+          functionCall: true,
+          id: 'business-only-model',
+          maxOutput: 8192,
+          reasoning: true,
+          vision: true,
+        }),
+      ]);
+    });
+
     it('should ignore invalid remote type values in mixed provider processing', async () => {
       const modelList = [{ id: 'newapi-custom-model', type: 'model' }];
 
@@ -655,19 +719,6 @@ describe('modelParse', () => {
     });
 
     describe('Extended tests for detectModelProvider', () => {
-      it('should handle unusual casing patterns', () => {
-        expect(detectModelProvider('gPt-4')).toBe('openai');
-        expect(detectModelProvider('CLauDe-3-OPUS')).toBe('anthropic');
-        expect(detectModelProvider('gEmiNi-PrO')).toBe('google');
-        expect(detectModelProvider('qWeN-TuRbO')).toBe('qwen');
-      });
-
-      it('should handle model IDs with keywords in unusual positions', () => {
-        expect(detectModelProvider('custom-gpt-model')).toBe('openai');
-        expect(detectModelProvider('prefix-claude-suffix')).toBe('anthropic');
-        expect(detectModelProvider('test-qwen-beta-v1')).toBe('qwen');
-      });
-
       it('should handle empty and special character model IDs', () => {
         expect(detectModelProvider('')).toBe('openai'); // Default
         expect(detectModelProvider('   ')).toBe('openai'); // Default

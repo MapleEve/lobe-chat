@@ -4,7 +4,9 @@
   "private": true,
   "exports": {
     ".": "./src/index.ts",
-    "./client": "./src/client/index.ts"
+    "./client": "./src/client/index.ts",
+    "./client/displayControls": "./src/client/Render/displayControls.ts",
+    "./client/labels": "./src/client/labels.ts"
   },
   "main": "./src/index.ts",
   "dependencies": {
@@ -14,8 +16,7 @@
     "@lobechat/types": "workspace:*"
   },
   "peerDependencies": {
-    "@lobehub/ui": "^5",
-    "antd-style": "*",
+    "@lobehub/ui": "^6.0.4",
     "lucide-react": "*",
     "path-browserify-esm": "*",
     "react": "*"

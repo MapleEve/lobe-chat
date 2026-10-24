@@ -6,6 +6,7 @@ import { getTrpcClient } from '../api/client';
 import { confirm, outputJson, printBoxTable, printTable, timeAgo } from '../utils/format';
 import { log } from '../utils/logger';
 import { registerBotMessageCommands } from './botMessage';
+import { registerBotMessengersCommands } from './botMessengers';
 
 // ── Access policy helpers ──────────────────────────────
 
@@ -56,11 +57,6 @@ function normalizeAllowList(raw: unknown): AllowEntry[] {
   return out;
 }
 
-function maskValue(val: string): string {
-  if (val.length > 8) return val.slice(0, 4) + '****' + val.slice(-4);
-  return '****';
-}
-
 function camelToFlag(name: string): string {
   return '--' + name.replaceAll(/([A-Z])/g, '-$1').toLowerCase();
 }
@@ -92,7 +88,13 @@ function extractCredentials(
   return { credentials, missing };
 }
 
-/** Find a bot by ID from the user's bot list. */
+/**
+ * Find a bot by ID.
+ *
+ * The list is the only way to turn an id into a channel, but it deliberately
+ * carries no credentials, so re-read the one we found through the per-agent
+ * detail call to get the (masked) credential shape `view` renders.
+ */
 async function findBot(client: TrpcClient, botId: string) {
   const bots = await client.agentBotProvider.list.query();
   const bot = (bots as any[]).find((b: any) => b.id === botId);
@@ -100,7 +102,12 @@ async function findBot(client: TrpcClient, botId: string) {
     log.error(`Bot integration not found: ${botId}`);
     process.exit(1);
   }
-  return bot;
+
+  const detailed = (await client.agentBotProvider.getByAgentId.query({
+    agentId: bot.agentId,
+  })) as any[];
+
+  return detailed.find((b: any) => b.id === botId) ?? bot;
 }
 
 const STATUS_COLORS: Record<string, (s: string) => string> = {
@@ -269,6 +276,204 @@ function registerAllowlistCommand(bot: Command, opts: AllowlistGroupOptions) {
     });
 }
 
+// ── Watch keywords subcommand factory ──────────────────
+
+interface WatchKeywordEntry {
+  instruction?: string;
+  keyword: string;
+}
+
+/**
+ * Normalise `settings.watchKeywords` into the canonical
+ * `{keyword, instruction?}[]` shape. Mirrors `extractWatchKeywordEntries`
+ * in `src/server/services/bot/platforms/const.ts` so the CLI accepts the
+ * same legacy on-disk shapes (`string`, `string[]`, `{keyword, …}[]`)
+ * the runtime is forgiving about — including the rare comma/whitespace
+ * separated string from a hand-pasted upgrade.
+ */
+function normalizeWatchKeywords(raw: unknown): WatchKeywordEntry[] {
+  const push = (out: Map<string, WatchKeywordEntry>, keyword: unknown, instruction?: unknown) => {
+    if (typeof keyword !== 'string') return;
+    const normalised = keyword.trim().toLowerCase();
+    if (!normalised) return;
+    const trimmedInstruction =
+      typeof instruction === 'string' && instruction.trim() ? instruction.trim() : undefined;
+    const existing = out.get(normalised);
+    if (!existing) {
+      out.set(normalised, { instruction: trimmedInstruction, keyword: normalised });
+      return;
+    }
+    if (!existing.instruction && trimmedInstruction) existing.instruction = trimmedInstruction;
+  };
+  const collected = new Map<string, WatchKeywordEntry>();
+  if (typeof raw === 'string') {
+    for (const piece of raw.split(/[\s,]+/)) push(collected, piece);
+  } else if (Array.isArray(raw)) {
+    for (const entry of raw) {
+      if (typeof entry === 'string') {
+        push(collected, entry);
+        continue;
+      }
+      if (entry && typeof entry === 'object' && 'keyword' in entry) {
+        const obj = entry as { instruction?: unknown; keyword?: unknown };
+        push(collected, obj.keyword, obj.instruction);
+      }
+    }
+  }
+  return [...collected.values()];
+}
+
+/**
+ * Build a `list / add / remove / clear` subcommand group around
+ * `settings.watchKeywords`. Shape differs from the user/channel allowlists
+ * (`{keyword, instruction?}` vs `{id, name?}`), so we duplicate the
+ * scaffolding instead of squeezing both shapes through one factory — the
+ * help text, column headers, and `--instruction` flag are all keyword-
+ * specific and would just bloat the unified version.
+ */
+function registerWatchKeywordsCommand(bot: Command) {
+  const group = bot
+    .command('watch-keywords')
+    .description(
+      'Manage watch keywords (non-mention channel triggers; the optional instruction is prepended to the user message before being sent to the AI)',
+    );
+
+  const readEntries = (bot: any): WatchKeywordEntry[] =>
+    normalizeWatchKeywords((bot.settings as Record<string, unknown> | null)?.watchKeywords);
+
+  const buildPayload = (bot: any, nextEntries: WatchKeywordEntry[]) => ({
+    id: bot.id,
+    settings: {
+      ...(bot.settings as Record<string, unknown>),
+      watchKeywords: nextEntries,
+    },
+  });
+
+  group
+    .command('list <botId>')
+    .description('List watch-keyword entries')
+    .option('--json', 'Output JSON')
+    .action(async (botId: string, options: { json?: boolean }) => {
+      const client = await getTrpcClient();
+      const b = await findBot(client, botId);
+      const entries = readEntries(b);
+
+      if (options.json) {
+        outputJson(entries);
+        return;
+      }
+
+      if (entries.length === 0) {
+        console.log(`${pc.dim('No watch-keyword entries.')}`);
+        return;
+      }
+
+      printTable(
+        entries.map((e) => [e.keyword, e.instruction ?? pc.dim('-')]),
+        ['KEYWORD', 'INSTRUCTION'],
+      );
+    });
+
+  group
+    .command('add <botId> <keyword>')
+    .description('Add a watch keyword (with optional instruction prefix)')
+    .option(
+      '--instruction <text>',
+      'Prompt prepended to the user message when this keyword fires (omit for "just wake the bot")',
+    )
+    .action(async (botId: string, keyword: string, options: { instruction?: string }) => {
+      const trimmedKeyword = keyword.trim().toLowerCase();
+      if (!trimmedKeyword) {
+        log.error('Keyword cannot be empty.');
+        process.exit(1);
+        return;
+      }
+
+      const trimmedInstruction = options.instruction?.trim();
+
+      const client = await getTrpcClient();
+      const b = await findBot(client, botId);
+      const entries = readEntries(b);
+
+      const existing = entries.find((e) => e.keyword === trimmedKeyword);
+      if (existing) {
+        // Upsert instruction on duplicate keyword — operators commonly
+        // re-run `add` to tweak the prompt without remembering to remove first.
+        if (trimmedInstruction && existing.instruction !== trimmedInstruction) {
+          existing.instruction = trimmedInstruction;
+          await client.agentBotProvider.update.mutate(buildPayload(b, entries) as any);
+          console.log(
+            `${pc.green('✓')} Updated instruction for ${pc.bold(trimmedKeyword)} (${entries.length} entr${entries.length === 1 ? 'y' : 'ies'})`,
+          );
+          return;
+        }
+        log.info(`${trimmedKeyword} is already on watchKeywords — nothing to do.`);
+        return;
+      }
+
+      const next = [
+        ...entries,
+        trimmedInstruction
+          ? { instruction: trimmedInstruction, keyword: trimmedKeyword }
+          : { keyword: trimmedKeyword },
+      ];
+
+      await client.agentBotProvider.update.mutate(buildPayload(b, next) as any);
+      console.log(
+        `${pc.green('✓')} Added ${pc.bold(trimmedKeyword)}${trimmedInstruction ? ' (with instruction)' : ''} to watchKeywords (now ${next.length} entr${next.length === 1 ? 'y' : 'ies'})`,
+      );
+    });
+
+  group
+    .command('remove <botId> <keyword>')
+    .description('Remove a watch keyword')
+    .action(async (botId: string, keyword: string) => {
+      const trimmedKeyword = keyword.trim().toLowerCase();
+      const client = await getTrpcClient();
+      const b = await findBot(client, botId);
+      const entries = readEntries(b);
+      const next = entries.filter((e) => e.keyword !== trimmedKeyword);
+
+      if (next.length === entries.length) {
+        log.info(`${trimmedKeyword} is not on watchKeywords — nothing to do.`);
+        return;
+      }
+
+      await client.agentBotProvider.update.mutate(buildPayload(b, next) as any);
+      console.log(
+        `${pc.green('✓')} Removed ${pc.bold(trimmedKeyword)} from watchKeywords (${next.length} entr${next.length === 1 ? 'y' : 'ies'} left)`,
+      );
+    });
+
+  group
+    .command('clear <botId>')
+    .description('Clear all watch keywords')
+    .option('--yes', 'Skip confirmation prompt')
+    .action(async (botId: string, options: { yes?: boolean }) => {
+      const client = await getTrpcClient();
+      const b = await findBot(client, botId);
+      const entries = readEntries(b);
+
+      if (entries.length === 0) {
+        log.info('watchKeywords is already empty — nothing to do.');
+        return;
+      }
+
+      if (!options.yes) {
+        const confirmed = await confirm(
+          `Clear all ${entries.length} watch-keyword entr${entries.length === 1 ? 'y' : 'ies'} from this bot?`,
+        );
+        if (!confirmed) {
+          console.log('Cancelled.');
+          return;
+        }
+      }
+
+      await client.agentBotProvider.update.mutate(buildPayload(b, []) as any);
+      console.log(`${pc.green('✓')} Cleared watchKeywords on bot ${pc.bold(botId)}`);
+    });
+}
+
 // ── Command Registration ─────────────────────────────────
 
 export function registerBotCommand(program: Command) {
@@ -276,6 +481,9 @@ export function registerBotCommand(program: Command) {
 
   // Register message subcommand group
   registerBotMessageCommands(bot);
+
+  // Register messengers subcommand group (System Bot installations + account links)
+  registerBotMessengersCommands(bot);
 
   // ── platforms ───────────────────────────────────────────
 
@@ -367,61 +575,55 @@ export function registerBotCommand(program: Command) {
     .command('view <botId>')
     .description('View bot integration details')
     .option('--json [fields]', 'Output JSON, optionally specify fields (comma-separated)')
-    .option('--show-credentials', 'Show full credential values (unmasked)')
-    .action(
-      async (botId: string, options: { json?: string | boolean; showCredentials?: boolean }) => {
-        const client = await getTrpcClient();
-        const b = await findBot(client, botId);
+    .action(async (botId: string, options: { json?: string | boolean }) => {
+      const client = await getTrpcClient();
+      const b = await findBot(client, botId);
 
-        if (options.json !== undefined) {
-          const fields = typeof options.json === 'string' ? options.json : undefined;
-          outputJson(b, fields);
-          return;
+      if (options.json !== undefined) {
+        const fields = typeof options.json === 'string' ? options.json : undefined;
+        outputJson(b, fields);
+        return;
+      }
+
+      const status = b.enabled ? (b.runtimeStatus ?? 'disconnected') : 'disabled';
+      const statusColorFn = STATUS_COLORS[status] ?? pc.dim;
+
+      const credentialLines: string[] = [];
+      if (b.credentials && typeof b.credentials === 'object') {
+        // Already masked by the server — there is no unmasked form to opt into.
+        for (const [key, value] of Object.entries(b.credentials)) {
+          credentialLines.push(`${pc.dim(key)}: ${String(value)}`);
         }
+      }
 
-        const status = b.enabled ? (b.runtimeStatus ?? 'disconnected') : 'disabled';
-        const statusColorFn = STATUS_COLORS[status] ?? pc.dim;
-
-        const credentialLines: string[] = [];
-        if (b.credentials && typeof b.credentials === 'object') {
-          for (const [key, value] of Object.entries(b.credentials)) {
-            const val = String(value);
-            const display = options.showCredentials ? val : maskValue(val);
-            credentialLines.push(`${pc.dim(key)}: ${display}`);
-          }
+      const settingsLines: string[] = [];
+      if (b.settings && typeof b.settings === 'object') {
+        for (const [key, value] of Object.entries(b.settings)) {
+          settingsLines.push(`${pc.dim(key)}: ${JSON.stringify(value)}`);
         }
+      }
 
-        const settingsLines: string[] = [];
-        if (b.settings && typeof b.settings === 'object') {
-          for (const [key, value] of Object.entries(b.settings)) {
-            settingsLines.push(`${pc.dim(key)}: ${JSON.stringify(value)}`);
-          }
-        }
-
-        printBoxTable(
-          [
-            { header: 'Field', key: 'field' },
-            { header: 'Value', key: 'value' },
-          ],
-          [
-            { field: 'ID', value: b.id || '' },
-            { field: 'Platform', value: pc.cyan(b.platform || '') },
-            { field: 'Application ID', value: b.applicationId || '' },
-            { field: 'Agent ID', value: b.agentId || '' },
-            { field: 'Status', value: statusColorFn(status) },
-            ...(credentialLines.length > 0
-              ? [{ field: 'Credentials', value: credentialLines }]
-              : []),
-            ...(settingsLines.length > 0 ? [{ field: 'Settings', value: settingsLines }] : []),
-            ...(b.createdAt
-              ? [{ field: 'Created', value: new Date(b.createdAt).toLocaleString() }]
-              : []),
-            ...(b.updatedAt ? [{ field: 'Updated', value: timeAgo(b.updatedAt) }] : []),
-          ],
-          `${b.platform} bot`,
-        );
-      },
-    );
+      printBoxTable(
+        [
+          { header: 'Field', key: 'field' },
+          { header: 'Value', key: 'value' },
+        ],
+        [
+          { field: 'ID', value: b.id || '' },
+          { field: 'Platform', value: pc.cyan(b.platform || '') },
+          { field: 'Application ID', value: b.applicationId || '' },
+          { field: 'Agent ID', value: b.agentId || '' },
+          { field: 'Status', value: statusColorFn(status) },
+          ...(credentialLines.length > 0 ? [{ field: 'Credentials', value: credentialLines }] : []),
+          ...(settingsLines.length > 0 ? [{ field: 'Settings', value: settingsLines }] : []),
+          ...(b.createdAt
+            ? [{ field: 'Created', value: new Date(b.createdAt).toLocaleString() }]
+            : []),
+          ...(b.updatedAt ? [{ field: 'Updated', value: timeAgo(b.updatedAt) }] : []),
+        ],
+        `${b.platform} bot`,
+      );
+    });
 
   // ── add ───────────────────────────────────────────────
 
@@ -543,7 +745,12 @@ export function registerBotCommand(program: Command) {
         const platformDef = await resolvePlatform(client, platform);
 
         const { credentials } = extractCredentials(platformDef, options);
-        if (Object.keys(credentials).length > 0) input.credentials = credentials;
+        if (Object.keys(credentials).length > 0) {
+          input.credentials =
+            platform === existing.platform
+              ? { ...(existing.credentials as Record<string, string>), ...credentials }
+              : credentials;
+        }
         if (options.appId) input.applicationId = options.appId;
         if (options.platform) input.platform = options.platform;
 
@@ -608,6 +815,10 @@ export function registerBotCommand(program: Command) {
     name: 'group-allowlist',
   });
 
+  // ── watch-keywords () ────────────────────────
+
+  registerWatchKeywordsCommand(bot);
+
   // ── remove ────────────────────────────────────────────
 
   bot
@@ -624,7 +835,16 @@ export function registerBotCommand(program: Command) {
       }
 
       const client = await getTrpcClient();
-      await client.agentBotProvider.delete.mutate({ id: botId });
+      const removed = await client.agentBotProvider.delete.mutate({ id: botId });
+
+      // The server returns the rows it removed. Printing the checkmark without
+      // reading it is how a delete that matched nothing used to read as done.
+      if (Array.isArray(removed) && removed.length === 0) {
+        console.error(`${pc.red('✗')} Nothing removed — bot ${pc.bold(botId)} still exists`);
+        process.exitCode = 1;
+        return;
+      }
+
       console.log(`${pc.green('✓')} Removed bot ${pc.bold(botId)}`);
     });
 
@@ -660,10 +880,14 @@ export function registerBotCommand(program: Command) {
       log.status(`Testing ${b.platform} credentials for ${b.applicationId}...`);
 
       try {
-        await client.agentBotProvider.testConnection.mutate({
+        const result = await client.agentBotProvider.testConnection.mutate({
           applicationId: b.applicationId,
           platform: b.platform,
         });
+        if (!result.valid) {
+          log.error(`Credential test failed: ${result.message}`);
+          process.exit(1);
+        }
         console.log(`${pc.green('✓')} Credentials are valid for ${pc.bold(b.platform)} bot`);
       } catch (err: any) {
         const message = err?.message || 'Connection test failed';

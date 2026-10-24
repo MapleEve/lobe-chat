@@ -1,5 +1,5 @@
+import { createMediaFileRef } from '@lobechat/const/mediaRef';
 import type { ChatVideoItem } from '@lobechat/types';
-import { createVisualFileRef } from '@lobechat/types';
 
 const videoPrompt = (
   item: ChatVideoItem,
@@ -7,7 +7,7 @@ const videoPrompt = (
   index: number,
   messageId?: string,
 ) => {
-  const ref = createVisualFileRef({ index, messageId, type: 'video' });
+  const ref = createMediaFileRef({ index, messageId, type: 'video' });
 
   return attachUrl
     ? `<video ref="${ref}" name="${item.alt}" url="${item.url}"></video>`

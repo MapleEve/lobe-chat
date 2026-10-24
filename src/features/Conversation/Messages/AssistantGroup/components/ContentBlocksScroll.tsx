@@ -1,8 +1,7 @@
 'use client';
 
 import type { UIChatMessage } from '@lobechat/types';
-import { Flexbox, ScrollArea } from '@lobehub/ui';
-import { createStaticStyles } from 'antd-style';
+import { createStaticStyles, Flexbox, ScrollArea } from '@lobehub/ui';
 import type { RefObject } from 'react';
 import { memo, useMemo } from 'react';
 
@@ -44,8 +43,7 @@ interface ContentBlocksScrollFromMessages extends ContentBlocksScrollBaseProps {
 }
 
 export type ContentBlocksScrollProps =
-  | ContentBlocksScrollFromBlocks
-  | ContentBlocksScrollFromMessages;
+  ContentBlocksScrollFromBlocks | ContentBlocksScrollFromMessages;
 
 const ContentBlocksScroll = memo<ContentBlocksScrollProps>((props) => {
   const { disableEditing, onScroll, scroll = true, scrollRef, variant } = props;
@@ -68,7 +66,7 @@ const ContentBlocksScroll = memo<ContentBlocksScrollProps>((props) => {
   }, [assistantIdFromProps, blocksFromProps, messagesList]);
 
   const list = (
-    <Flexbox>
+    <Flexbox gap={variant === 'workflow' ? 8 : undefined}>
       {blocks.map((block) => (
         <ContentBlock
           key={block.renderKey ?? block.id}
@@ -90,15 +88,13 @@ const ContentBlocksScroll = memo<ContentBlocksScrollProps>((props) => {
 
   return (
     <ScrollArea
+      disableContentFit
       scrollFade
       className={styles.scrollRoot}
-      contentProps={{
+      contentProps={{ style: { paddingInlineEnd: 12 } }}
+      scrollbarProps={{
         style: {
-          color: 'inherit',
-          display: 'block',
-          fontSize: 'inherit',
-          gap: 0,
-          lineHeight: 'inherit',
+          marginInlineEnd: 2,
         },
       }}
       viewportProps={{

@@ -1,28 +1,87 @@
-import type { QueryFileListParams } from '@lobechat/types';
-import { FilesTabs, SortType } from '@lobechat/types';
-import { and, asc, count, desc, eq, ilike, inArray, like, notExists, or, sum } from 'drizzle-orm';
+import type { FileAccessScope, FileSource, QueryFileListParams } from '@lobechat/types';
+import {
+  FilesTabs,
+  getAgentShareFileProvenance,
+  ordinaryFileAccessScope,
+  SortType,
+} from '@lobechat/types';
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  isNull,
+  like,
+  ne,
+  notExists,
+  or,
+  sql,
+  sum,
+} from 'drizzle-orm';
 import type { PgTransaction } from 'drizzle-orm/pg-core';
 
 import type { FileItem, NewFile, NewGlobalFile } from '../schemas';
 import {
+  agentsFiles,
+  asyncTasks,
   chunks,
   documentChunks,
+  documents,
   embeddings,
   fileChunks,
   files,
+  filesToSessions,
+  generations,
   globalFiles,
   knowledgeBaseFiles,
+  knowledgeBases,
+  messages,
+  messagesFiles,
+  messageTTS,
+  topics,
+  users,
+  verifyEvidence,
 } from '../schemas';
 import type { LobeChatDatabase, Transaction } from '../type';
+import { buildFileCategoryFilter } from '../utils/fileTypeCategory';
+import {
+  fileMatchesAccessScope,
+  libraryVisibleFile,
+  notAgentShareFile,
+} from '../utils/fileVisibility';
+import { buildWorkspacePayload, buildWorkspaceWhere } from '../utils/workspace';
+
+/**
+ * Minimal file descriptor used to bootstrap user-uploaded files into a sandbox.
+ */
+export interface SandboxInitFileItem {
+  fileType: string;
+  id: string;
+  name: string;
+  size: number;
+  /** S3 key / storage url, needs to be turned into a download url before use */
+  url: string;
+}
 
 export class FileModel {
   private readonly userId: string;
   private db: LobeChatDatabase;
+  private workspaceId?: string;
 
-  constructor(db: LobeChatDatabase, userId: string) {
+  constructor(db: LobeChatDatabase, userId: string, workspaceId?: string) {
     this.userId = userId;
     this.db = db;
+    this.workspaceId = workspaceId;
   }
+
+  private ownership = (callerAgentVisibility?: 'private' | 'public' | null) =>
+    buildWorkspaceWhere(
+      { callerAgentVisibility, userId: this.userId, workspaceId: this.workspaceId },
+      files,
+    );
 
   /**
    * Get file by ID without userId filter (public access)
@@ -64,17 +123,26 @@ export class FileModel {
 
       const result = (await tx
         .insert(files)
-        .values({ ...params, userId: this.userId })
+        .values(
+          buildWorkspacePayload(
+            { userId: this.userId, workspaceId: this.workspaceId },
+            { ...params },
+          ),
+        )
         .returning()) as FileItem[];
 
       const item = result[0]!;
 
       if (params.knowledgeBaseId) {
-        await tx.insert(knowledgeBaseFiles).values({
-          fileId: item.id,
-          knowledgeBaseId: params.knowledgeBaseId,
-          userId: this.userId,
-        });
+        await tx.insert(knowledgeBaseFiles).values(
+          buildWorkspacePayload(
+            { userId: this.userId, workspaceId: this.workspaceId },
+            {
+              fileId: item.id,
+              knowledgeBaseId: params.knowledgeBaseId,
+            },
+          ),
+        );
       }
 
       return item;
@@ -93,8 +161,9 @@ export class FileModel {
   updateGlobalFile = async (
     hashId: string,
     data: Partial<Pick<NewGlobalFile, 'metadata' | 'url'>>,
+    trx?: Transaction,
   ) => {
-    return this.db.update(globalFiles).set(data).where(eq(globalFiles.hashId, hashId));
+    return (trx ?? this.db).update(globalFiles).set(data).where(eq(globalFiles.hashId, hashId));
   };
 
   checkHash = async (hash: string) => {
@@ -112,76 +181,265 @@ export class FileModel {
     };
   };
 
-  delete = async (id: string, removeGlobalFile: boolean = true, trx?: Transaction) => {
-    const executeInTransaction = async (tx: Transaction) => {
-      // In pglite environment, non-transactional operations cannot be used within a transaction as it will block
-      const file = await this.findById(id, tx);
+  private deleteInTransaction = async (
+    id: string,
+    removeGlobalFile: boolean,
+    tx: Transaction,
+    accessScope: FileAccessScope,
+  ) => {
+    // In pglite environment, non-transactional operations cannot be used within a transaction as it will block
+    const file = await this.findById(id, { accessScope, transaction: tx });
+    if (!file) return;
+
+    const fileHash = file.fileHash;
+
+    // 1. Delete related chunks
+    await this.deleteFileChunks(tx as any, [id]);
+
+    // 2. Delete mirror documents whose source is this file. Without this,
+    // documents.fileId would be set null by FK and leave orphan rows behind
+    // (still indexed by BM25, still occupying KB slots).
+    await tx
+      .delete(documents)
+      .where(
+        and(
+          eq(documents.fileId, id),
+          buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, documents),
+          eq(documents.sourceType, 'file'),
+        ),
+      );
+
+    // 3. Delete the chunk/embedding asyncTasks tied to this file. files.chunkTaskId
+    // and embeddingTaskId are `set null` on the asyncTasks side, so without this
+    // the task rows would dangle in the DB forever.
+    const taskIds = [file.chunkTaskId, file.embeddingTaskId].filter((taskId): taskId is string =>
+      Boolean(taskId),
+    );
+    if (taskIds.length > 0) {
+      await tx.delete(asyncTasks).where(inArray(asyncTasks.id, taskIds));
+    }
+
+    // 4. Delete file record
+    await tx.delete(files).where(and(eq(files.id, id), this.ownership()));
+
+    if (!fileHash) {
+      return removeGlobalFile && getAgentShareFileProvenance(file.metadata) ? file : undefined;
+    }
+
+    const result = await tx
+      .select({ count: count() })
+      .from(files)
+      .where(eq(files.fileHash, fileHash));
+
+    const fileCount = result[0].count;
+
+    // delete the file from global file if it is not used by other files
+    // if `DISABLE_REMOVE_GLOBAL_FILE` is true, we will not remove the global file
+    if (fileCount === 0 && removeGlobalFile) {
+      await tx.delete(globalFiles).where(eq(globalFiles.hashId, fileHash));
+
+      return file;
+    }
+
+    return undefined;
+  };
+
+  /** Delete a file row within the caller's access scope. */
+  delete = async (
+    id: string,
+    options: {
+      accessScope?: FileAccessScope;
+      removeGlobalFile?: boolean;
+      transaction?: Transaction;
+    } = {},
+  ) => {
+    const { accessScope = ordinaryFileAccessScope, removeGlobalFile = true, transaction } = options;
+    const executeInTransaction = (tx: Transaction) =>
+      this.deleteInTransaction(id, removeGlobalFile, tx, accessScope);
+
+    return transaction
+      ? executeInTransaction(transaction)
+      : this.db.transaction(executeInTransaction);
+  };
+
+  /**
+   * Delete a transient upload only while no persisted content references it.
+   * This also covers documents, knowledge bases, agents, generated media, TTS and evidence.
+   * Locking the file row serializes this cleanup with foreign-key inserts, so a late send either
+   * wins ownership and preserves the file or observes the deletion and fails atomically.
+   *
+   * Resolves to the row only when its stored object should be deleted too;
+   * `undefined` covers both "still referenced, kept" and "deleted, object still shared".
+   */
+  deleteUnreferenced = async (
+    id: string,
+    options: {
+      accessScope?: FileAccessScope;
+      removeGlobalFile?: boolean;
+      /** Only reclaim this upload source; omitted preserves the general cleanup behavior. */
+      source?: FileSource;
+    } = {},
+  ) => {
+    const { accessScope = ordinaryFileAccessScope, removeGlobalFile = true } = options;
+    return this.db.transaction(async (trx) => {
+      const [file] = await trx
+        .select({ id: files.id })
+        .from(files)
+        .where(
+          and(
+            eq(files.id, id),
+            this.ownership(),
+            options.source ? eq(files.source, options.source) : undefined,
+            fileMatchesAccessScope(files.metadata, accessScope),
+          ),
+        )
+        .limit(1)
+        .for('update');
       if (!file) return;
 
-      const fileHash = file.fileHash!;
+      const [messageReference] = await trx
+        .select({ id: messagesFiles.fileId })
+        .from(messagesFiles)
+        .where(eq(messagesFiles.fileId, id))
+        .limit(1);
+      if (messageReference) return;
 
-      // 2. Delete related chunks
-      await this.deleteFileChunks(tx as any, [id]);
+      const [sessionReference] = await trx
+        .select({ id: filesToSessions.fileId })
+        .from(filesToSessions)
+        .where(eq(filesToSessions.fileId, id))
+        .limit(1);
+      if (sessionReference) return;
 
-      // 3. Delete file record
-      await tx.delete(files).where(and(eq(files.id, id), eq(files.userId, this.userId)));
+      // Content references keep hidden uploads alive, including soft-deleted documents.
+      // The file lock conflicts with FK inserts, so concurrent attachments cannot be lost.
+      // Upload sessions and derived chunks are bookkeeping, not surviving content owners.
+      const [contentReference] = await trx
+        .select({ id: documents.fileId })
+        .from(documents)
+        .where(eq(documents.fileId, id))
+        .unionAll(
+          trx
+            .select({ id: knowledgeBaseFiles.fileId })
+            .from(knowledgeBaseFiles)
+            .where(eq(knowledgeBaseFiles.fileId, id)),
+        )
+        .unionAll(
+          trx
+            .select({ id: agentsFiles.fileId })
+            .from(agentsFiles)
+            .where(eq(agentsFiles.fileId, id)),
+        )
+        .unionAll(
+          trx
+            .select({ id: generations.fileId })
+            .from(generations)
+            .where(eq(generations.fileId, id)),
+        )
+        .unionAll(
+          trx.select({ id: messageTTS.fileId }).from(messageTTS).where(eq(messageTTS.fileId, id)),
+        )
+        .unionAll(
+          trx
+            .select({ id: verifyEvidence.fileId })
+            .from(verifyEvidence)
+            .where(eq(verifyEvidence.fileId, id)),
+        )
+        .limit(1);
+      if (contentReference) return;
 
-      const result = await tx
-        .select({ count: count() })
-        .from(files)
-        .where(and(eq(files.fileHash, fileHash)));
-
-      const fileCount = result[0].count;
-
-      // delete the file from global file if it is not used by other files
-      // if `DISABLE_REMOVE_GLOBAL_FILE` is true, we will not remove the global file
-      if (fileCount === 0 && removeGlobalFile) {
-        await tx.delete(globalFiles).where(eq(globalFiles.hashId, fileHash));
-
-        return file;
-      }
-    };
-
-    return await (trx ? executeInTransaction(trx) : this.db.transaction(executeInTransaction));
+      return this.deleteInTransaction(id, removeGlobalFile, trx, accessScope);
+    });
   };
 
   deleteGlobalFile = async (hashId: string) => {
     return this.db.delete(globalFiles).where(eq(globalFiles.hashId, hashId));
   };
 
-  countUsage = async () => {
-    const result = await this.db
+  countUsage = async (trx?: Transaction) => {
+    const db = trx ?? this.db;
+    const result = await db
       .select({
         totalSize: sum(files.size),
       })
       .from(files)
-      .where(eq(files.userId, this.userId));
+      .where(this.ownership());
 
     return parseInt(result[0].totalSize!) || 0;
   };
 
-  deleteMany = async (ids: string[], removeGlobalFile: boolean = true) => {
+  /**
+   * Bytes occupied by one agent share's visitor uploads: this user's rows
+   * whose provenance names `shareId`. Backs the share's
+   * `maxFileStorage` cap (`shareChat.createUploadUrl`), so it accepts the
+   * reservation transaction to be counted inside it.
+   */
+  countAgentShareUsage = async (shareId: string, trx?: Transaction) => {
+    const db = trx ?? this.db;
+    const [row] = await db
+      .select({ totalSize: sum(files.size) })
+      .from(files)
+      .where(
+        and(this.ownership(), sql`${files.metadata} -> 'agentShare' ->> 'shareId' = ${shareId}`),
+      );
+
+    return Number(row?.totalSize ?? 0);
+  };
+
+  deleteMany = async (
+    ids: string[],
+    removeGlobalFile: boolean = true,
+    options?: { restrictToCreator?: boolean },
+  ) => {
     if (ids.length === 0) return [];
 
     return await this.db.transaction(async (trx) => {
       // 1. First get the file list to return the deleted files
       const fileList = await trx.query.files.findMany({
-        where: and(inArray(files.id, ids), eq(files.userId, this.userId)),
+        where: and(
+          inArray(files.id, ids),
+          this.ownership(),
+          notAgentShareFile(files.metadata),
+          // Workspace bulk deletes from non-owner members only touch their own rows.
+          options?.restrictToCreator ? eq(files.userId, this.userId) : undefined,
+        ),
       });
 
       if (fileList.length === 0) return [];
+
+      const targetIds = fileList.map((file) => file.id);
 
       // Extract file hashes that need to be checked
       const hashList = fileList.map((file) => file.fileHash!).filter(Boolean);
 
       // 2. Delete related chunks
-      await this.deleteFileChunks(trx as any, ids);
+      await this.deleteFileChunks(trx as any, targetIds);
 
-      // 3. Delete file records
-      await trx.delete(files).where(and(inArray(files.id, ids), eq(files.userId, this.userId)));
+      // 3. Delete mirror documents (sourceType='file') so they don't linger as
+      // orphans with fileId set to null after the file row is removed.
+      await trx
+        .delete(documents)
+        .where(
+          and(
+            inArray(documents.fileId, targetIds),
+            buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, documents),
+            eq(documents.sourceType, 'file'),
+          ),
+        );
 
-      // If global files don't need to be deleted, return directly
-      if (!removeGlobalFile || hashList.length === 0) return fileList;
+      // 4. Delete chunk/embedding asyncTasks attached to these files.
+      const taskIds = fileList
+        .flatMap((file) => [file.chunkTaskId, file.embeddingTaskId])
+        .filter((taskId): taskId is string => Boolean(taskId));
+      if (taskIds.length > 0) {
+        await trx.delete(asyncTasks).where(inArray(asyncTasks.id, taskIds));
+      }
+
+      // 5. Delete file records
+      await trx.delete(files).where(and(inArray(files.id, targetIds), this.ownership()));
+
+      // If global files don't need to be deleted, no storage object should be removed.
+      if (!removeGlobalFile || hashList.length === 0) return [];
 
       // 4. Find hashes that are no longer referenced
       const remainingFiles = await trx
@@ -197,18 +455,20 @@ export class FileModel {
       // Find hashes to delete (those no longer used by any file)
       const hashesToDelete = hashList.filter((hash) => !usedHashes.has(hash));
 
-      if (hashesToDelete.length === 0) return fileList;
+      if (hashesToDelete.length === 0) return [];
 
       // 5. Delete global files that are no longer referenced
       await trx.delete(globalFiles).where(inArray(globalFiles.hashId, hashesToDelete));
 
-      // Return the list of deleted files
-      return fileList;
+      const hashesToDeleteSet = new Set(hashesToDelete);
+
+      // Return only files whose backing global object became unreferenced.
+      return fileList.filter((file) => file.fileHash && hashesToDeleteSet.has(file.fileHash));
     });
   };
 
   clear = async () => {
-    return this.db.delete(files).where(eq(files.userId, this.userId));
+    return this.db.delete(files).where(this.ownership());
   };
 
   query = async ({
@@ -218,22 +478,32 @@ export class FileModel {
     sorter,
     knowledgeBaseId,
     showFilesInKnowledgeBase,
-  }: QueryFileListParams = {}) => {
+    callerAgentVisibility,
+    excludeKnowledgeBaseIds,
+    visibility,
+  }: QueryFileListParams & {
+    callerAgentVisibility?: 'private' | 'public' | null;
+    /**
+     * Server-derived list of restricted knowledge bases the caller may not
+     * browse. Files linked to these KBs are dropped from cross-KB listings;
+     * never populated from client input.
+     */
+    excludeKnowledgeBaseIds?: string[];
+    visibility?: 'private' | 'public';
+  } = {}) => {
     // 1. Build where clause
     let whereClause = and(
       q ? ilike(files.name, `%${q}%`) : undefined,
-      eq(files.userId, this.userId),
+      this.ownership(callerAgentVisibility),
+      visibility ? eq(files.visibility, visibility) : undefined,
+      libraryVisibleFile(files.source, files.metadata),
     );
     if (category && category !== FilesTabs.All && category !== FilesTabs.Home) {
-      const fileTypePrefix = this.getFileTypePrefix(category as FilesTabs);
-      if (Array.isArray(fileTypePrefix)) {
-        // For multiple file types (e.g., Documents includes 'application' and 'custom')
-        whereClause = and(
-          whereClause,
-          or(...fileTypePrefix.map((prefix) => ilike(files.fileType, `${prefix}%`))),
-        );
-      } else {
-        whereClause = and(whereClause, ilike(files.fileType, `${fileTypePrefix}%`));
+      const categoryFilter = buildFileCategoryFilter(files.fileType, category as FilesTabs);
+      if (categoryFilter === 'none') {
+        whereClause = and(whereClause, sql`false`);
+      } else if (categoryFilter !== 'all') {
+        whereClause = and(whereClause, categoryFilter);
       }
     }
 
@@ -265,9 +535,18 @@ export class FileModel {
         name: files.name,
         size: files.size,
         updatedAt: files.updatedAt,
+        uploader: {
+          avatar: users.avatar,
+          fullName: users.fullName,
+          id: users.id,
+          username: users.username,
+        },
         url: files.url,
+        userId: files.userId,
+        visibility: files.visibility,
       })
-      .from(files);
+      .from(files)
+      .leftJoin(users, eq(files.userId, users.id));
 
     // 4. Add knowledge base query if needed
     if (knowledgeBaseId) {
@@ -291,22 +570,204 @@ export class FileModel {
         ),
       );
     }
+    // Cross-KB listing: drop files linked to restricted knowledge bases. A file
+    // that also belongs to an open KB is still dropped — over-hiding beats
+    // leaking a restricted KB's content through a shared membership.
+    else if (excludeKnowledgeBaseIds?.length) {
+      whereClause = and(
+        whereClause,
+        notExists(
+          this.db
+            .select()
+            .from(knowledgeBaseFiles)
+            .where(
+              and(
+                eq(knowledgeBaseFiles.fileId, files.id),
+                inArray(knowledgeBaseFiles.knowledgeBaseId, excludeKnowledgeBaseIds),
+              ),
+            ),
+        ),
+      );
+    }
 
     // Otherwise, we are just filtering in the global files
-    return query.where(whereClause).orderBy(orderByClause);
+    const rows = await query.where(whereClause).orderBy(orderByClause);
+    // LEFT JOIN yields a fully-null uploader row when the user record is missing
+    // (e.g. deleted account). Collapse those to `null` so the client can rely on
+    // `uploader?.id` as the presence check.
+    return rows.map((row) => ({
+      ...row,
+      uploader: row.uploader?.id ? row.uploader : null,
+    }));
   };
 
-  findByIds = async (ids: string[]) => {
+  findByIds = async (ids: string[], accessScope: FileAccessScope = ordinaryFileAccessScope) => {
     return this.db.query.files.findMany({
-      where: and(inArray(files.id, ids), eq(files.userId, this.userId)),
+      where: and(
+        inArray(files.id, ids),
+        this.ownership(),
+        fileMatchesAccessScope(files.metadata, accessScope),
+      ),
     });
   };
 
-  findById = async (id: string, trx?: Transaction) => {
-    const database = trx || this.db;
+  /**
+   * Libraries (knowledge bases) a file is filed in that the caller can see. A
+   * collaborator may have filed it into their own private library, which the
+   * caller must neither learn about nor write to.
+   */
+  findKnowledgeBaseIds = async (fileId: string): Promise<string[]> => {
+    const rows = await this.db
+      .select({ id: knowledgeBaseFiles.knowledgeBaseId })
+      .from(knowledgeBaseFiles)
+      .innerJoin(knowledgeBases, eq(knowledgeBases.id, knowledgeBaseFiles.knowledgeBaseId))
+      .where(
+        and(
+          eq(knowledgeBaseFiles.fileId, fileId),
+          buildWorkspaceWhere(
+            { userId: this.userId, workspaceId: this.workspaceId },
+            knowledgeBases,
+          ),
+        ),
+      );
+    return rows.map((row) => row.id);
+  };
+
+  findById = async (
+    id: string,
+    options: { accessScope?: FileAccessScope; transaction?: Transaction } = {},
+  ) => {
+    const { accessScope = ordinaryFileAccessScope, transaction } = options;
+    const database = transaction || this.db;
     return database.query.files.findFirst({
-      where: and(eq(files.id, id), eq(files.userId, this.userId)),
+      where: and(
+        eq(files.id, id),
+        this.ownership(),
+        fileMatchesAccessScope(files.metadata, accessScope),
+      ),
     });
+  };
+
+  /**
+   * Whether any of the given topics contains a user-owned file attached to a
+   * message. This intentionally checks for attachment presence rather than
+   * deletability: shared files should still be disclosed in the confirmation
+   * UI, while {@link findDeletableFilesByTopicId} remains responsible for
+   * preserving references that survive the topic deletion.
+   */
+  hasFilesByTopicIds = async (topicIds: string[]): Promise<boolean> => {
+    if (topicIds.length === 0) return false;
+
+    const [file] = await this.db
+      .select({ id: messagesFiles.fileId })
+      .from(messagesFiles)
+      .innerJoin(messages, eq(messagesFiles.messageId, messages.id))
+      .innerJoin(files, eq(messagesFiles.fileId, files.id))
+      .where(
+        and(
+          inArray(messages.topicId, topicIds),
+          eq(messagesFiles.userId, this.userId),
+          this.ownership(),
+        ),
+      )
+      .limit(1);
+
+    return Boolean(file);
+  };
+
+  /**
+   * Collect the user-uploaded files that should be pre-loaded into a sandbox for
+   * the given topic. Combines two associations and de-duplicates by file id:
+   * - files attached to messages inside the topic (`messages_files`)
+   * - files attached to the session that owns the topic (`files_to_sessions`)
+   */
+  findFilesToInitInSandbox = async (topicId: string): Promise<SandboxInitFileItem[]> => {
+    const columns = {
+      fileType: files.fileType,
+      id: files.id,
+      name: files.name,
+      size: files.size,
+      url: files.url,
+    };
+
+    const [messageFiles, sessionFiles] = await Promise.all([
+      this.db
+        .select(columns)
+        .from(messagesFiles)
+        .innerJoin(messages, eq(messagesFiles.messageId, messages.id))
+        .innerJoin(files, eq(messagesFiles.fileId, files.id))
+        .where(and(eq(messages.topicId, topicId), eq(messagesFiles.userId, this.userId))),
+      this.db
+        .select(columns)
+        .from(filesToSessions)
+        .innerJoin(topics, eq(topics.sessionId, filesToSessions.sessionId))
+        .innerJoin(files, eq(filesToSessions.fileId, files.id))
+        .where(and(eq(topics.id, topicId), eq(filesToSessions.userId, this.userId))),
+    ]);
+
+    const deduped = new Map<string, SandboxInitFileItem>();
+    for (const file of [...messageFiles, ...sessionFiles]) {
+      if (!deduped.has(file.id)) deduped.set(file.id, file);
+    }
+
+    return [...deduped.values()];
+  };
+
+  /**
+   * Find the user-uploaded files that can be safely deleted when a topic is
+   * removed: files attached to messages inside the topic that have **no other
+   * reference** surviving the deletion.
+   *
+   * Deleting a `files` row cascades to `messages_files` and `files_to_sessions`,
+   * so a file still referenced elsewhere would silently disappear from there.
+   * A candidate is therefore preserved (excluded) when it is still attached:
+   * - to a message in another topic (or a message with no topic), or
+   * - at the session level (`files_to_sessions`), which outlives a single topic.
+   *
+   * Session-level files are likewise never returned, matching the behaviour
+   * documented on {@link findFilesToInitInSandbox}.
+   */
+  findDeletableFilesByTopicId = async (topicId: string): Promise<string[]> => {
+    const candidates = await this.db
+      .selectDistinct({ id: messagesFiles.fileId })
+      .from(messagesFiles)
+      .innerJoin(messages, eq(messagesFiles.messageId, messages.id))
+      .where(and(eq(messages.topicId, topicId), eq(messagesFiles.userId, this.userId)));
+
+    const candidateIds = candidates.map((row) => row.id);
+    if (candidateIds.length === 0) return [];
+
+    const [messageRefsOutsideTopic, sessionRefs] = await Promise.all([
+      // same file attached to a message in a different topic (or no topic)
+      this.db
+        .selectDistinct({ id: messagesFiles.fileId })
+        .from(messagesFiles)
+        .innerJoin(messages, eq(messagesFiles.messageId, messages.id))
+        .where(
+          and(
+            inArray(messagesFiles.fileId, candidateIds),
+            eq(messagesFiles.userId, this.userId),
+            or(ne(messages.topicId, topicId), isNull(messages.topicId)),
+          ),
+        ),
+      // same file attached at the session level — survives topic deletion
+      this.db
+        .selectDistinct({ id: filesToSessions.fileId })
+        .from(filesToSessions)
+        .where(
+          and(
+            inArray(filesToSessions.fileId, candidateIds),
+            eq(filesToSessions.userId, this.userId),
+          ),
+        ),
+    ]);
+
+    const referencedElsewhere = new Set<string>([
+      ...messageRefsOutsideTopic.map((row) => row.id),
+      ...sessionRefs.map((row) => row.id),
+    ]);
+
+    return candidateIds.filter((id) => !referencedElsewhere.has(id));
   };
 
   countFilesByHash = async (hash: string) => {
@@ -324,40 +785,44 @@ export class FileModel {
     this.db
       .update(files)
       .set({ ...value, updatedAt: new Date() })
-      .where(and(eq(files.id, id), eq(files.userId, this.userId)));
+      .where(and(eq(files.id, id), this.ownership()));
 
   /**
-   * get the corresponding file type prefix according to FilesTabs
+   * Publish a private file into the workspace. Thin wrapper around
+   * `setVisibility(fileId, 'public')`; kept as a named method for the TRPC
+   * `publishFileToWorkspace` procedure and existing callers.
    */
-  private getFileTypePrefix = (category: FilesTabs): string | string[] => {
-    switch (category) {
-      case FilesTabs.Audios: {
-        return 'audio';
-      }
-      case FilesTabs.Documents: {
-        return ['application', 'custom'];
-      }
-      case FilesTabs.Images: {
-        return 'image';
-      }
-      case FilesTabs.Videos: {
-        return 'video';
-      }
-      case FilesTabs.Websites: {
-        return 'text/html';
-      }
-      default: {
-        return '';
-      }
-    }
+  publishToWorkspace = async (fileId: string) => this.setVisibility(fileId, 'public');
+
+  /**
+   * Flip a file's `visibility`. Bidirectional companion to `publishToWorkspace`.
+   * The combined `user_id = ?` + `visibility = fromVisibility` guards lock the
+   * operation to the creator's own row and make it idempotent against rows
+   * already at the target visibility.
+   *
+   * Unpublishing is safe by design — after the flip, `buildWorkspaceWhere` and
+   * any downstream file-access checks hide the file from other members on the
+   * next read; blobs already fetched by clients stay cached until they expire.
+   */
+  setVisibility = async (fileId: string, visibility: 'private' | 'public') => {
+    const fromVisibility = visibility === 'public' ? 'private' : 'public';
+
+    return this.db
+      .update(files)
+      .set({ updatedAt: new Date(), visibility })
+      .where(
+        and(
+          eq(files.id, fileId),
+          this.ownership(),
+          eq(files.userId, this.userId),
+          eq(files.visibility, fromVisibility),
+        ),
+      );
   };
 
   findByNames = async (fileNames: string[]) =>
     this.db.query.files.findMany({
-      where: and(
-        or(...fileNames.map((name) => like(files.name, `${name}%`))),
-        eq(files.userId, this.userId),
-      ),
+      where: and(or(...fileNames.map((name) => like(files.name, `${name}%`))), this.ownership()),
     });
 
   // Abstract common method for deleting chunks
@@ -408,5 +873,92 @@ export class FileModel {
     await trx.delete(fileChunks).where(inArray(fileChunks.fileId, fileIds));
 
     return chunkIds;
+  };
+
+  // ========== Transfer / Copy ==========
+
+  /**
+   * Transfer a single file (not a folder — folders live in `documents` and are
+   * handled by `DocumentModel.transferTo`, which already cascades into `files`
+   * via `parentId`). Updates ownership + knowledgeBaseFiles linkage so the
+   * file remains visible in the target scope's resource manager.
+   */
+  transferTo = async (
+    fileId: string,
+    targetWorkspaceId: string | null,
+    targetUserId: string,
+    targetVisibility?: 'private' | 'public',
+  ): Promise<{ fileId: string }> => {
+    return this.db.transaction(async (trx) => {
+      const file = await trx.query.files.findFirst({
+        where: and(eq(files.id, fileId), this.ownership()),
+      });
+      if (!file) throw new Error('File not found');
+
+      const ownershipUpdate = { userId: targetUserId, workspaceId: targetWorkspaceId };
+      // Visibility only applies when landing in a workspace.
+      const visibilityUpdate =
+        targetWorkspaceId && targetVisibility ? { visibility: targetVisibility } : {};
+
+      await trx
+        .update(files)
+        .set({ ...ownershipUpdate, ...visibilityUpdate, updatedAt: new Date() })
+        .where(eq(files.id, fileId));
+
+      // Knowledge base links are scoped per-user; keep them pointed at the new owner.
+      await trx
+        .update(knowledgeBaseFiles)
+        .set({ userId: targetUserId })
+        .where(eq(knowledgeBaseFiles.fileId, fileId));
+
+      return { fileId };
+    });
+  };
+
+  /**
+   * Clone a file record into another workspace / personal scope. The physical
+   * blob is shared via `fileHash` → `globalFiles`, so we only copy the row. AI
+   * index references (`chunkTaskId` / `embeddingTaskId`) are reset; the new
+   * scope is expected to re-index lazily.
+   */
+  copyToWorkspace = async (
+    fileId: string,
+    targetWorkspaceId: string | null,
+    targetUserId: string,
+    targetVisibility?: 'private' | 'public',
+  ): Promise<{ fileId: string }> => {
+    return this.db.transaction(async (trx) => {
+      const file = await trx.query.files.findFirst({
+        where: and(eq(files.id, fileId), this.ownership()),
+      });
+      if (!file) throw new Error('File not found');
+
+      // Visibility only applies when landing in a workspace.
+      const visibilityOverride =
+        targetWorkspaceId && targetVisibility ? { visibility: targetVisibility } : {};
+
+      const inserted = (await trx
+        .insert(files)
+        .values({
+          chunkTaskId: null,
+          clientId: null,
+          embeddingTaskId: null,
+          fileHash: file.fileHash,
+          fileType: file.fileType,
+          metadata: { ...(file.metadata as Record<string, unknown>), duplicatedFrom: file.id },
+          name: file.name,
+          // parentId would dangle in target scope; the user can drag it under a folder later.
+          parentId: null,
+          size: file.size,
+          source: file.source,
+          url: file.url,
+          userId: targetUserId,
+          workspaceId: targetWorkspaceId,
+          ...visibilityOverride,
+        } as NewFile)
+        .returning({ id: files.id })) as { id: string }[];
+
+      return { fileId: inserted[0]!.id };
+    });
   };
 }

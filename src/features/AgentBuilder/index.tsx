@@ -1,7 +1,7 @@
 import { BUILTIN_AGENT_SLUGS } from '@lobechat/builtin-agents';
 import { memo } from 'react';
 
-import Loading from '@/components/Loading/BrandTextLoading';
+import ConversationSegmentSkeleton from '@/components/Skeleton/Conversation/Segment';
 import RightPanel from '@/features/RightPanel';
 import { useAgentStore } from '@/store/agent';
 import { builtinAgentSelectors } from '@/store/agent/selectors';
@@ -15,17 +15,23 @@ const AgentBuilder = memo(() => {
   const agentId = useAgentStore((s) => s.activeAgentId);
   const agentBuilderId = useAgentStore(builtinAgentSelectors.agentBuilderId);
 
-  const [width, updateSystemStatus] = useGlobalStore((s) => [
-    systemStatusSelectors.agentBuilderPanelWidth(s),
-    s.updateSystemStatus,
-  ]);
+  const [showAgentBuilderPanel, toggleAgentBuilderPanel, width, updateSystemStatus] =
+    useGlobalStore((s) => [
+      systemStatusSelectors.showAgentBuilderPanel(s),
+      s.toggleAgentBuilderPanel,
+      systemStatusSelectors.agentBuilderPanelWidth(s),
+      s.updateSystemStatus,
+    ]);
 
   const useInitBuiltinAgent = useAgentStore((s) => s.useInitBuiltinAgent);
   useInitBuiltinAgent(BUILTIN_AGENT_SLUGS.agentBuilder);
 
   return (
     <RightPanel
+      collapseThreshold={320}
       defaultWidth={width}
+      expand={showAgentBuilderPanel}
+      onExpandChange={toggleAgentBuilderPanel}
       onSizeChange={(size) => {
         if (size?.width) {
           const w = typeof size.width === 'string' ? Number.parseInt(size.width) : size.width;
@@ -34,11 +40,11 @@ const AgentBuilder = memo(() => {
       }}
     >
       {agentId && agentBuilderId ? (
-        <AgentBuilderProvider agentId={agentBuilderId}>
+        <AgentBuilderProvider agentId={agentBuilderId} editingAgentId={agentId}>
           <AgentBuilderConversation agentId={agentBuilderId} />
         </AgentBuilderProvider>
       ) : (
-        <Loading debugId="AgentBuilder > Init" />
+        <ConversationSegmentSkeleton />
       )}
     </RightPanel>
   );

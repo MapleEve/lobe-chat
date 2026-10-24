@@ -1,8 +1,9 @@
+import { CUSTOM_FOLDER_FILE_TYPE, DERIVED_DOCUMENT_SOURCE_TYPE } from '@lobechat/const';
 import dayjs from 'dayjs';
 import { useMemo } from 'react';
 
 import { PAGE_FILE_TYPE } from '@/features/ResourceManager/constants';
-import { isChunkingUnsupported } from '@/utils/isChunkingUnsupported';
+import { isChunkingSupported } from '@/libs/document-loaders/loaderType';
 
 interface UseFileListItemMetaOptions {
   createdAt: Date;
@@ -39,9 +40,15 @@ export const useFileListItemMeta = ({
         dayjs().diff(dayjs(createdAt), 'd') < 7
           ? dayjs(createdAt).fromNow()
           : dayjs(createdAt).format('YYYY-MM-DD'),
-      emoji: sourceType === 'document' || fileType === PAGE_FILE_TYPE ? metadata?.emoji : null,
-      isFolder: fileType === 'custom/folder',
-      isPage: !isPDF && !isOfficeFile && (sourceType === 'document' || fileType === PAGE_FILE_TYPE),
-      isSupportedForChunking: !isChunkingUnsupported(fileType),
+      emoji:
+        sourceType === DERIVED_DOCUMENT_SOURCE_TYPE || fileType === PAGE_FILE_TYPE
+          ? metadata?.emoji
+          : null,
+      isFolder: fileType === CUSTOM_FOLDER_FILE_TYPE,
+      isPage:
+        !isPDF &&
+        !isOfficeFile &&
+        (sourceType === DERIVED_DOCUMENT_SOURCE_TYPE || fileType === PAGE_FILE_TYPE),
+      isSupportedForChunking: isChunkingSupported({ fileType, name }),
     };
   }, [createdAt, fileType, metadata?.emoji, name, sourceType]);

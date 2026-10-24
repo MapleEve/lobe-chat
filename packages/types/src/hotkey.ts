@@ -1,12 +1,13 @@
 export type HotkeyId =
   | 'addUserMessage'
-  | 'clearCurrentMessages'
   | 'commandPalette'
   | 'deleteAndRegenerateMessage'
   | 'deleteLastMessage'
   | 'editMessage'
   | 'navigateToChat'
+  | 'nextTab'
   | 'openChatSettings'
+  | 'prevTab'
   | 'openHotkeyHelper'
   | 'regenerateMessage'
   | 'saveDocument'
@@ -14,9 +15,10 @@ export type HotkeyId =
   | 'search'
   | 'showApp'
   | 'switchAgent'
+  | 'switchTab'
   | 'toggleLeftPanel'
   | 'toggleRightPanel'
-  | 'toggleZenMode';
+  | 'toggleTerminalPanel';
 
 export type HotkeyGroupId = 'conversation' | 'essential';
 

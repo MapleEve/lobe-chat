@@ -63,9 +63,14 @@ export const WithPreferenceSchema = z.object({
  * Single preference memory item
  */
 export const PreferenceMemoryItemSchema = z.object({
-  details: z.string().describe('Optional detailed information'),
+  details: z.string().describe('Detailed information; use an empty string when none is needed'),
   memoryCategory: z.string().describe('Memory category'),
   memoryType: MemoryTypeSchema.describe('Memory type'),
+  sourceIds: z
+    .array(z.string())
+    .nullable()
+    .default(() => [])
+    .describe('Stable source message ids that support this memory'),
   summary: z.string().describe('Concise overview of this specific memory'),
   tags: z.array(z.string()).describe('Model generated tags that summarize the preference facets'),
   title: z.string().describe('Brief descriptive title'),

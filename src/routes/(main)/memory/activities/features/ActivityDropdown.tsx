@@ -1,6 +1,5 @@
-import { type ActionIconProps } from '@lobehub/ui';
-import { ActionIcon, DropdownMenu } from '@lobehub/ui';
-import { App } from 'antd';
+import { DropdownMenu } from '@lobehub/ui';
+import { ActionIcon, type ActionIconProps, confirmModal } from '@lobehub/ui';
 import { MoreHorizontal, Pencil, Trash2 } from 'lucide-react';
 import { type KeyboardEvent, type MouseEvent } from 'react';
 import { memo } from 'react';
@@ -15,7 +14,6 @@ interface ActivityDropdownProps {
 
 const ActivityDropdown = memo<ActivityDropdownProps>(({ id, size = 'small' }) => {
   const { t } = useTranslation(['memory', 'common']);
-  const { modal } = App.useApp();
 
   const activities = useUserMemoryStore((s) => s.activities);
   const deleteActivity = useUserMemoryStore((s) => s.deleteActivity);
@@ -30,7 +28,7 @@ const ActivityDropdown = memo<ActivityDropdownProps>(({ id, size = 'small' }) =>
         setEditingMemory(id, activity.narrative || activity.notes || '', 'activity');
       }
     } else if (info.key === 'delete') {
-      modal.confirm({
+      confirmModal({
         cancelText: t('cancel', { ns: 'common' }),
         content: t('activity.deleteConfirm'),
         okButtonProps: { danger: true },
@@ -39,7 +37,6 @@ const ActivityDropdown = memo<ActivityDropdownProps>(({ id, size = 'small' }) =>
           await deleteActivity(id);
         },
         title: t('activity.deleteTitle'),
-        type: 'warning',
       });
     }
   };

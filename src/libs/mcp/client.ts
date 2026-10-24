@@ -42,12 +42,19 @@ async function preCheckStdioCommand(params: {
   return new Promise((resolve) => {
     log('Pre-checking stdio command: %s with args: %O', params.command, params.args);
 
+    // Do NOT spread the full process.env here: it would leak server-side secrets
+    // (DATABASE_URL, KEY_VAULTS_SECRET, provider API keys, OAuth/JWT secrets, ...)
+    // into the spawned MCP subprocess. Match the main StdioClientTransport below,
+    // which only exposes the safe default environment plus user-configured vars.
+    // The cast is required because this repo augments NodeJS.ProcessEnv with
+    // required app keys that a restricted env intentionally omits.
+    const env = {
+      ...getDefaultEnvironment(),
+      ...params.env,
+    } as NodeJS.ProcessEnv;
+
     const child = spawn(params.command, params.args, {
-      env: {
-        ...process.env,
-        ...getDefaultEnvironment(),
-        ...params.env,
-      },
+      env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
 
@@ -312,6 +319,18 @@ export class MCPClient {
     }
   }
 
+  /**
+   * Detect the StreamableHTTP "session expired" error.
+   *
+   * Happens when the remote MCP server restarts: the cached client still sends
+   * the old session id and the server rejects it with `-32000 / No valid
+   * session ID provided`. Callers (e.g. MCPService) surface this as a dedicated
+   * `NoValidSessionId` error and retry with a freshly-initialized session.
+   */
+  private static isNoValidSessionError(e: unknown): boolean {
+    return e instanceof Error && e.message.includes('No valid session ID provided');
+  }
+
   async listTools() {
     try {
       log('Listing tools...');
@@ -321,7 +340,7 @@ export class MCPClient {
     } catch (e) {
       console.error('Listed tools error: %O', e);
 
-      if ((e as Error).message.includes('No valid session ID provided')) {
+      if (MCPClient.isNoValidSessionError(e)) {
         throw new Error('NoValidSessionId', { cause: e });
       }
 
@@ -337,6 +356,11 @@ export class MCPClient {
       return resources as McpResource[];
     } catch (e) {
       log('Listed resources: %O', e);
+
+      if (MCPClient.isNoValidSessionError(e)) {
+        throw new Error('NoValidSessionId', { cause: e });
+      }
+
       return [];
     }
   }
@@ -349,6 +373,11 @@ export class MCPClient {
       return prompts as McpPrompt[];
     } catch (e) {
       log('Listed prompts: %O', e);
+
+      if (MCPClient.isNoValidSessionError(e)) {
+        throw new Error('NoValidSessionId', { cause: e });
+      }
+
       return [];
     }
   }
@@ -378,10 +407,19 @@ export class MCPClient {
 
   async callTool(toolName: string, args: any): Promise<ToolCallResult> {
     log('Calling tool: %s with args: %O, timeout: %O', toolName, args, MCP_TOOL_TIMEOUT);
-    const result = await this.mcp.callTool({ arguments: args, name: toolName }, undefined, {
-      timeout: MCP_TOOL_TIMEOUT,
-    });
-    log('Tool call result: %O', result);
-    return result as ToolCallResult;
+    try {
+      const result = await this.mcp.callTool({ arguments: args, name: toolName }, undefined, {
+        timeout: MCP_TOOL_TIMEOUT,
+      });
+      log('Tool call result: %O', result);
+      return result as ToolCallResult;
+    } catch (e) {
+      // The server rejects the request before executing the tool, so retrying
+      // with a fresh session is safe (no double side effects).
+      if (MCPClient.isNoValidSessionError(e)) {
+        throw new Error('NoValidSessionId', { cause: e });
+      }
+      throw e;
+    }
   }
 }

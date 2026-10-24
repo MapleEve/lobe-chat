@@ -1,6 +1,6 @@
 ---
 name: desktop
-description: Electron desktop development guide. Use when implementing desktop features, IPC handlers, controllers, preload scripts, window management, menu configuration, or Electron-specific functionality. Triggers on desktop app development, Electron IPC, or desktop local tools implementation.
+description: Electron desktop development guide — IPC handlers, controllers, preload scripts, window/menu management.
 disable-model-invocation: true
 ---
 
@@ -38,7 +38,7 @@ Register in `apps/desktop/src/main/controllers/registry.ts`.
 
 ### 2. Define IPC Types
 
-Location: `packages/electron-client-ipc/src/types.ts`
+Location: `packages/electron-client-ipc/src/types/<domain>.ts`, re-exported from `types/index.ts`
 
 ```typescript
 export interface SomeParams {
@@ -70,7 +70,7 @@ Location: `src/store/`
 
 ### 5. Add Tests
 
-Location: `apps/desktop/src/main/controllers/__tests__/`
+Location: beside the controller, `apps/desktop/src/main/controllers/<Name>Ctr.test.ts` (`source-layout` §2)
 
 ## Detailed Guides
 
@@ -80,10 +80,3 @@ See `references/` for specific topics:
 - **Local tools workflow**: `references/local-tools.md`
 - **Menu configuration**: `references/menu-config.md`
 - **Window management**: `references/window-management.md`
-
-## Best Practices
-
-1. **Security**: Validate inputs, limit exposed APIs
-2. **Performance**: Use async methods, batch data transfers
-3. **UX**: Add progress indicators, provide error feedback
-4. **Code organization**: Follow existing patterns, add documentation

@@ -1,10 +1,15 @@
+import { agentDisplayName } from '@lobechat/types';
 import { Tag } from '@lobehub/ui';
 import isEqual from 'fast-deep-equal';
 import { type MouseEventHandler } from 'react';
 import { memo, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
 import { ChatItem } from '@/features/Conversation/ChatItem';
+import { getScmEventSource } from '@/features/Conversation/Markdown/plugins/ScmEvent/parseScmEvent';
+import { useMessageCommentCount } from '@/features/TopicComment/hooks';
+import MessageCommentBadge from '@/features/TopicComment/MessageCommentBadge';
 import { useUserAvatar } from '@/hooks/useUserAvatar';
 import { useSessionStore } from '@/store/session';
 import { sessionSelectors } from '@/store/session/selectors';
@@ -18,8 +23,12 @@ import {
   useSetMessageItemActionTypeContext,
 } from '../Contexts/message-action-context';
 import Actions from './Actions';
+import AgentSenderSourceLink from './components/AgentSenderSourceLink';
 import UserMessageContent from './components/MessageContent';
+import { ScmEventAvatar, ScmEventSenderTitle } from './components/ScmEventSender';
 import { UserMessageExtra } from './Extra';
+import { getAgentSender, getBotSender, resolveSenderIdentity } from './resolveSenderIdentity';
+import ScheduledRunFooter from './ScheduledRunFooter';
 
 interface UserMessageProps {
   disableEditing?: boolean;
@@ -29,11 +38,38 @@ interface UserMessageProps {
 
 const UserMessage = memo<UserMessageProps>(({ id, disableEditing, index }) => {
   const item = useConversationStore(dataSelectors.getDisplayMessageById(id), isEqual)!;
-  const { content, createdAt, error, role, extra, targetId } = item;
+  const { content, createdAt, error, role, extra, targetId, sender, metadata } = item;
+  const botSender = getBotSender(item);
+  // An agent → agent turn (a sibling agent's `lh agent run`): the row belongs to
+  // the receiving agent's topic, so the sending agent — not the human owner —
+  // is who the bubble must be attributed to.
+  const agentSender = getAgentSender(item);
+  // A wake-up message from the SCM integration is authored by the pull
+  // request, so GitHub takes the sender slot instead of the card's header.
+  const scmSource = useMemo(() => getScmEventSource(content), [content]);
 
   const { t } = useTranslation('chat');
-  const avatar = useUserAvatar();
-  const title = useUserStore(userProfileSelectors.displayUserName);
+  const selfAvatar = useUserAvatar();
+  const selfTitle = useUserStore(userProfileSelectors.displayUserName);
+  const activeWorkspaceId = useActiveWorkspaceId();
+  const { count: commentCount, topicId: commentTopicId } = useMessageCommentCount(id);
+
+  // In workspaces every user bubble shows its sender avatar so ownership is
+  // visible even during single-user testing; personal mode keeps the legacy
+  // hidden-avatar behavior. Self identity applies only to the viewer's own
+  // rows — see resolveSenderIdentity.
+  // A bot-channel row is authored by someone else even in personal mode, so
+  // its sender is always shown. Same for an agent → agent turn.
+  const showSender = Boolean(activeWorkspaceId) || !!botSender || !!scmSource || !!agentSender;
+  const currentUserId = useUserStore(userProfileSelectors.userId);
+  const { avatar, title } = resolveSenderIdentity({
+    currentUserId,
+    message: item,
+    selfAvatar,
+    selfTitle,
+    sender,
+    unknownLabel: t('sender.unknownMember'),
+  });
 
   // Get editing and loading state from ConversationStore
   const editing = useConversationStore(messageStateSelectors.isMessageEditing(id));
@@ -48,7 +84,10 @@ const UserMessage = memo<UserMessageProps>(({ id, disableEditing, index }) => {
     const targetName =
       targetId === 'user'
         ? userName
-        : agents?.find((agent) => agent.id === targetId)?.title || targetId;
+        : agentDisplayName(
+            agents?.find((agent) => agent.id === targetId),
+            targetId,
+          );
 
     return <Tag>{t('dm.visibleTo', { target: targetName })}</Tag>;
   }, [targetId, userName, agents, t]);
@@ -77,15 +116,50 @@ const UserMessage = memo<UserMessageProps>(({ id, disableEditing, index }) => {
     <ChatItem
       actions={<Actions data={item} disableEditing={disableEditing} id={id} />}
       avatar={{ avatar, title }}
+      belowMessage={<ScheduledRunFooter id={id} />}
+      customAvatarRender={scmSource ? () => <ScmEventAvatar /> : undefined}
       editing={editing}
       id={id}
       message={content}
-      messageExtra={<UserMessageExtra content={content} extra={extra} id={id} />}
+      messageExtra={<UserMessageExtra extra={extra} id={id} />}
       placement={'right'}
-      showAvatar={false}
-      showTitle={false}
+      showAvatar={showSender}
+      showTitle={showSender && !scmSource}
       time={createdAt}
-      titleAddon={dmIndicator}
+      actionAddon={
+        commentCount > 0 && commentTopicId ? (
+          <MessageCommentBadge count={commentCount} messageId={id} topicId={commentTopicId} />
+        ) : undefined
+      }
+      headerAddon={
+        scmSource || metadata?.steer ? (
+          <>
+            {scmSource && <ScmEventSenderTitle source={scmSource} />}
+            {metadata?.steer && <Tag>{t('steer.tag')}</Tag>}
+          </>
+        ) : undefined
+      }
+      titleAddon={
+        // The row is `row-reverse` (right-aligned), so `headerAddon` renders on
+        // the far side of the author name. The source link belongs on the near
+        // side instead: the author name stays next to its own avatar, and the
+        // topic it came from reads as a leading qualifier rather than splitting
+        // the name from its avatar.
+        dmIndicator || agentSender?.topicId ? (
+          <>
+            {dmIndicator}
+            {agentSender?.topicId && (
+              <AgentSenderSourceLink
+                chatGroupId={agentSender.chatGroupId}
+                threadId={agentSender.threadId}
+                topicAgentId={agentSender.topicAgentId ?? agentSender.agentId}
+                topicId={agentSender.topicId}
+                topicTitle={agentSender.topicTitle}
+              />
+            )}
+          </>
+        ) : undefined
+      }
       onDoubleClick={onDoubleClick}
       onMouseEnter={onMouseEnter}
     >

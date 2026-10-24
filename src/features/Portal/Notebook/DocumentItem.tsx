@@ -1,7 +1,5 @@
 import { type NotebookDocument } from '@lobechat/types';
-import { ActionIcon, Flexbox, Text } from '@lobehub/ui';
-import { App } from 'antd';
-import { createStaticStyles } from 'antd-style';
+import { ActionIcon, confirmModal, createStaticStyles, Flexbox, Text } from '@lobehub/ui';
 import { FileTextIcon, Trash2Icon } from 'lucide-react';
 import { type MouseEvent } from 'react';
 import { memo, useState } from 'react';
@@ -38,7 +36,6 @@ interface DocumentItemProps {
 
 const DocumentItem = memo<DocumentItemProps>(({ document, topicId }) => {
   const { t } = useTranslation('portal');
-  const { modal } = App.useApp();
   const [deleting, setDeleting] = useState(false);
 
   const openDocument = useChatStore((s) => s.openDocument);
@@ -51,8 +48,7 @@ const DocumentItem = memo<DocumentItemProps>(({ document, topicId }) => {
   const handleDelete = async (e: MouseEvent) => {
     e.stopPropagation();
 
-    modal.confirm({
-      centered: true,
+    confirmModal({
       okButtonProps: { danger: true },
       onOk: async () => {
         setDeleting(true);
@@ -62,7 +58,9 @@ const DocumentItem = memo<DocumentItemProps>(({ document, topicId }) => {
           setDeleting(false);
         }
       },
-      title: t('notebook.confirmDelete'),
+      content: t('notebook.confirmDelete'),
+      okText: t('delete', { ns: 'common' }),
+      title: t('delete', { ns: 'common' }),
     });
   };
 

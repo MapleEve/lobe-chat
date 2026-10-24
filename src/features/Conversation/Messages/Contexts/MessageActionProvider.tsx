@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 
 import { MESSAGE_ACTION_BAR_PORTAL_SELECTORS } from '@/const/messageActionPortal';
 
-import { dataSelectors, useConversationStore } from '../../store';
+import { dataSelectors, messageStateSelectors, useConversationStore } from '../../store';
 import { AssistantActionsBar } from '../Assistant/Actions';
 import { GroupActionsBar } from '../AssistantGroup/Actions';
 import { UserActionsBar } from '../User/Actions';
@@ -47,9 +47,7 @@ const AssistantGroupActionsRenderer: FC<SingletonPortalProps> = ({ id }) => {
     (s) => s.actionsBar?.assistantGroup ?? s.actionsBar?.assistant,
   );
   const item = useConversationStore(dataSelectors.getDisplayMessageById(id), isEqual);
-  const lastAssistantMsg = useConversationStore(
-    dataSelectors.getGroupLatestMessageWithoutTools(id),
-  );
+  const lastAssistantMsg = useConversationStore(dataSelectors.getRowLatestMessageWithoutTools(id));
   const contentId = lastAssistantMsg?.id;
 
   if (!item) return null;
@@ -66,14 +64,56 @@ const AssistantGroupActionsRenderer: FC<SingletonPortalProps> = ({ id }) => {
 };
 
 const SingletonMessageActionsBar = memo(() => {
-  const portalElement = useMessageItemActionElementPortialContext();
-  const actionType = useMessageItemActionTypeContext();
+  const livePortalElement = useMessageItemActionElementPortialContext();
+  const liveActionType = useMessageItemActionTypeContext();
+  // While multi-selecting, the per-message hover action bar would compete with
+  // the selection checkboxes/overlay — suppress it entirely.
+  const isSelectionMode = useConversationStore(messageStateSelectors.isSelectionMode);
 
   const hostRef = useRef<HTMLDivElement | null>(null);
   if (!hostRef.current && typeof document !== 'undefined') {
     hostRef.current = document.createElement('div');
     hostRef.current.dataset.singletonMessageActionBarHost = 'true';
   }
+
+  // Freeze both the host placement target AND the rendered actionType while a popup
+  // is open inside the host: otherwise the trigger gets DOM-moved or React-unmounted
+  // and the popup loses its anchor / closes. popupCloseTick re-runs the sync effect
+  // once the popup closes, committing the latest live values.
+  const [popupCloseTick, setPopupCloseTick] = useState(0);
+  const [committedPortalElement, setCommittedPortalElement] = useState<HTMLDivElement | null>(null);
+  const [committedActionType, setCommittedActionType] = useState<MessageActionType | null>(null);
+
+  useEffect(() => {
+    const hostEl = hostRef.current;
+    if (!hostEl) return;
+
+    const observer = new MutationObserver(() => {
+      if (!hostEl.querySelector('[data-popup-open]')) {
+        setPopupCloseTick((t) => t + 1);
+      }
+    });
+    observer.observe(hostEl, {
+      attributeFilter: ['data-popup-open'],
+      attributes: true,
+      subtree: true,
+    });
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const hostEl = hostRef.current;
+    if (!hostEl) return;
+    if (hostEl.querySelector('[data-popup-open]')) return;
+    setCommittedPortalElement(livePortalElement);
+    setCommittedActionType(liveActionType);
+  }, [
+    livePortalElement,
+    liveActionType?.id,
+    liveActionType?.index,
+    liveActionType?.type,
+    popupCloseTick,
+  ]);
 
   // Keep the React tree mounted in a stable host element, and only move the host via DOM.
   useEffect(() => {
@@ -83,22 +123,22 @@ const SingletonMessageActionsBar = memo(() => {
     // By default, keep it hidden but mounted.
     let placeholderEl: HTMLDivElement | null = null;
 
-    if (portalElement && actionType) {
-      switch (actionType.type) {
+    if (committedPortalElement && committedActionType) {
+      switch (committedActionType.type) {
         case 'assistant': {
-          placeholderEl = portalElement.querySelector<HTMLDivElement>(
+          placeholderEl = committedPortalElement.querySelector<HTMLDivElement>(
             MESSAGE_ACTION_BAR_PORTAL_SELECTORS.assistant,
           );
           break;
         }
         case 'user': {
-          placeholderEl = portalElement.querySelector<HTMLDivElement>(
+          placeholderEl = committedPortalElement.querySelector<HTMLDivElement>(
             MESSAGE_ACTION_BAR_PORTAL_SELECTORS.user,
           );
           break;
         }
         case 'assistantGroup': {
-          placeholderEl = portalElement.querySelector<HTMLDivElement>(
+          placeholderEl = committedPortalElement.querySelector<HTMLDivElement>(
             MESSAGE_ACTION_BAR_PORTAL_SELECTORS.assistantGroup,
           );
           break;
@@ -115,7 +155,12 @@ const SingletonMessageActionsBar = memo(() => {
     // No valid placeholder: attach to body to keep DOM owned, but hidden.
     if (document.body && hostEl.parentElement !== document.body) document.body.append(hostEl);
     hostEl.style.display = 'none';
-  }, [portalElement, actionType?.id, actionType?.index, actionType?.type]);
+  }, [
+    committedPortalElement,
+    committedActionType?.id,
+    committedActionType?.index,
+    committedActionType?.type,
+  ]);
 
   useEffect(() => {
     const hostEl = hostRef.current;
@@ -127,24 +172,27 @@ const SingletonMessageActionsBar = memo(() => {
   }, []);
 
   const hostEl = hostRef.current;
-  if (!hostEl || !actionType) return null;
+  if (!hostEl || !committedActionType || isSelectionMode) return null;
 
-  switch (actionType.type) {
+  switch (committedActionType.type) {
     case 'assistant': {
       return createPortal(
-        <AssistantActionsRenderer id={actionType.id} index={actionType.index} />,
+        <AssistantActionsRenderer id={committedActionType.id} index={committedActionType.index} />,
         hostEl,
       );
     }
     case 'user': {
       return createPortal(
-        <UserActionsRenderer id={actionType.id} index={actionType.index} />,
+        <UserActionsRenderer id={committedActionType.id} index={committedActionType.index} />,
         hostEl,
       );
     }
     case 'assistantGroup': {
       return createPortal(
-        <AssistantGroupActionsRenderer id={actionType.id} index={actionType.index} />,
+        <AssistantGroupActionsRenderer
+          id={committedActionType.id}
+          index={committedActionType.index}
+        />,
         hostEl,
       );
     }

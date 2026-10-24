@@ -42,9 +42,20 @@ describe('createErrorResponse', () => {
     expect(response.status).toBe(400);
   });
 
+  it('returns a 400 status for RequestBodyTooLarge error type', () => {
+    const response = createErrorResponse(AgentRuntimeErrorType.RequestBodyTooLarge);
+    expect(response.status).toBe(400);
+  });
+
   describe('Provider Biz Error', () => {
     it('returns a 471 status for ProviderBizError error type', () => {
       const errorType = AgentRuntimeErrorType.ProviderBizError;
+      const response = createErrorResponse(errorType);
+      expect(response.status).toBe(471);
+    });
+
+    it('returns a 471 status for ProviderContentPolicyViolation error type', () => {
+      const errorType = AgentRuntimeErrorType.ProviderContentPolicyViolation;
       const response = createErrorResponse(errorType);
       expect(response.status).toBe(471);
     });

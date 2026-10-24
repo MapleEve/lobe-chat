@@ -6,7 +6,7 @@ import { createContext, memo, type PropsWithChildren, use, useMemo } from 'react
 import { useTranslation } from 'react-i18next';
 
 import { useAgentStore } from '@/store/agent';
-import { agentSelectors } from '@/store/agent/selectors';
+import { agentByIdSelectors } from '@/store/agent/selectors';
 import { useChatStore } from '@/store/chat';
 import {
   dbMessageSelectors,
@@ -47,7 +47,9 @@ const ShareDataProvider = memo<PropsWithChildren<ShareDataProviderProps>>(
         s.activeTopicId,
         s.useFetchMessages,
       ]);
-    const systemRole = useAgentStore(agentSelectors.currentAgentSystemRole);
+    const systemRole = useAgentStore(
+      agentByIdSelectors.getAgentSystemRoleById(context?.agentId ?? activeAgentId ?? ''),
+    );
 
     const resolvedContext = useMemo<ConversationContext>(() => {
       const hasTopicId = context && 'topicId' in context;
@@ -64,7 +66,7 @@ const ShareDataProvider = memo<PropsWithChildren<ShareDataProviderProps>>(
     }, [activeAgentId, activeGroupId, activeThreadId, activeTopicId, context]);
 
     const shouldSkipFetch = !resolvedContext.agentId || !resolvedContext.topicId;
-    const { isLoading } = useFetchMessages(resolvedContext, shouldSkipFetch);
+    const { isLoading } = useFetchMessages(resolvedContext, { skipFetch: shouldSkipFetch });
 
     const messageKey = useMemo(() => {
       if (!resolvedContext.agentId) return undefined;

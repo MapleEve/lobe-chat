@@ -1,18 +1,41 @@
 'use client';
 
-import type { AgentEvalRunListItem } from '@lobechat/types';
-import { Button, Flexbox } from '@lobehub/ui';
-import { Select } from 'antd';
+import { Button, createStaticStyles, cssVar, Flexbox, Select, Text } from '@lobehub/ui';
 import { Plus } from 'lucide-react';
 import { memo, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { runSelectors, useEvalStore } from '@/store/eval';
 
-import RunCreateModal from '../RunCreateModal';
-import RunEditModal from '../RunEditModal';
+import { createRunCreateModal } from '../RunCreateModal';
+import { createRunEditModal } from '../RunEditModal';
 import EmptyState from './EmptyState';
 import RunCard from './RunCard';
+
+const styles = createStaticStyles(({ css }) => ({
+  // Results-led run cards sit on a responsive grid; they collapse to a single
+  // column on narrow viewports.
+  grid: css`
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+    gap: 12px;
+
+    @media (width <= 640px) {
+      grid-template-columns: 1fr;
+    }
+  `,
+  filterEmpty: css`
+    align-items: center;
+    justify-content: center;
+
+    padding-block: 48px;
+    padding-inline: 24px;
+    border: 1px dashed ${cssVar.colorBorderSecondary};
+    border-radius: ${cssVar.borderRadiusLG};
+
+    background: ${cssVar.colorFillQuaternary};
+  `,
+}));
 
 interface RunsTabProps {
   benchmarkId: string;
@@ -20,11 +43,9 @@ interface RunsTabProps {
 
 const RunsTab = memo<RunsTabProps>(({ benchmarkId }) => {
   const { t } = useTranslation('eval');
-  const [createRunOpen, setCreateRunOpen] = useState(false);
-  const [editingRun, setEditingRun] = useState<AgentEvalRunListItem | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const useFetchRuns = useEvalStore((s) => s.useFetchRuns);
-  const runList = useEvalStore(runSelectors.runList);
+  const runList = useEvalStore(runSelectors.runList(benchmarkId));
   const refreshRuns = useEvalStore((s) => s.refreshRuns);
   useFetchRuns(benchmarkId);
 
@@ -54,59 +75,52 @@ const RunsTab = memo<RunsTabProps>(({ benchmarkId }) => {
   ];
 
   return (
-    <>
-      <Flexbox gap={16}>
-        {sortedRuns.length > 0 && (
-          <Flexbox horizontal align="center" justify="space-between">
-            <Flexbox horizontal align="center" gap={8}>
-              <p style={{ color: 'var(--ant-color-text-tertiary)', fontSize: 14, margin: 0 }}>
-                {t('benchmark.detail.runCount', { count: filteredRuns.length })}
-              </p>
-              <Select
-                options={statusOptions}
-                size="small"
-                style={{ width: 128 }}
-                value={statusFilter}
-                onChange={setStatusFilter}
-              />
-            </Flexbox>
-            <Button icon={Plus} size="small" type="primary" onClick={() => setCreateRunOpen(true)}>
-              {t('run.actions.create')}
-            </Button>
+    <Flexbox gap={16}>
+      {sortedRuns.length > 0 && (
+        <Flexbox horizontal align="center" justify="space-between">
+          <Flexbox horizontal align="center" gap={8}>
+            <Text color={cssVar.colorTextTertiary}>
+              {t('benchmark.detail.runCount', { count: filteredRuns.length })}
+            </Text>
+            <Select
+              options={statusOptions}
+              size="small"
+              style={{ width: 128 }}
+              value={statusFilter}
+              onChange={setStatusFilter}
+            />
           </Flexbox>
-        )}
-
-        {sortedRuns.length === 0 ? (
-          <EmptyState onCreate={() => setCreateRunOpen(true)} />
-        ) : filteredRuns.length === 0 ? (
-          <p style={{ color: 'var(--ant-color-text-tertiary)', fontSize: 14, textAlign: 'center' }}>
-            {t('run.filter.empty')}
-          </p>
-        ) : (
-          <Flexbox gap={12}>
-            {filteredRuns.map((run) => (
-              <RunCard
-                benchmarkId={benchmarkId}
-                key={run.id}
-                run={run}
-                onEdit={setEditingRun}
-                onRefresh={refreshRuns}
-              />
-            ))}
-          </Flexbox>
-        )}
-      </Flexbox>
-
-      <RunCreateModal
-        benchmarkId={benchmarkId}
-        open={createRunOpen}
-        onClose={() => setCreateRunOpen(false)}
-      />
-
-      {editingRun && (
-        <RunEditModal open={!!editingRun} run={editingRun} onClose={() => setEditingRun(null)} />
+          <Button
+            icon={Plus}
+            size="small"
+            type="primary"
+            onClick={() => createRunCreateModal({ benchmarkId })}
+          >
+            {t('run.actions.create')}
+          </Button>
+        </Flexbox>
       )}
-    </>
+
+      {sortedRuns.length === 0 ? (
+        <EmptyState onCreate={() => createRunCreateModal({ benchmarkId })} />
+      ) : filteredRuns.length === 0 ? (
+        <Flexbox className={styles.filterEmpty}>
+          <Text color={cssVar.colorTextTertiary}>{t('run.filter.empty')}</Text>
+        </Flexbox>
+      ) : (
+        <div className={styles.grid}>
+          {filteredRuns.map((run) => (
+            <RunCard
+              benchmarkId={benchmarkId}
+              key={run.id}
+              run={run}
+              onEdit={(editingRun) => createRunEditModal({ run: editingRun })}
+              onRefresh={refreshRuns}
+            />
+          ))}
+        </div>
+      )}
+    </Flexbox>
   );
 });
 

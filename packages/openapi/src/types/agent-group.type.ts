@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
-import type { SessionGroupItem } from '@/database/schemas';
-
+import type { PublicAgentGroup } from '../helpers/public-fields';
 // ==================== Agent Group CRUD Types ====================
 // Agent group (stored in sessionGroups table) related type definitions
 
@@ -14,7 +13,7 @@ export interface CreateAgentGroupRequest {
 }
 
 export const CreateAgentGroupRequestSchema = z.object({
-  name: z.string().min(1, '助理分类名称不能为空'),
+  name: z.string().min(1, 'Agent category name cannot be empty'),
   sort: z.number().nullish(),
 });
 
@@ -28,7 +27,7 @@ export interface UpdateAgentGroupRequest {
 }
 
 export const UpdateAgentGroupRequestSchema = z.object({
-  name: z.string().min(1, '助理分类名称不能为空').nullish(),
+  name: z.string().min(1, 'Agent category name cannot be empty').nullish(),
   sort: z.number().nullish(),
 });
 
@@ -44,10 +43,10 @@ export interface DeleteAgentGroupRequest {
 /**
  * Agent group list response type
  */
-export type AgentGroupListResponse = SessionGroupItem[];
+export type AgentGroupListResponse = PublicAgentGroup[];
 
 // ==================== Common Schemas ====================
 
 export const AgentGroupIdParamSchema = z.object({
-  id: z.string().min(1, '助理分类 ID 不能为空'),
+  id: z.string().min(1, 'Agent category ID cannot be empty'),
 });

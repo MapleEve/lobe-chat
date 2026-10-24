@@ -1,23 +1,20 @@
 'use client';
 
-import { BRANDING_NAME } from '@lobechat/business-const';
-import { Flexbox } from '@lobehub/ui';
-import { createStaticStyles, useTheme } from 'antd-style';
-import { memo, useCallback, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { createStaticStyles, Flexbox, useTheme } from '@lobehub/ui';
+import { memo, type ReactNode, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router';
 
 import DragUploadZone from '@/components/DragUploadZone';
 import { PageEditor } from '@/features/PageEditor';
+import { useResourceManagerStore } from '@/features/ResourceManager/store';
+import { usePermission } from '@/hooks/usePermission';
 import dynamic from '@/libs/next/dynamic';
-import { useCurrentFolderId } from '@/routes/(main)/resource/features/hooks/useCurrentFolderId';
-import { useResourceManagerStore } from '@/routes/(main)/resource/features/store';
-import { documentService } from '@/services/document';
 import { useFileStore } from '@/store/file';
 import { documentSelectors } from '@/store/file/slices/document/selectors';
 
 import FileEditor from './components/Editor';
 import Explorer from './components/Explorer';
-import UploadDock from './components/UploadDock';
+import { useTopLevelFileUpload } from './hooks/useTopLevelFileUpload';
 
 const ChunkDrawer = dynamic(() => import('./components/ChunkDrawer'), { ssr: false });
 
@@ -57,10 +54,17 @@ export type ResourceManagerMode = 'editor' | 'explorer' | 'page';
  *
  * Business component, no need be reusable.
  */
-const ResourceManager = memo(() => {
+interface ResourceManagerProps {
+  /**
+   * Replaces the Explorer as the base content (used by the resource home
+   * dashboard) while keeping the editor overlays, upload dock and drag zone.
+   */
+  content?: ReactNode;
+}
+
+const ResourceManager = memo<ResourceManagerProps>(({ content }) => {
   const theme = useTheme();
   const [, setSearchParams] = useSearchParams();
-  const currentFolderId = useCurrentFolderId();
   const [mode, currentViewItemId, libraryId, setMode, setCurrentViewItemId] =
     useResourceManagerStore((s) => [
       s.mode,
@@ -71,12 +75,17 @@ const ResourceManager = memo(() => {
     ]);
 
   const currentDocument = useFileStore(documentSelectors.getDocumentById(currentViewItemId));
-  const pushDockFileList = useFileStore((s) => s.pushDockFileList);
   const updateDocumentOptimistically = useFileStore((s) => s.updateDocumentOptimistically);
+  const useFetchDocumentDetail = useFileStore((s) => s.useFetchDocumentDetail);
+  const { allowed: canUpload } = usePermission('create_content');
+  const uploadTopLevel = useTopLevelFileUpload();
 
   const handleUploadFiles = useCallback(
-    (files: File[]) => pushDockFileList(files, libraryId, currentFolderId ?? undefined),
-    [currentFolderId, libraryId, pushDockFileList],
+    (files: File[]) => {
+      if (!canUpload) return;
+      void uploadTopLevel(files);
+    },
+    [canUpload, uploadTopLevel],
   );
 
   const cssVariables = useMemo<Record<string, string>>(
@@ -86,20 +95,12 @@ const ResourceManager = memo(() => {
     [theme.colorBgContainerSecondary],
   );
 
-  // Fetch specific document when switching to page mode if not already loaded
-  useEffect(() => {
-    if (mode === 'page' && currentViewItemId && !currentDocument) {
-      // Document not in store, fetch it individually
-      documentService.getDocumentById(currentViewItemId).then((doc) => {
-        if (doc) {
-          // Add the document to the store's documents array
-          useFileStore.setState((state) => ({
-            documents: [...state.documents, doc as any],
-          }));
-        }
-      });
-    }
-  }, [mode, currentViewItemId, currentDocument]);
+  // Keep the open item's document row in the replica. Deliberately not gated on
+  // `mode`: on a cold `?file=` deep link the page/file decision itself needs the
+  // row, so gating on it would wait for the very network the projection exists
+  // to avoid. The view is read from the store, so a reload paints from the
+  // persisted projection on the first frame and the network only confirms it.
+  useFetchDocumentDetail(currentViewItemId);
 
   const handleBack = () => {
     setMode('explorer');
@@ -109,8 +110,6 @@ const ResourceManager = memo(() => {
       prev.delete('file');
       return prev;
     });
-    // Reset document title to default
-    document.title = BRANDING_NAME;
   };
 
   // Optimistic update handlers for page title and emoji
@@ -136,10 +135,15 @@ const ResourceManager = memo(() => {
 
   return (
     <>
-      <DragUploadZone enabledFiles style={{ height: '100%' }} onUploadFiles={handleUploadFiles}>
+      <DragUploadZone
+        enabledFiles={canUpload}
+        style={{ height: '100%' }}
+        onUploadFiles={handleUploadFiles}
+      >
         <Flexbox className={styles.container} height={'100%'} style={cssVariables}>
-          {/* Explorer is always rendered to preserve its state */}
-          <Explorer />
+          {/* Explorer stays mounted to preserve its state, unless the caller
+              swaps in its own base content (resource home dashboard) */}
+          {content ?? <Explorer />}
 
           {/* Editor overlay */}
           {mode === 'editor' && (
@@ -164,7 +168,6 @@ const ResourceManager = memo(() => {
           )}
         </Flexbox>
       </DragUploadZone>
-      <UploadDock />
       <ChunkDrawer />
     </>
   );

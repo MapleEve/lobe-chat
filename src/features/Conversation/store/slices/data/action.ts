@@ -1,14 +1,14 @@
 import { parse } from '@lobechat/conversation-flow';
 import { type ConversationContext, type UIChatMessage } from '@lobechat/types';
 import debug from 'debug';
-import { type SWRResponse } from 'swr';
 import { type StateCreator } from 'zustand/vanilla';
 
-import { useClientDataSWRWithSync } from '@/libs/swr';
-import { messageService } from '@/services/message';
+import { useChatStore } from '@/store/chat';
 import { messageMapKey } from '@/store/chat/utils/messageMapKey';
 
 import { type Store as ConversationStore } from '../../action';
+import { type State } from '../../initialState';
+import { isSameConversationContext } from '../../utils/contextGuard';
 import { type MessageDispatch } from './reducer';
 import { messagesReducer } from './reducer';
 import { dataSelectors } from './selectors';
@@ -16,32 +16,40 @@ import { stabilizeReferences } from './stabilizeReferences';
 
 const log = debug('lobe-render:features:Conversation');
 
-const mergeFetchedMessagesWithLocalState = (
-  fetchedMessages: UIChatMessage[],
-  localMessages: UIChatMessage[],
-): UIChatMessage[] => {
-  if (localMessages.length === 0 || fetchedMessages.length === 0) return fetchedMessages;
-
-  const localById = new Map(localMessages.map((message) => [message.id, message]));
-  let changed = false;
-
-  const mergedMessages = fetchedMessages.map((message) => {
-    const localMessage = localById.get(message.id);
-
-    if (!localMessage) return message;
-    if (localMessage.updatedAt <= message.updatedAt) return message;
-
-    changed = true;
-    return localMessage;
-  });
-
-  return changed ? mergedMessages : fetchedMessages;
+/**
+ * The conversation's rows as the chat store holds them: `dbMessages` is the
+ * bucket itself, `displayMessages` its parsed list pinned to the previous
+ * render's references (memo bailouts survive a re-parse).
+ */
+export const chatTranscriptState = (
+  context: ConversationContext,
+  skipFetch: boolean | undefined,
+  previousDisplayMessages: UIChatMessage[],
+): Pick<State, 'dbMessages' | 'displayMessages' | 'messagesInit'> => {
+  const chat = useChatStore.getState();
+  const bucket = messageMapKey(context);
+  const rows = chat.dbMessagesMap[bucket];
+  const parsed =
+    rows &&
+    (chat.messagesMap[bucket] ??
+      parse(rows, undefined, { threadId: context.threadId ?? undefined }).flatList);
+  return {
+    dbMessages: rows ?? [],
+    displayMessages: stabilizeReferences(previousDisplayMessages, parsed ?? []),
+    // An absent bucket is "not loaded yet"; `[]` is a loaded, empty transcript.
+    // A conversation that never syncs has nothing to wait for.
+    messagesInit: !!rows || !!skipFetch,
+  };
 };
 
 /**
  * Data Actions
  *
- * Handles message fetching based on conversation context.
+ * The rows a conversation shows are its chat store bucket: the chat store
+ * fetches, pages and persists them, and this store mirrors the bucket
+ * one-way (`internal_syncChatTranscript`). Writes go to the chat store and
+ * come back through that mirror. A static transcript (`messages` passed to the
+ * provider) is held here instead and never synced.
  */
 export interface DataAction {
   /**
@@ -50,13 +58,35 @@ export interface DataAction {
    */
   internal_dispatchMessage: (payload: MessageDispatch) => void;
 
+  /** Mirror the chat store bucket of the current context into this store. */
+  internal_syncChatTranscript: () => void;
+
+  /**
+   * Load one round-aligned page of history older than the server's
+   * newest-first window and prepend it to the transcript.
+   * Self-guarding: no-ops while a page is in flight, once the beginning has
+   * been reached, or when the conversation has no server-backed messages yet.
+   *
+   * Never rejects: a failure is kept in `earlierMessagesError` for the inline
+   * error row. While that error stands, gesture-driven calls no-op so scrolling
+   * does not silently re-fire a failing request; pass `{ retry: true }` from the
+   * explicit Retry action to try again.
+   */
+  loadEarlierMessages: (options?: { retry?: boolean }) => Promise<void>;
+
   /**
    * Replace all messages with new data
    * Used for syncing after database operations (optimistic update pattern)
    *
    * @param messages - New messages array from database
+   * @param options.expectedContext - Context captured when an async operation
+   *   started. The rows belong to that conversation, so they land in its
+   *   bucket even when this store has switched to another one since.
    */
-  replaceMessages: (messages: UIChatMessage[]) => void;
+  replaceMessages: (
+    messages: UIChatMessage[],
+    options?: { expectedContext?: ConversationContext },
+  ) => void;
 
   /**
    * Switch message branch by updating the parent's activeBranchIndex
@@ -65,17 +95,6 @@ export interface DataAction {
    * @param branchIndex - The new branch index to switch to
    */
   switchMessageBranch: (messageId: string, branchIndex: number) => Promise<void>;
-
-  /**
-   * Fetch messages for this conversation using SWR
-   *
-   * @param context - Conversation context with sessionId and topicId
-   * @param skipFetch - When true, SWR key is null and no fetch occurs
-   */
-  useFetchMessages: (
-    context: ConversationContext,
-    skipFetch?: boolean,
-  ) => SWRResponse<UIChatMessage[]>;
 }
 
 export const dataSlice: StateCreator<
@@ -83,162 +102,140 @@ export const dataSlice: StateCreator<
   [['zustand/devtools', never]],
   [],
   DataAction
-> = (set, get) => ({
-  internal_dispatchMessage: (payload) => {
-    const contextKey = messageMapKey(get().context);
-
-    log(
-      '[dispatchMessage] start | contextKey=%s | type=%s | id=%s',
-      contextKey,
-      payload.type,
-      'id' in payload ? payload.id : 'ids' in payload ? payload.ids.join(',') : 'N/A',
-    );
-
-    // Special handling for messageGroup metadata updates
-    // MessageGroups are not in dbMessages, they're injected during query
-    if (payload.type === 'updateMessageGroupMetadata') {
-      const displayMessages = get().displayMessages;
-      const index = displayMessages.findIndex((m) => m.id === payload.id);
-      if (index < 0) return;
-
-      const newDisplayMessages = [...displayMessages];
-      newDisplayMessages[index] = {
-        ...newDisplayMessages[index],
-        metadata: { ...newDisplayMessages[index].metadata, ...payload.value },
-      };
-
-      set({ displayMessages: stabilizeReferences(displayMessages, newDisplayMessages) }, false, {
-        payload,
-        type: `dispatchMessage/${payload.type}`,
-      });
-      return;
-    }
-
-    const dbMessages = get().dbMessages;
-
-    // Apply array-based reducer - preserves message order
-    const newDbMessages = messagesReducer(dbMessages, payload);
-
-    // Check if anything changed
-    if (newDbMessages === dbMessages) {
-      log('[dispatchMessage] no change | contextKey=%s', contextKey);
-      return;
-    }
-
-    // Re-parse for display order and grouping
-    const { flatList } = parse(newDbMessages);
-    // parse() rebuilds every message/block/tool reference, so pin unchanged
-    // subtrees back to their previous identity to preserve memo bailouts.
-    const stableFlatList = stabilizeReferences(get().displayMessages, flatList);
-
-    log(
-      '[dispatchMessage] updated | contextKey=%s | prevCount=%d | newCount=%d | displayCount=%d',
-      contextKey,
-      dbMessages.length,
-      newDbMessages.length,
-      stableFlatList.length,
-    );
-
-    set({ dbMessages: newDbMessages, displayMessages: stableFlatList }, false, {
-      payload,
-      type: `dispatchMessage/${payload.type}`,
-    });
-
-    // Sync changes to external store (ChatStore)
-    get().onMessagesChange?.(newDbMessages, get().context);
-  },
-
-  replaceMessages: (messages) => {
-    const contextKey = messageMapKey(get().context);
-    const prevDbMessages = get().dbMessages;
-
-    // Parse messages using conversation-flow
-    const { flatList } = parse(messages);
-    const stableFlatList = stabilizeReferences(get().displayMessages, flatList);
-
-    log(
-      '[replaceMessages] | contextKey=%s | prevCount=%d | newCount=%d | displayCount=%d | messageIds=%o',
-      contextKey,
-      prevDbMessages.length,
-      messages.length,
-      stableFlatList.length,
-      messages.slice(0, 5).map((m) => m.id),
-    );
-
-    set({ dbMessages: messages, displayMessages: stableFlatList }, false, 'replaceMessages');
-
-    // Sync changes to external store (ChatStore)
-    get().onMessagesChange?.(messages, get().context);
-  },
-
-  switchMessageBranch: async (messageId, branchIndex) => {
-    const state = get();
-
-    // Get the current message to find its parent
-    const message = dataSelectors.getDbMessageById(messageId)(state);
-    if (!message || !message.parentId) return;
-
-    // Update the parent's metadata.activeBranchIndex
-    // because the branch indicator is on the child message,
-    // but the activeBranchIndex is stored on the parent
-    await state.updateMessageMetadata(message.parentId, { activeBranchIndex: branchIndex });
-  },
-
-  useFetchMessages: (context, skipFetch) => {
-    // When skipFetch is true, SWR key is null - no fetch occurs
-    // This is used when external messages are provided (e.g., creating new thread)
-    // Also skip fetch when topicId is null (new conversation state) - there's no server data,
-    // only local optimistic updates. Fetching would return empty array and overwrite local data.
-    const shouldFetch = !skipFetch && !!context.agentId && !!context.topicId;
-    const contextKey = messageMapKey(context);
-
-    log(
-      '[useFetchMessages] hook | contextKey=%s | shouldFetch=%s | skipFetch=%s | agentId=%s | topicId=%s',
-      contextKey,
-      shouldFetch,
-      skipFetch,
-      context.agentId,
-      context.topicId,
-    );
-
-    return useClientDataSWRWithSync<UIChatMessage[]>(
-      shouldFetch ? ['CONVERSATION_FETCH_MESSAGES', context] : null,
-
-      () => messageService.getMessages(context),
+> = (set, get) => {
+  /** Hold a static transcript in this store (it has no chat store bucket). */
+  const setStaticMessages = (messages: UIChatMessage[], action: string) =>
+    set(
       {
-        onData: (data) => {
-          if (!data) return;
-          if (!context.topicId) return;
-
-          const prevDbMessages = get().dbMessages;
-          const mergedMessages = mergeFetchedMessagesWithLocalState(data, prevDbMessages);
-          const storeContextKey = messageMapKey(get().context);
-
-          // Parse messages using conversation-flow
-          const { flatList } = parse(mergedMessages);
-          const stableFlatList = stabilizeReferences(get().displayMessages, flatList);
-
-          log(
-            '[useFetchMessages] onData | requestContextKey=%s | storeContextKey=%s | prevCount=%d | fetchedCount=%d | displayCount=%d | messageIds=%o',
-            contextKey,
-            storeContextKey,
-            prevDbMessages.length,
-            mergedMessages.length,
-            stableFlatList.length,
-            mergedMessages.slice(0, 5).map((m) => m.id),
-          );
-
-          set({
-            dbMessages: mergedMessages,
-            displayMessages: stableFlatList,
-            messagesInit: true,
-          });
-
-          // Call onMessagesChange callback with the request context (not current context)
-          // This ensures data is stored to the correct topic even if user switched topics
-          get().onMessagesChange?.(mergedMessages, context);
-        },
+        dbMessages: messages,
+        displayMessages: stabilizeReferences(
+          get().displayMessages,
+          parse(messages, undefined, { threadId: get().context.threadId ?? undefined }).flatList,
+        ),
       },
+      false,
+      action,
     );
-  },
-});
+
+  return {
+    internal_dispatchMessage: (payload) => {
+      const { context, transcriptSource } = get();
+
+      log(
+        '[dispatchMessage] | contextKey=%s | type=%s | id=%s',
+        messageMapKey(context),
+        payload.type,
+        'id' in payload ? payload.id : 'ids' in payload ? payload.ids.join(',') : 'N/A',
+      );
+
+      // Special handling for messageGroup metadata updates
+      // MessageGroups are not in dbMessages, they're injected during query
+      if (payload.type === 'updateMessageGroupMetadata') {
+        const displayMessages = get().displayMessages;
+        const index = displayMessages.findIndex((m) => m.id === payload.id);
+        if (index < 0) return;
+
+        const newDisplayMessages = [...displayMessages];
+        newDisplayMessages[index] = {
+          ...newDisplayMessages[index],
+          metadata: { ...newDisplayMessages[index].metadata, ...payload.value },
+        };
+
+        set({ displayMessages: stabilizeReferences(displayMessages, newDisplayMessages) }, false, {
+          payload,
+          type: `dispatchMessage/${payload.type}`,
+        });
+        return;
+      }
+
+      if (transcriptSource === 'chat') {
+        useChatStore.getState().internal_dispatchMessage(payload, { conversationContext: context });
+        // Read the write back now, whether or not a mounted mirror subscribes.
+        get().internal_syncChatTranscript();
+        return;
+      }
+
+      const dbMessages = get().dbMessages;
+      const newDbMessages = messagesReducer(dbMessages, payload);
+      if (newDbMessages !== dbMessages)
+        setStaticMessages(newDbMessages, `dispatchMessage/${payload.type}`);
+    },
+
+    internal_syncChatTranscript: () => {
+      const { context, displayMessages, skipFetch, transcriptSource } = get();
+      if (transcriptSource !== 'chat') return;
+      const next = chatTranscriptState(context, skipFetch, displayMessages);
+      const state = get();
+      if (
+        next.dbMessages === state.dbMessages &&
+        next.displayMessages === state.displayMessages &&
+        next.messagesInit === state.messagesInit
+      )
+        return;
+      set(next, false, 'syncChatTranscript');
+    },
+
+    loadEarlierMessages: async (options) => {
+      const { context, transcriptSource } = get();
+      if (transcriptSource !== 'chat') return;
+      if (get().earlierMessagesError !== undefined && !options?.retry) return;
+
+      const { error, started } = await useChatStore.getState().loadEarlierMessages(context, {
+        onStart: () =>
+          set(
+            { earlierMessagesError: undefined, isLoadingEarlierMessages: true },
+            false,
+            'loadEarlierMessages/start',
+          ),
+      });
+      if (!started) return;
+      get().internal_syncChatTranscript();
+
+      // The flag is conversation-wide state: after a context switch it belongs
+      // to the new conversation (reset by createEphemeralResetState), so a
+      // late settle from the previous one must not clear it.
+      if (!isSameConversationContext(context, get().context)) return;
+      set(
+        { earlierMessagesError: error ?? undefined, isLoadingEarlierMessages: false },
+        false,
+        'loadEarlierMessages/end',
+      );
+    },
+
+    replaceMessages: (messages, options) => {
+      const { context, transcriptSource } = get();
+      const target = options?.expectedContext ?? context;
+
+      log(
+        '[replaceMessages] | contextKey=%s | newCount=%d',
+        messageMapKey(target),
+        messages.length,
+      );
+
+      if (transcriptSource === 'chat') {
+        useChatStore.getState().replaceMessages(messages, { context: target });
+        get().internal_syncChatTranscript();
+        return;
+      }
+
+      if (!isSameConversationContext(target, context)) return;
+      setStaticMessages(messages, 'replaceMessages');
+    },
+
+    switchMessageBranch: async (messageId, branchIndex) => {
+      const state = get();
+
+      // Get the current message to find its parent
+      const message = dataSelectors.getDbMessageById(messageId)(state);
+      if (!message || !message.parentId) return;
+
+      // Invalidate pending automatic recovery before a historical error can mount.
+      useChatStore.getState().revokeHeteroAutoRetry(state.context);
+
+      // Update the parent's metadata.activeBranchIndex
+      // because the branch indicator is on the child message,
+      // but the activeBranchIndex is stored on the parent
+      await state.updateMessageMetadata(message.parentId, { activeBranchIndex: branchIndex });
+    },
+  };
+};

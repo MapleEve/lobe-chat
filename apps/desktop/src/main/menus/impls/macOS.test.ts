@@ -31,17 +31,8 @@ vi.mock('electron', () => ({
   },
 }));
 
-vi.mock('electron-is', () => ({
+vi.mock('@/utils/platform', () => ({
   macOS: vi.fn(() => true),
-}));
-
-vi.mock('@/utils/logger', () => ({
-  createLogger: () => ({
-    debug: vi.fn(),
-    error: vi.fn(),
-    info: vi.fn(),
-    warn: vi.fn(),
-  }),
 }));
 
 // Mock isDev
@@ -94,7 +85,9 @@ const createMockApp = () => {
       rebuildAppMenu: vi.fn(),
     },
     storeManager: {
+      get: vi.fn(),
       openInEditor: vi.fn(),
+      set: vi.fn(),
     },
   } as unknown as App;
 };
@@ -184,12 +177,12 @@ describe('MacOSMenu', () => {
       expect(menu).toBeDefined();
     });
 
-    it('should include show and quit items in tray menu', () => {
+    it('should include open and quit items in tray menu', () => {
       macOSMenu.buildTrayMenu();
 
       const template = (Menu.buildFromTemplate as any).mock.calls[0][0];
       expect(template.length).toBeGreaterThan(0);
-      expect(template.some((item: any) => item.label?.includes('Show'))).toBe(true);
+      expect(template.some((item: any) => item.label?.includes('Open'))).toBe(true);
       expect(template.some((item: any) => item.label === 'Settings')).toBe(true);
       expect(template.some((item: any) => item.label === 'Quit')).toBe(true);
     });
@@ -199,6 +192,25 @@ describe('MacOSMenu', () => {
 
       const dockMenu = (app.dock.setMenu as any).mock.calls[0][0];
       expect(dockMenu.template.some((item: any) => item.label === 'Quick Composer')).toBe(true);
+    });
+
+    it('should rebuild the dock menu with active topics and leave out system-provided items', () => {
+      macOSMenu.updateDockMenu({
+        activeTopics: [
+          { status: 'running', subtitle: 'Researcher', title: 'Refactor auth', url: '/agent/a/t1' },
+        ],
+        agents: [{ id: 'a', title: 'Researcher', url: '/agent/a' }],
+        pinned: [],
+        recent: [],
+      });
+
+      const labels = (app.dock.setMenu as any).mock.calls[0][0].template.map(
+        (item: any) => item.label,
+      );
+      expect(labels.slice(0, 2)).toEqual(['Running', 'Refactor auth']);
+      expect(labels).not.toContain('Recent Agents');
+      expect(labels).not.toContain('Quit');
+      expect(labels).not.toContain('Settings');
     });
   });
 
@@ -242,6 +254,9 @@ describe('MacOSMenu', () => {
       expect(preferencesItem).toBeDefined();
       await preferencesItem.click();
       expect(mockApp.browserManager.getMainWindow).toHaveBeenCalled();
+      const mainWindow = (mockApp.browserManager.getMainWindow as any).mock.results[0].value;
+      expect(mainWindow.show).toHaveBeenCalled();
+      expect(mainWindow.broadcast).toHaveBeenCalledWith('createNewTab', { path: '/settings' });
     });
 
     it('should handle visit website click', async () => {
@@ -281,11 +296,11 @@ describe('MacOSMenu', () => {
       expect(shell.openPath).toHaveBeenCalledWith('/path/to/logs');
     });
 
-    it('should handle tray show click', () => {
+    it('should handle tray open click', () => {
       macOSMenu.buildTrayMenu();
 
       const template = (Menu.buildFromTemplate as any).mock.calls[0][0];
-      const showItem = template.find((item: any) => item.label?.includes('Show'));
+      const showItem = template.find((item: any) => item.label?.includes('Open'));
 
       expect(showItem).toBeDefined();
       showItem.click();

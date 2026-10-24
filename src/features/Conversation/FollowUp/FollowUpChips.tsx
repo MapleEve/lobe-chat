@@ -4,47 +4,38 @@ import type { FollowUpChip } from '@lobechat/types';
 import { Reply } from 'lucide-react';
 import { memo, useCallback, useMemo } from 'react';
 
-import { useConversationStore } from '@/features/Conversation';
+import { messageStateSelectors, useConversationStore } from '@/features/Conversation/store';
 import { followUpActionSelectors, useFollowUpActionStore } from '@/store/followUpAction';
 
-import { messageStateSelectors } from '../store';
 import { styles } from './style';
 
 interface FollowUpChipsProps {
+  conversationKey: string;
   messageId: string;
-  topicId: string;
 }
 
-const FollowUpChips = memo<FollowUpChipsProps>(({ messageId, topicId }) => {
-  // For assistantGroup, the server resolves the latest answer message id which
-  // lives inside `children`, not as the top-level group id. Collect children ids
-  // as a stable primitive so the followUpAction selector can match either.
+const FollowUpChips = memo<FollowUpChipsProps>(({ conversationKey, messageId }) => {
   const childIdsKey = useConversationStore((s) => {
     const m = s.displayMessages.find((x) => x.id === messageId);
     return m?.children?.map((c) => c.id).join('|') ?? '';
   });
   const selector = useMemo(
-    () => followUpActionSelectors.chipsFor({ childIdsKey, messageId, topicId }),
-    [childIdsKey, messageId, topicId],
+    () => followUpActionSelectors.chipsFor({ childIdsKey, conversationKey, messageId }),
+    [childIdsKey, conversationKey, messageId],
   );
   const chips = useFollowUpActionStore(selector);
-  const updateInputMessage = useConversationStore((s) => s.updateInputMessage);
-  const editor = useConversationStore((s) => s.editor);
-  // Hide chips while the bound group/message is still being generated — chips
-  // are only valid for a fully settled assistant turn.
+  const fillInputMessage = useConversationStore((s) => s.fillInputMessage);
+  const recordChipClick = useFollowUpActionStore((s) => s.recordChipClick);
   const isGenerating = useConversationStore(
     messageStateSelectors.isAssistantGroupItemGenerating(messageId),
   );
 
   const handleClick = useCallback(
-    (chip: FollowUpChip) => {
-      updateInputMessage('');
-      editor?.setDocument('text', '');
-      updateInputMessage(chip.message);
-      editor?.setDocument('text', chip.message);
-      editor?.focus();
+    (chip: FollowUpChip, chipIndex: number) => {
+      recordChipClick(conversationKey, chipIndex);
+      fillInputMessage(chip.message);
     },
-    [updateInputMessage, editor],
+    [recordChipClick, conversationKey, fillInputMessage],
   );
 
   if (chips.length === 0 || isGenerating) return null;
@@ -58,7 +49,7 @@ const FollowUpChips = memo<FollowUpChipsProps>(({ messageId, topicId }) => {
           key={`${messageId}-${i}`}
           style={{ animationDelay: `${i * 60}ms` }}
           type="button"
-          onClick={() => handleClick(chip)}
+          onClick={() => handleClick(chip, i)}
         >
           <Reply className={`${styles.chipIcon} followup-icon`} size={14} />
           <span>{chip.label}</span>

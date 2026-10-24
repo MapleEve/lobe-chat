@@ -1,53 +1,84 @@
 'use client';
 
 import type { BuiltinInspectorProps } from '@lobechat/types';
-import { cx } from 'antd-style';
+import { GroupBotIcon } from '@lobehub/ui/icons';
+import { createStaticStyles, cx } from '@lobehub/ui';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { highlightTextStyles, inspectorTextStyles, shinyTextStyles } from '@/styles';
+import { inspectorTextStyles, shinyTextStyles } from '@/styles';
 
 import type { CallSubAgentParams, CallSubAgentState } from '../../../types';
+import { SubAgentStats } from '../../components/SubAgentStats';
 
+const styles = createStaticStyles(({ css, cssVar }) => ({
+  chip: css`
+    overflow: hidden;
+    display: inline-flex;
+    flex-shrink: 1;
+    align-items: center;
+
+    min-width: 0;
+    padding-block: 2px;
+    padding-inline: 10px;
+    border-radius: 999px;
+
+    font-size: 12px;
+    color: ${cssVar.colorText};
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    background: ${cssVar.colorFillTertiary};
+  `,
+  icon: css`
+    flex-shrink: 0;
+    color: ${cssVar.colorTextDescription};
+  `,
+  label: css`
+    flex-shrink: 0;
+    color: ${cssVar.colorText};
+  `,
+  root: css`
+    gap: 6px;
+  `,
+}));
+
+/**
+ * Collapsed row for lobe-agent's `callSubAgent`. Mirrors the Claude Code Agent
+ * tool: leading bot icon + "Call SubAgent" label + the description in a chip,
+ * with a compact stats tail (tool count · model · tokens) that ticks up live
+ * while the sub-agent runs and settles on the persisted totals when it finishes.
+ */
 export const CallSubAgentInspector = memo<
   BuiltinInspectorProps<CallSubAgentParams, CallSubAgentState>
->(({ args, partialArgs, isArgumentsStreaming, isLoading }) => {
+>(({ args, partialArgs, pluginState, isArgumentsStreaming, isLoading }) => {
   const { t } = useTranslation('plugin');
 
-  const description = args?.description || partialArgs?.description;
+  const description = (args?.description || partialArgs?.description)?.trim();
+  const isShiny = isArgumentsStreaming || isLoading;
 
-  if (isArgumentsStreaming) {
-    if (!description)
-      return (
-        <div className={cx(inspectorTextStyles.root, shinyTextStyles.shinyText)}>
-          <span>{t('builtins.lobe-agent.apiName.callSubAgent')}</span>
-        </div>
-      );
-
-    return (
-      <div className={cx(inspectorTextStyles.root, shinyTextStyles.shinyText)}>
-        <span>{t('builtins.lobe-agent.apiName.callSubAgent.loading')}</span>
-        <span className={highlightTextStyles.primary}>{description}</span>
-      </div>
-    );
-  }
-
-  if (description) {
-    return (
-      <div className={cx(inspectorTextStyles.root, isLoading && shinyTextStyles.shinyText)}>
-        <span>
-          {isLoading
-            ? t('builtins.lobe-agent.apiName.callSubAgent.loading')
-            : t('builtins.lobe-agent.apiName.callSubAgent.completed')}
-        </span>
-        <span className={highlightTextStyles.primary}>{description}</span>
-      </div>
-    );
-  }
+  // The completion bridge writes the authoritative stats flat onto pluginState at
+  // the end of the run; until then `progress` holds the live totals streamed off
+  // the running sub-agent. Prefer the flat ones so the tail never regresses to a
+  // stale live sample once the run is done.
+  const hasFinalStats =
+    pluginState?.totalTokens !== undefined || pluginState?.totalToolCalls !== undefined;
+  const stats = hasFinalStats ? pluginState : pluginState?.progress;
 
   return (
-    <div className={inspectorTextStyles.root}>
-      <span>{t('builtins.lobe-agent.apiName.callSubAgent')}</span>
+    <div className={cx(inspectorTextStyles.root, styles.root)}>
+      <GroupBotIcon className={styles.icon} size={14} />
+      <span className={cx(styles.label, isShiny && shinyTextStyles.shinyText)}>
+        {t('builtins.lobe-agent.apiName.callSubAgent')}
+      </span>
+      {description && <span className={styles.chip}>{description}</span>}
+      {stats && (
+        <SubAgentStats
+          model={stats.model}
+          totalTokens={stats.totalTokens}
+          totalToolCalls={stats.totalToolCalls}
+        />
+      )}
     </div>
   );
 });

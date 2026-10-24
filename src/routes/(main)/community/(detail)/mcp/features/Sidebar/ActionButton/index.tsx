@@ -1,13 +1,13 @@
 'use client';
 
-import { Button, Flexbox, Icon } from '@lobehub/ui';
-import { createStaticStyles } from 'antd-style';
+import { Button, createStaticStyles, Flexbox, Icon } from '@lobehub/ui';
 import { Trash2Icon } from 'lucide-react';
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import MCPInstallProgress from '@/features/MCP/MCPInstallProgress';
 import { useDetailContext } from '@/features/MCPPluginDetail/DetailProvider';
+import { usePermission } from '@/hooks/usePermission';
 import { useMarketAuth } from '@/layout/AuthProvider/MarketAuth';
 import { useToolStore } from '@/store/tool';
 import { pluginSelectors } from '@/store/tool/slices/plugin/selectors';
@@ -25,6 +25,8 @@ const ActionButton = memo(() => {
   const detailContext = useDetailContext();
   const { identifier, haveCloudEndpoint } = detailContext;
   const [isLoading, setIsLoading] = useState(false);
+  const { allowed: canCreate } = usePermission('create_content');
+  const { allowed: canEdit } = usePermission('edit_own_content');
   const { isAuthenticated, isLoading: isAuthLoading, signIn } = useMarketAuth();
 
   const [installed, installMCPPlugin, uninstallMCPPlugin] = useToolStore((s) => [
@@ -37,12 +39,13 @@ const ActionButton = memo(() => {
   const isCloudMcp = haveCloudEndpoint;
 
   const installPlugin = async () => {
+    if (!canCreate || !canEdit) return;
     if (!identifier) return;
 
     // If this is a cloud MCP and user is not authenticated, request authorization first
     if (isCloudMcp && !isAuthenticated) {
       try {
-        await signIn();
+        await signIn('mcp');
       } catch {
         return; // Don't proceed with installation if auth fails
       }
@@ -72,6 +75,7 @@ const ActionButton = memo(() => {
       </Button>
 
       <Button
+        disabled={!canEdit}
         icon={<Icon icon={Trash2Icon} size={20} />}
         loading={buttonLoading}
         size={'large'}
@@ -80,6 +84,7 @@ const ActionButton = memo(() => {
           icon: { height: 20 },
         }}
         onClick={async () => {
+          if (!canEdit) return;
           setIsLoading(true);
           await uninstallMCPPlugin(identifier!);
           setIsLoading(false);
@@ -91,6 +96,7 @@ const ActionButton = memo(() => {
       <Button
         block
         className={styles.button}
+        disabled={!canCreate || !canEdit}
         loading={buttonLoading}
         size={'large'}
         type={'primary'}

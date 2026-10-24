@@ -3,51 +3,18 @@ import { type BuiltinToolManifest } from '@lobechat/types';
 import { systemPrompt } from './systemRole';
 import { LocalSystemApiName, LocalSystemIdentifier } from './types';
 
+export const READ_FILE_DESCRIPTION =
+  'Read the content of a text or document file (txt/md/json/source code/pdf/docx/etc.). Binary files (.bin/.exe/.zip/.b64/encoded blobs) are rejected with a structured error — use runCommand with file/hexdump/strings to inspect those instead. Output is capped at 500K chars total and 8K chars per line; for larger files, use a narrower line range or grepContent.';
+
+export const IMAGE_CAPABLE_READ_FILE_DESCRIPTION =
+  'Read text and document files (txt/md/json/source code/pdf/docx/etc.) or local image files (PNG/JPEG/GIF/WebP). For a local image path, call readFile directly so the image is uploaded as a visual tool result. Never use shell commands to convert images to base64/data URI text or copy encoded image data between tools. Other binary files (.bin/.exe/.zip/.b64/encoded blobs) are rejected with a structured error — use runCommand with file/hexdump/strings to inspect those instead. Text output is capped at 500K chars total and 8K chars per line; for larger files, use a narrower line range or grepContent.';
+
 export const LocalSystemManifest: BuiltinToolManifest = {
   executors: ['client', 'server'],
   api: [
     {
-      description:
-        'List files and folders in a specified directory. Input should be a path. Output is a JSON array of file/folder names.',
-      humanIntervention: {
-        dynamic: {
-          default: 'never',
-          policy: 'required',
-          type: 'pathScopeAudit',
-        },
-      },
-      name: LocalSystemApiName.listFiles,
-      parameters: {
-        properties: {
-          limit: {
-            default: 100,
-            description: 'Maximum number of items to return (default: 100)',
-            type: 'number',
-          },
-          path: {
-            description: 'The directory path to list',
-            type: 'string',
-          },
-          sortBy: {
-            default: 'modifiedTime',
-            description: 'Field to sort by (default: modifiedTime)',
-            enum: ['name', 'modifiedTime', 'createdTime', 'size'],
-            type: 'string',
-          },
-          sortOrder: {
-            default: 'desc',
-            description: 'Sort order (default: desc)',
-            enum: ['asc', 'desc'],
-            type: 'string',
-          },
-        },
-        required: ['path'],
-        type: 'object',
-      },
-    },
-    {
-      description:
-        'Read the content of a text or document file (txt/md/json/source code/pdf/docx/etc.). Binary files (.bin/.exe/.zip/.b64/encoded blobs) are rejected with a structured error — use runCommand with file/hexdump/strings to inspect those instead. Output is capped at 500K chars total and 8K chars per line; for larger files, use a narrower line range or grepContent.',
+      defaultTimeoutMs: 30_000,
+      description: READ_FILE_DESCRIPTION,
       humanIntervention: {
         dynamic: {
           default: 'never',
@@ -60,7 +27,7 @@ export const LocalSystemManifest: BuiltinToolManifest = {
         properties: {
           loc: {
             description:
-              'Optional range of lines to read [startLine, endLine]. Defaults to [0, 200] if not specified.',
+              "Optional range of lines to read [startLine, endLine], 0-based and end-exclusive (e.g. [0, 1000] reads the first 1000 lines). Defaults to [0, 1000] if not specified; request a wider window to read more at once — output is capped at 500K chars. Each line is prefixed with its 1-based line number; a window that doesn't reach the end of the file starts with a '(lines 1-1000 of 2545)' marker showing the total.",
             items: {
               type: 'number',
             },
@@ -76,6 +43,7 @@ export const LocalSystemManifest: BuiltinToolManifest = {
       },
     },
     {
+      defaultTimeoutMs: 60_000,
       description:
         'Search for files within the workspace based on a query string and optional filter options. Input should include the search query and any filter options. Output is a JSON array of matching file paths.',
       humanIntervention: {
@@ -123,7 +91,7 @@ export const LocalSystemManifest: BuiltinToolManifest = {
           },
           scope: {
             description:
-              'Working directory scope. Limits the search to this directory. Defaults to the current working directory.',
+              "Working directory scope. Limits the search to this directory. Omit to default to the user's workspace directory. Use a specific path when the user names one explicitly.",
             type: 'string',
           },
           limit: {
@@ -160,6 +128,7 @@ export const LocalSystemManifest: BuiltinToolManifest = {
       },
     },
     {
+      defaultTimeoutMs: 60_000,
       description:
         'Moves or renames multiple files/directories. Input is an array of objects, each containing an oldPath and a newPath.',
       humanIntervention: {
@@ -197,6 +166,7 @@ export const LocalSystemManifest: BuiltinToolManifest = {
       },
     },
     {
+      defaultTimeoutMs: 30_000,
       description:
         'Write content to a specific file. Input should be the file path and content. Overwrites existing file or creates a new one.',
       humanIntervention: {
@@ -221,10 +191,14 @@ export const LocalSystemManifest: BuiltinToolManifest = {
         required: ['path', 'content'],
         type: 'object',
       },
+      // Queues with editFile on the same path: parallel read-modify-writes of
+      // one file would otherwise drop all but the last edit.
+      serializeBy: 'path',
     },
     {
+      defaultTimeoutMs: 30_000,
       description:
-        'Perform exact string replacements in files. Must read the file first before editing.',
+        'Perform exact string replacements in files. Must read the file first before editing. old_string must match exactly once unless replace_all is set.',
       humanIntervention: {
         dynamic: {
           default: 'never',
@@ -244,7 +218,8 @@ export const LocalSystemManifest: BuiltinToolManifest = {
             type: 'string',
           },
           old_string: {
-            description: 'The exact text to replace',
+            description:
+              'The exact text to replace. Must be unique in the file — include surrounding lines to disambiguate — unless replace_all is true',
             type: 'string',
           },
           replace_all: {
@@ -255,10 +230,12 @@ export const LocalSystemManifest: BuiltinToolManifest = {
         required: ['file_path', 'old_string', 'new_string'],
         type: 'object',
       },
+      serializeBy: 'file_path',
     },
     {
+      defaultTimeoutMs: 60_000,
       description:
-        'Execute a shell command and return its output. Supports both synchronous and background execution with timeout control.',
+        'Start a terminal session to execute a shell command and return console output collected during the wait window (60 seconds by default, up to 600000ms via `timeout`). If the command is still running after the wait window, the result includes `shell_id` for later observation or termination.',
       humanIntervention: 'required',
       name: LocalSystemApiName.runCommand,
       parameters: {
@@ -279,11 +256,13 @@ export const LocalSystemManifest: BuiltinToolManifest = {
             type: 'object',
           },
           run_in_background: {
-            description: 'Set to true to run command in background and return shell_id',
+            description:
+              'Set to true to return immediately after starting the terminal session. The result will include a `shell_id` for later observation or termination.',
             type: 'boolean',
           },
           timeout: {
-            description: 'Timeout in milliseconds (default: 120000ms, max: 600000ms)',
+            description:
+              'How long to wait for the command, in milliseconds (default 60000, max 600000). Does not kill the command when it elapses — the result carries a `shell_id` you can keep observing. Size it to the work: a test suite or build deserves a long single wait rather than a series of short ones.',
             type: 'number',
           },
         },
@@ -292,8 +271,9 @@ export const LocalSystemManifest: BuiltinToolManifest = {
       },
     },
     {
+      defaultTimeoutMs: 60_000,
       description:
-        'Retrieve output from a running or completed background shell command. Returns only new output since the last check.',
+        'Retrieve output from a running or completed background shell command. Blocks until the command exits or `timeout` elapses, then reports whether it is still running. Prefer one long wait over repeated short polls.',
       name: LocalSystemApiName.getCommandOutput,
       parameters: {
         properties: {
@@ -306,12 +286,18 @@ export const LocalSystemManifest: BuiltinToolManifest = {
             description: 'The ID of the background shell to retrieve output from',
             type: 'string',
           },
+          timeout: {
+            description:
+              'How long to wait for the command to exit, in milliseconds (default 60000, max 600000). Does not kill the command when it elapses. Raise it instead of calling this repeatedly — each call is a full model turn, so ten 60s polls cost ten turns to learn what one 600s wait reports once.',
+            type: 'number',
+          },
         },
         required: ['shell_id'],
         type: 'object',
       },
     },
     {
+      defaultTimeoutMs: 10_000,
       description: 'Kill a running background shell command by its ID.',
       name: LocalSystemApiName.killCommand,
       parameters: {
@@ -326,6 +312,7 @@ export const LocalSystemManifest: BuiltinToolManifest = {
       },
     },
     {
+      defaultTimeoutMs: 60_000,
       description:
         'Search for content within files using regex patterns. Supports various output modes and filtering options.',
       humanIntervention: {
@@ -398,6 +385,7 @@ export const LocalSystemManifest: BuiltinToolManifest = {
       },
     },
     {
+      defaultTimeoutMs: 60_000,
       description:
         'Find files matching glob patterns. Supports standard glob syntax like "**/*.js" or "src/**/*.ts".',
       humanIntervention: {
@@ -410,6 +398,11 @@ export const LocalSystemManifest: BuiltinToolManifest = {
       name: LocalSystemApiName.globFiles,
       parameters: {
         properties: {
+          limit: {
+            description:
+              'Maximum number of matches to collect during execution. When omitted, the runtime applies a conservative default limit.',
+            type: 'number',
+          },
           pattern: {
             description:
               'The glob pattern to match files against (e.g. "**/*.js", "src/**/*.ts"). Relative patterns are resolved against the scope.',
@@ -417,7 +410,7 @@ export const LocalSystemManifest: BuiltinToolManifest = {
           },
           scope: {
             description:
-              'Working directory scope. When `pattern` is relative, it is joined with this scope. Defaults to the current working directory.',
+              "Working directory scope. When `pattern` is relative, it is joined with this scope. Omit to default to the user's workspace directory. Use a specific path when the user names one explicitly.",
             type: 'string',
           },
         },

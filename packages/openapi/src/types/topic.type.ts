@@ -1,8 +1,7 @@
 import type { ChatTopicMetadata } from '@lobechat/types';
 import { z } from 'zod';
 
-import type { TopicItem, UserItem } from '@/database/schemas';
-
+import type { PublicTopic, PublicUser } from '../helpers/public-fields';
 import type { IPaginationQuery, PaginationQueryResponse } from './common.type';
 import { PaginationQuerySchema } from './common.type';
 
@@ -44,7 +43,7 @@ export const TopicCreateRequestSchema = z.object({
   clientId: z.string().optional(),
   favorite: z.boolean().optional(),
   groupId: z.string().nullish(),
-  title: z.string().min(1, '标题不能为空'),
+  title: z.string().min(1, 'Title cannot be empty'),
 });
 
 export interface TopicUpdateRequest {
@@ -65,14 +64,14 @@ export const TopicUpdateRequestSchema = z.object({
       workingDirectory: z.string().optional(),
     })
     .optional(),
-  title: z.string().min(1, '标题不能为空').optional(),
+  title: z.string().min(1, 'Title cannot be empty').optional(),
 });
 
 // ==================== Topic Response Types ====================
 
-export interface TopicResponse extends TopicItem {
+export interface TopicResponse extends PublicTopic {
   messageCount: number;
-  user: UserItem;
+  user: PublicUser;
 }
 
 /**
@@ -85,13 +84,13 @@ export type TopicListResponse = PaginationQueryResponse<{
 // ==================== Common Schemas ====================
 
 export const TopicGetParamSchema = z.object({
-  id: z.string().min(1, '话题ID不能为空'),
+  id: z.string().min(1, 'Topic ID cannot be empty'),
 });
 
 export const TopicDeleteParamSchema = z.object({
-  id: z.string().min(1, '话题ID不能为空'),
+  id: z.string().min(1, 'Topic ID cannot be empty'),
 });
 
 export const TopicUpdateParamSchema = z.object({
-  id: z.string().min(1, '话题ID不能为空'),
+  id: z.string().min(1, 'Topic ID cannot be empty'),
 });

@@ -3,8 +3,11 @@ import { combineKeys, Flexbox, Hotkey } from '@lobehub/ui';
 import { memo } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
+import { useAgentId } from '@/features/ChatInput/hooks/useAgentId';
 import { useUserStore } from '@/store/user';
 import { preferenceSelectors } from '@/store/user/selectors';
+
+import { useEffectiveAgentMode } from '../hooks/useEffectiveAgentMode';
 
 export type PlaceholderVariant = 'default' | 'followUp';
 
@@ -22,6 +25,9 @@ const Placeholder = memo<PlaceholderProps>(
       : combineKeys([KeyEnum.Mod, KeyEnum.Enter]);
     const { t } = useTranslation('chat');
 
+    const agentId = useAgentId();
+    const { isAgentRuntimeMode } = useEffectiveAgentMode(agentId);
+
     const isHeterogeneous = !!heterogeneousName;
 
     if (variant === 'followUp') {
@@ -34,9 +40,13 @@ const Placeholder = memo<PlaceholderProps>(
 
     const i18nKey = isHeterogeneous
       ? 'sendPlaceholderHeterogeneous'
-      : showAgentAssignmentHint
-        ? 'sendPlaceholderWithAgentAssignment'
-        : 'sendPlaceholder';
+      : isAgentRuntimeMode
+        ? showAgentAssignmentHint
+          ? 'sendPlaceholderWithAgentAssignment'
+          : 'sendPlaceholder'
+        : showAgentAssignmentHint
+          ? 'sendPlaceholderChatWithAgentAssignment'
+          : 'sendPlaceholderChat';
 
     return (
       <Flexbox horizontal align={'center'} as={'span'} gap={4} wrap={'wrap'}>

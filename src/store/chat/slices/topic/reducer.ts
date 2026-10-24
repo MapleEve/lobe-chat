@@ -1,25 +1,64 @@
 import isEqual from 'fast-deep-equal';
-import { produce } from 'immer';
+import { current, produce } from 'immer';
 
+import { type TopicMapScope } from '@/store/chat/utils/topicMapKey';
 import { type ChatTopic, type CreateTopicParams } from '@/types/topic';
 
-type AddChatTopicAction = {
+/**
+ * Optional scope on every topic dispatch. When set, `internal_dispatchTopic`
+ * routes the write to the matching bucket in `topicDataMap` regardless of
+ * `activeAgentId` — used when an agent run completes after the user has
+ * switched agents and the write must land in the run's *owning* bucket, not
+ * whichever bucket happens to be active.
+ */
+interface ChatTopicScope {
+  agentId?: string;
+  /**
+   * Pre-resolved `topicDataMap` key, taking precedence over the fields above.
+   * For callers that hold a topic id but not its container coordinates — see
+   * `topicSelectors.getTopicContainerKeyById`.
+   */
+  containerKey?: string;
+  groupId?: string;
+  scope?: TopicMapScope;
+}
+
+type AddChatTopicAction = ChatTopicScope & {
+  /**
+   * Marks a client-only row inserted before the server has created it (the
+   * first-send placeholder). `internal_dispatchTopic` tracks these ids so a
+   * topic-list refetch landing mid-send re-prepends them instead of wiping the
+   * row — see `#reconcileFetchedTopics`.
+   *
+   * This must be stated by the caller rather than inferred from the id: the id
+   * is a normal `tpc_…` value the server will honour verbatim, so it is
+   * indistinguishable from a persisted one.
+   */
+  optimistic?: boolean;
   type: 'addTopic';
   value: CreateTopicParams & { id?: string };
 };
 
-type UpdateChatTopicAction = {
+type UpdateChatTopicAction = ChatTopicScope & {
   id: string;
   type: 'updateTopic';
   value: Partial<ChatTopic>;
 };
 
-type DeleteChatTopicAction = {
+type DeleteChatTopicAction = ChatTopicScope & {
   id: string;
   type: 'deleteTopic';
 };
 
-export type ChatTopicDispatch = AddChatTopicAction | UpdateChatTopicAction | DeleteChatTopicAction;
+type ReplaceChatTopicIdAction = ChatTopicScope & {
+  id: string;
+  nextId: string;
+  type: 'replaceTopicId';
+  value?: Partial<ChatTopic>;
+};
+
+export type ChatTopicDispatch =
+  AddChatTopicAction | UpdateChatTopicAction | DeleteChatTopicAction | ReplaceChatTopicIdAction;
 
 export const topicReducer = (state: ChatTopic[] = [], payload: ChatTopicDispatch): ChatTopic[] => {
   switch (payload.type) {
@@ -30,7 +69,11 @@ export const topicReducer = (state: ChatTopic[] = [], payload: ChatTopicDispatch
           createdAt: Date.now(),
           favorite: false,
           id: payload.value.id ?? Date.now().toString(),
-          sessionId: payload.value.sessionId ? payload.value.sessionId : undefined,
+          sessionId: payload.value.sessionId || undefined,
+          // A brand-new topic is fresh activity: seed the sidebar sort key so it
+          // lands at the top immediately, matching the server's `topicActivityAt`
+          // once the real row is fetched.
+          sortUpdatedAt: Date.now(),
           updatedAt: Date.now(),
         });
 
@@ -47,13 +90,45 @@ export const topicReducer = (state: ChatTopic[] = [], payload: ChatTopicDispatch
           const currentTopic = draftState[topicIndex];
           const mergedTopic = { ...currentTopic, ...value };
 
-          // Only update if the merged value is different from current (excluding updatedAt)
-
-          if (!isEqual(currentTopic, mergedTopic)) {
+          // Only update if the merged value is different from current (excluding updatedAt).
+          // Compare against a plain snapshot, not the raw draft proxy — see message/reducer.ts.
+          if (!isEqual(current(currentTopic), mergedTopic)) {
+            // Bump `updatedAt` (display/edit time) on every real write. The sidebar
+            // no longer sorts by `updatedAt` — it sorts by `sortUpdatedAt` (activity
+            // time) — so a status flip bumping `updatedAt` here can't reorder the
+            // list; only an explicit `sortUpdatedAt` in `value` moves a row.
             // TODO: updatedAt type needs to be changed to Date later
             // @ts-ignore
             draftState[topicIndex] = { ...mergedTopic, updatedAt: new Date() };
           }
+        }
+      });
+    }
+
+    case 'replaceTopicId': {
+      return produce(state, (draftState) => {
+        const { value, id, nextId } = payload;
+        const topicIndex = draftState.findIndex((topic) => topic.id === id);
+        const existingNextIndex = draftState.findIndex((topic) => topic.id === nextId);
+
+        if (topicIndex === -1) return;
+
+        const currentTopic = draftState[topicIndex];
+        const nextTopic = existingNextIndex === -1 ? undefined : draftState[existingNextIndex];
+        draftState[topicIndex] = {
+          ...currentTopic,
+          ...nextTopic,
+          ...value,
+          id: nextId,
+          // Resolving a first-send optimistic topic to its real id is fresh activity:
+          // keep it pinned to the top via the sidebar sort key (`sortUpdatedAt`), not
+          // just `updatedAt` which the sidebar no longer sorts by.
+          sortUpdatedAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+
+        if (existingNextIndex !== -1 && existingNextIndex !== topicIndex) {
+          draftState.splice(existingNextIndex, 1);
         }
       });
     }

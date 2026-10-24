@@ -1,3 +1,4 @@
+import { Select } from '@base-ui/react/select';
 import type {
   OverlayCaptureUploadStatus,
   ScreenCaptureAgentOption,
@@ -5,9 +6,15 @@ import type {
   ScreenCaptureOverlayTheme,
 } from '@lobechat/electron-client-ipc';
 import { ModelIcon } from '@lobehub/icons';
-import { AlertCircleIcon, ChevronDownIcon, Loader2Icon, XIcon } from 'lucide-react';
+import {
+  AlertCircleIcon,
+  CameraIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  Loader2Icon,
+  XIcon,
+} from 'lucide-react';
 import type {
-  ChangeEvent as ReactChangeEvent,
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
   MouseEvent as ReactMouseEvent,
@@ -45,10 +52,12 @@ export interface ChatPanelSubmitPayload {
 export interface ChatPanelProps {
   agentId?: string;
   agents?: ScreenCaptureAgentOption[];
+  capturing?: boolean;
   hidden?: boolean;
   modelId?: string;
   models?: ScreenCaptureModelOption[];
   onRemoveSelection: (selectionId: string) => void;
+  onStartCapture: () => void;
   onSubmit: (payload: ChatPanelSubmitPayload) => void;
   placementResetKey?: number;
   selections: ChatPanelSelection[];
@@ -59,6 +68,15 @@ export interface ChatPanelProps {
 
 export const shouldShowOverlayModelSelector = (agent?: ScreenCaptureAgentOption) =>
   !agent?.heterogeneousType;
+
+/** Screenshots are optional; a prompt alone is sendable once attached uploads finish. */
+export const canSubmitOverlayPrompt = ({
+  prompt,
+  selections,
+}: {
+  prompt: string;
+  selections: Pick<ChatPanelSelection, 'uploadStatus'>[];
+}) => prompt.trim().length > 0 && selections.every((item) => item.uploadStatus === 'ready');
 
 export const resolveOverlayModelSelectionPayload = ({
   agent,
@@ -129,10 +147,12 @@ const ChatPanel = memo<ChatPanelProps>(
   ({
     agentId: initialAgentId,
     agents,
+    capturing = false,
     hidden = false,
     modelId: initialModelId,
     models,
     onRemoveSelection,
+    onStartCapture,
     onSubmit,
     placementResetKey = 0,
     selections,
@@ -248,7 +268,7 @@ const ChatPanel = memo<ChatPanelProps>(
       };
     }, [activeSelection, dock]);
 
-    const themeStyle = useMemo<CSSProperties | undefined>(() => {
+    const themeVars = useMemo<Record<string, string> | undefined>(() => {
       if (!theme) return undefined;
 
       return {
@@ -268,23 +288,31 @@ const ChatPanel = memo<ChatPanelProps>(
         '--lobe-overlay-text-quaternary': theme.colorTextQuaternary,
         '--lobe-overlay-text-secondary': theme.colorTextSecondary,
         '--lobe-overlay-text-tertiary': theme.colorTextTertiary,
-      } as CSSProperties;
+      };
     }, [theme]);
+
+    const themeStyle = themeVars as CSSProperties | undefined;
+
+    useEffect(() => {
+      if (!themeVars) return;
+      const root = document.documentElement;
+      for (const [key, value] of Object.entries(themeVars)) {
+        root.style.setProperty(key, value);
+      }
+      return () => {
+        for (const key of Object.keys(themeVars)) {
+          root.style.removeProperty(key);
+        }
+      };
+    }, [themeVars]);
 
     useLayoutEffect(() => {
       if (!hidden && textareaRef.current) {
         textareaRef.current.focus();
       }
-    }, [hidden, selected]);
+    }, [hidden, selected, capturing]);
 
-    useEffect(() => {
-      if (!selected) setPrompt('');
-    }, [selected]);
-
-    const allUploadsReady = useMemo(
-      () => selections.every((item) => item.uploadStatus === 'ready'),
-      [selections],
-    );
+    const canSend = canSubmitOverlayPrompt({ prompt, selections });
     const hasUploading = useMemo(
       () => selections.some((item) => item.uploadStatus === 'uploading'),
       [selections],
@@ -295,7 +323,7 @@ const ChatPanel = memo<ChatPanelProps>(
     );
 
     const submit = useCallback(() => {
-      if (selections.length === 0 || !prompt.trim() || !allUploadsReady) return;
+      if (!canSend) return;
       const modelSelection = resolveOverlayModelSelectionPayload({
         agent: currentAgent,
         model: currentModel,
@@ -309,16 +337,7 @@ const ChatPanel = memo<ChatPanelProps>(
         prompt: prompt.trim(),
         provider: modelSelection.provider,
       });
-    }, [
-      selections,
-      prompt,
-      agentId,
-      currentAgent,
-      modelId,
-      currentModel,
-      onSubmit,
-      allUploadsReady,
-    ]);
+    }, [selections, prompt, agentId, currentAgent, modelId, currentModel, onSubmit, canSend]);
 
     const handleKeyDown = useCallback(
       (e: ReactKeyboardEvent<HTMLTextAreaElement>) => {
@@ -330,14 +349,12 @@ const ChatPanel = memo<ChatPanelProps>(
       [submit],
     );
 
-    const canSend = selected && prompt.trim().length > 0 && allUploadsReady;
-
-    const handleAgentChange = useCallback((e: ReactChangeEvent<HTMLSelectElement>) => {
-      setAgentId(e.target.value || undefined);
+    const handleAgentChange = useCallback((value: string) => {
+      setAgentId(value || undefined);
     }, []);
 
-    const handleModelChange = useCallback((e: ReactChangeEvent<HTMLSelectElement>) => {
-      setModelId(e.target.value || undefined);
+    const handleModelChange = useCallback((value: string) => {
+      setModelId(value || undefined);
     }, []);
 
     const hasAgents = !!agents && agents.length > 0;
@@ -458,7 +475,9 @@ const ChatPanel = memo<ChatPanelProps>(
                   ? selectionCount > 1
                     ? OVERLAY_COPY.multipleSelectedPlaceholder
                     : OVERLAY_COPY.selectedPlaceholder
-                  : OVERLAY_COPY.idlePlaceholder
+                  : capturing
+                    ? OVERLAY_COPY.idlePlaceholder
+                    : OVERLAY_COPY.composePlaceholder
               }
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -467,75 +486,113 @@ const ChatPanel = memo<ChatPanelProps>(
 
           <div className={styles.actionBar}>
             <div className={styles.actionBarLeft}>
-              <label
-                aria-label={OVERLAY_COPY.agentSelectLabel}
-                className={cn(styles.selectChip, !hasAgents && styles.selectChipDisabled)}
+              <Select.Root
+                disabled={!hasAgents}
+                value={agentId ?? ''}
+                onValueChange={handleAgentChange}
               >
-                <OverlayAvatar
-                  avatar={currentAgent?.avatar}
-                  background={currentAgent?.backgroundColor}
-                  size={18}
-                  title={currentAgent?.title}
-                />
-                <span className={styles.chipLabel}>
-                  {currentAgent?.title ?? OVERLAY_COPY.agentSelectPlaceholder}
-                </span>
-                <ChevronDownIcon className={styles.chevron} size={12} strokeWidth={2} />
-                <select
+                <Select.Trigger
                   aria-label={OVERLAY_COPY.agentSelectLabel}
-                  className={styles.nativeSelect}
-                  disabled={!hasAgents}
-                  value={agentId ?? ''}
-                  onChange={handleAgentChange}
+                  className={cn(styles.selectChip, !hasAgents && styles.selectChipDisabled)}
                 >
-                  {!hasAgents && <option value="">{OVERLAY_COPY.agentSelectPlaceholder}</option>}
-                  {agents?.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.avatar && typeof item.avatar === 'string' && item.avatar.length <= 4
-                        ? `${item.avatar} ${item.title}`
-                        : item.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  <OverlayAvatar
+                    avatar={currentAgent?.avatar}
+                    background={currentAgent?.backgroundColor}
+                    size={18}
+                    title={currentAgent?.title}
+                  />
+                  <Select.Value className={styles.chipLabel}>
+                    {currentAgent?.title ?? OVERLAY_COPY.agentSelectPlaceholder}
+                  </Select.Value>
+                  <ChevronDownIcon className={styles.chevron} size={12} strokeWidth={2} />
+                </Select.Trigger>
+                <Select.Portal>
+                  <Select.Positioner
+                    align="start"
+                    className={styles.popupPositioner}
+                    sideOffset={6}
+                  >
+                    <Select.Popup className={styles.popup}>
+                      {agents?.map((item) => (
+                        <Select.Item className={styles.popupItem} key={item.id} value={item.id}>
+                          <Select.ItemIndicator className={styles.popupItemIndicator}>
+                            <CheckIcon size={12} strokeWidth={2.4} />
+                          </Select.ItemIndicator>
+                          <Select.ItemText>
+                            {item.avatar &&
+                            typeof item.avatar === 'string' &&
+                            item.avatar.length <= 4
+                              ? `${item.avatar} ${item.title}`
+                              : item.title}
+                          </Select.ItemText>
+                        </Select.Item>
+                      ))}
+                    </Select.Popup>
+                  </Select.Positioner>
+                </Select.Portal>
+              </Select.Root>
 
               {showModelSelector && (
-                <label
-                  aria-label={OVERLAY_COPY.modelSelectLabel}
-                  className={cn(styles.selectChip, !hasModels && styles.selectChipDisabled)}
+                <Select.Root
+                  disabled={!hasModels}
+                  value={modelId ?? ''}
+                  onValueChange={handleModelChange}
                 >
-                  {currentModel ? (
-                    <span className={styles.modelIconBox}>
-                      <ModelIcon model={currentModel.id} size={16} />
-                    </span>
-                  ) : (
-                    <span className={styles.modelIconBoxFallback} />
-                  )}
-                  <span className={styles.chipLabel}>
-                    {currentModel?.displayName ??
-                      currentModel?.id ??
-                      OVERLAY_COPY.modelSelectPlaceholder}
-                  </span>
-                  <ChevronDownIcon className={styles.chevron} size={12} strokeWidth={2} />
-                  <select
+                  <Select.Trigger
                     aria-label={OVERLAY_COPY.modelSelectLabel}
-                    className={styles.nativeSelect}
-                    disabled={!hasModels}
-                    value={modelId ?? ''}
-                    onChange={handleModelChange}
+                    className={cn(styles.selectChip, !hasModels && styles.selectChipDisabled)}
                   >
-                    {!hasModels && <option value="">{OVERLAY_COPY.modelSelectPlaceholder}</option>}
-                    {models?.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.displayName ?? item.id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    {currentModel ? (
+                      <span className={styles.modelIconBox}>
+                        <ModelIcon model={currentModel.id} size={16} />
+                      </span>
+                    ) : (
+                      <span className={styles.modelIconBoxFallback} />
+                    )}
+                    <Select.Value className={styles.chipLabel}>
+                      {currentModel?.displayName ??
+                        currentModel?.id ??
+                        OVERLAY_COPY.modelSelectPlaceholder}
+                    </Select.Value>
+                    <ChevronDownIcon className={styles.chevron} size={12} strokeWidth={2} />
+                  </Select.Trigger>
+                  <Select.Portal>
+                    <Select.Positioner
+                      align="start"
+                      className={styles.popupPositioner}
+                      sideOffset={6}
+                    >
+                      <Select.Popup className={styles.popup}>
+                        {models?.map((item) => (
+                          <Select.Item className={styles.popupItem} key={item.id} value={item.id}>
+                            <Select.ItemIndicator className={styles.popupItemIndicator}>
+                              <CheckIcon size={12} strokeWidth={2.4} />
+                            </Select.ItemIndicator>
+                            <Select.ItemText>{item.displayName ?? item.id}</Select.ItemText>
+                          </Select.Item>
+                        ))}
+                      </Select.Popup>
+                    </Select.Positioner>
+                  </Select.Portal>
+                </Select.Root>
               )}
             </div>
 
             <div className={styles.actionBarRight}>
+              <button
+                aria-label={OVERLAY_COPY.captureLabel}
+                aria-pressed={capturing}
+                className={cn(
+                  styles.iconBtn,
+                  styles.captureBtn,
+                  capturing && styles.captureBtnActive,
+                )}
+                title={OVERLAY_COPY.captureLabel}
+                type="button"
+                onClick={onStartCapture}
+              >
+                <CameraIcon size={16} strokeWidth={2} />
+              </button>
               <button
                 aria-label={OVERLAY_COPY.sendAriaLabel}
                 className={styles.sendBtn}

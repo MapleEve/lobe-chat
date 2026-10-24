@@ -1,12 +1,20 @@
 'use client';
 
-import { ActionIcon, Block, DropdownMenu, Flexbox, Icon, stopPropagation } from '@lobehub/ui';
-import { App } from 'antd';
-import { cssVar } from 'antd-style';
-import type { Klavis } from 'klavis';
+import {
+  ActionIcon,
+  Block,
+  confirmModal,
+  cssVar,
+  DropdownMenu,
+  Flexbox,
+  Icon,
+  stopPropagation,
+} from '@lobehub/ui';
 import { Loader2, MoreVerticalIcon, Plus, Unplug } from 'lucide-react';
 import React, { memo } from 'react';
 import { useTranslation } from 'react-i18next';
+
+import { usePermission } from '@/hooks/usePermission';
 
 import { itemStyles } from '../style';
 import { useSkillConnect } from './useSkillConnect';
@@ -18,15 +26,16 @@ interface ItemProps {
   isConnected: boolean;
   label: string;
   onOpenDetail?: () => void;
-  serverName?: Klavis.McpServerName;
-  type: 'klavis' | 'lobehub';
+  serverName?: string;
+  type: 'composio' | 'lobehub';
 }
 
 const Item = memo<ItemProps>(
   ({ description, icon, identifier, label, onOpenDetail, serverName, type }) => {
     const { t } = useTranslation('setting');
     const styles = itemStyles;
-    const { modal } = App.useApp();
+    const { allowed: canCreate } = usePermission('create_content');
+    const { allowed: canEdit } = usePermission('edit_own_content');
 
     const { handleConnect, handleDisconnect, isConnected, isConnecting } = useSkillConnect({
       identifier,
@@ -35,16 +44,17 @@ const Item = memo<ItemProps>(
     });
 
     // Get localized description
-    const i18nPrefix = type === 'klavis' ? 'tools.klavis.servers' : 'tools.lobehubSkill.providers';
+    const i18nPrefix =
+      type === 'composio' ? 'tools.composio.servers' : 'tools.lobehubSkill.providers';
     // @ts-ignore
     const localizedDescription = t(`${i18nPrefix}.${identifier}.description`, {
       defaultValue: description,
     });
 
     const confirmDisconnect = () => {
-      modal.confirm({
+      if (!canEdit) return;
+      confirmModal({
         cancelText: t('cancel', { ns: 'common' }),
-        centered: true,
         content: t('tools.lobehubSkill.disconnectConfirm.desc', { name: label }),
         okButtonProps: { danger: true },
         okText: t('tools.lobehubSkill.disconnect'),
@@ -73,6 +83,7 @@ const Item = memo<ItemProps>(
             items={[
               {
                 danger: true,
+                disabled: !canEdit,
                 icon: <Icon icon={Unplug} />,
                 key: 'disconnect',
                 label: t('tools.lobehubSkill.disconnect'),
@@ -80,13 +91,21 @@ const Item = memo<ItemProps>(
               },
             ]}
           >
-            <ActionIcon icon={MoreVerticalIcon} />
+            <ActionIcon disabled={!canEdit} icon={MoreVerticalIcon} />
           </DropdownMenu>
         );
       }
 
       return (
-        <ActionIcon icon={Plus} title={t('tools.lobehubSkill.connect')} onClick={handleConnect} />
+        <ActionIcon
+          disabled={!canCreate || !canEdit}
+          icon={Plus}
+          title={t('tools.lobehubSkill.connect')}
+          onClick={() => {
+            if (!canCreate || !canEdit) return;
+            handleConnect();
+          }}
+        />
       );
     };
 

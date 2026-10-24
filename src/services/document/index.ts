@@ -13,6 +13,7 @@ import type {
   UpdateDocumentInput,
   UpdateDocumentOutput,
 } from '@/server/routers/lambda/_schema/documentHistory';
+import { workService } from '@/services/work';
 
 import { abortableRequest } from '../utils/abortableRequest';
 
@@ -37,6 +38,7 @@ const serializeHistoryList = <
       isCurrent: boolean;
       saveSource: ListHistoryOutput['items'][number]['saveSource'];
       savedAt: Date | string;
+      userId: string;
     }>;
     nextBeforeSavedAt?: Date | string;
   },
@@ -98,6 +100,12 @@ export interface CreateDocumentParams {
   parentId?: string;
   slug?: string;
   title: string;
+  /**
+   * Workspace-only: force the new document into a specific visibility bucket.
+   * Omit to let the server pick the default (`api` sourceType top-level docs
+   * default to `private`, nested docs inherit their parent).
+   */
+  visibility?: 'private' | 'public';
 }
 
 export interface ListDocumentHistoryParams extends ListHistoryInput {}
@@ -120,6 +128,32 @@ export interface DocumentHistoryClientSurface {
   saveDocumentHistory: (params: SaveDocumentHistoryInput) => Promise<SaveDocumentHistoryOutput>;
   updateDocument: (params: UpdateDocumentParams) => Promise<UpdateDocumentOutput>;
 }
+
+const autosavedOnceIds = new Set<string>();
+
+/**
+ * A deleted document leaves its Work history intact but changes every card
+ * that points at it into an orphan. Revalidate both ordinary Work caches and
+ * the mounted SWR Infinite galleries before the delete interaction settles.
+ */
+const refreshWorksAfterDocumentDelete = async () => {
+  const results = await Promise.allSettled([
+    workService.refreshAllConversations(),
+    workService.refreshWorkspaceLists(),
+  ]);
+
+  // The document is already deleted at this point. Cache refresh failures must
+  // not make callers roll the optimistic document state back to a row that no
+  // longer exists on the server, but every refresh still needs time to settle.
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      console.error(
+        '[DocumentService] Failed to refresh Works after document deletion:',
+        result.reason,
+      );
+    }
+  }
+};
 
 export class DocumentService {
   async createDocument(params: CreateDocumentParams): Promise<DocumentItem> {
@@ -172,23 +206,6 @@ export class DocumentService {
     return serializeHistoryComparison(result);
   }
 
-  async getPageDocuments(pageSize: number = 20): Promise<DocumentItem[]> {
-    const result = await this.queryDocuments({
-      current: 0,
-      fileTypes: ['custom/document', 'application/pdf'],
-      pageSize,
-      sourceTypes: ['editor', 'file', 'api'],
-    });
-
-    return result.items
-      .filter(
-        (doc) =>
-          ['editor', 'file', 'api'].includes(doc.sourceType) &&
-          ['custom/document', 'application/pdf'].includes(doc.fileType),
-      )
-      .map((doc) => ({ ...doc, filename: doc.filename ?? doc.title ?? 'Untitled' }));
-  }
-
   async getDocumentById(id: string, uniqueKey?: string): Promise<DocumentItem | undefined> {
     if (uniqueKey) {
       // Use fixed key so switching documents cancels the previous request
@@ -203,14 +220,19 @@ export class DocumentService {
 
   async deleteDocument(id: string): Promise<void> {
     await lambdaClient.document.deleteDocument.mutate({ id });
+    await refreshWorksAfterDocumentDelete();
   }
 
   async deleteDocuments(ids: string[]): Promise<void> {
     await lambdaClient.document.deleteDocuments.mutate({ ids });
+    await refreshWorksAfterDocumentDelete();
   }
 
   async updateDocument(params: UpdateDocumentParams): Promise<UpdateDocumentOutput> {
-    const result = await lambdaClient.document.updateDocument.mutate(params);
+    const isFirstAutosave = params.saveSource === 'autosave' && !autosavedOnceIds.has(params.id);
+    const mutationParams = isFirstAutosave ? { ...params, breakAutosaveWindow: true } : params;
+    const result = await lambdaClient.document.updateDocument.mutate(mutationParams);
+    if (isFirstAutosave) autosavedOnceIds.add(params.id);
 
     return {
       ...result,
@@ -219,7 +241,26 @@ export class DocumentService {
           ? result.savedAt.toISOString()
           : result.savedAt
         : undefined,
+      updatedAt:
+        result.updatedAt instanceof Date ? result.updatedAt.toISOString() : result.updatedAt,
     };
+  }
+
+  /**
+   * Acquire or refresh the collaborative edit lock for a workspace page.
+   * Doubles as the heartbeat. Personal pages always report as unlocked.
+   */
+  async acquireDocumentLock(id: string, ownerId?: string) {
+    return lambdaClient.document.acquireDocumentLock.mutate({ id, ownerId });
+  }
+
+  /** Read-only peek of the current edit lock (does not acquire). */
+  async getDocumentLock(id: string, ownerId?: string) {
+    return lambdaClient.document.getDocumentLock.query({ id, ownerId });
+  }
+
+  async releaseDocumentLock(id: string, ownerId?: string): Promise<void> {
+    await lambdaClient.document.releaseDocumentLock.mutate({ id, ownerId });
   }
 
   async saveDocumentHistory(params: SaveDocumentHistoryInput): Promise<SaveDocumentHistoryOutput> {
@@ -228,6 +269,51 @@ export class DocumentService {
     return {
       savedAt: result.savedAt instanceof Date ? result.savedAt.toISOString() : result.savedAt,
     };
+  }
+
+  async transferDocument(
+    documentId: string,
+    targetWorkspaceId: string | null,
+    targetVisibility?: 'private' | 'public',
+  ): Promise<void> {
+    await lambdaClient.document.transferDocument.mutate({
+      documentId,
+      targetVisibility,
+      targetWorkspaceId,
+    });
+  }
+
+  async copyDocumentToWorkspace(
+    documentId: string,
+    targetWorkspaceId: string | null,
+    targetVisibility?: 'private' | 'public',
+  ): Promise<{ rootId: string }> {
+    return lambdaClient.document.copyDocumentToWorkspace.mutate({
+      documentId,
+      targetVisibility,
+      targetWorkspaceId,
+    });
+  }
+
+  /**
+   * Publish a private document (and its whole subtree) into the workspace.
+   * Thin wrapper around `setDocumentVisibility(id, 'public')`; kept for
+   * existing callers.
+   */
+  async publishDocumentToWorkspace(id: string): Promise<{ documentIds: string[] }> {
+    return lambdaClient.document.publishDocumentToWorkspace.mutate({ id });
+  }
+
+  /**
+   * Flip a document subtree's workspace visibility. Bidirectional companion
+   * to `publishDocumentToWorkspace`. Server cascades over the whole subtree
+   * for P1 tree consistency.
+   */
+  async setDocumentVisibility(
+    id: string,
+    visibility: 'private' | 'public',
+  ): Promise<{ documentIds: string[] }> {
+    return lambdaClient.document.setDocumentVisibility.mutate({ id, visibility });
   }
 }
 

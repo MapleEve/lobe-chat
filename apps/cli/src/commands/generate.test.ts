@@ -1,3 +1,7 @@
+import { rm as fsRm, writeFile as fsWriteFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
 import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -6,6 +10,9 @@ import { registerGenerateCommand } from './generate';
 
 const { mockTrpcClient } = vi.hoisted(() => ({
   mockTrpcClient: {
+    asr: {
+      transcribe: { mutate: vi.fn() },
+    },
     generation: {
       deleteGeneration: { mutate: vi.fn() },
       getGenerationStatus: { query: vi.fn() },
@@ -35,17 +42,21 @@ const { writeFileSync: mockWriteFileSync } = vi.hoisted(() => ({
   writeFileSync: vi.fn(),
 }));
 
+const { uploadLocalFile: mockUploadLocalFile } = vi.hoisted(() => ({
+  uploadLocalFile: vi.fn(),
+}));
+
+vi.mock('../utils/uploadLocalFile', async (importOriginal) => {
+  const actual: Record<string, unknown> = await importOriginal();
+  return { ...actual, uploadLocalFile: mockUploadLocalFile };
+});
+
 vi.mock('../api/client', () => ({ getTrpcClient: mockGetTrpcClient }));
 vi.mock('../api/http', () => ({ getAuthInfo: mockGetAuthInfo }));
 vi.mock('node:fs', async (importOriginal) => {
   const actual: Record<string, unknown> = await importOriginal();
   return { ...actual, writeFileSync: mockWriteFileSync };
 });
-vi.mock('../utils/logger', () => ({
-  log: { debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() },
-  setVerbose: vi.fn(),
-}));
-
 describe('generate command', () => {
   let exitSpy: ReturnType<typeof vi.spyOn>;
   let consoleSpy: ReturnType<typeof vi.spyOn>;
@@ -88,15 +99,67 @@ describe('generate command', () => {
   }
 
   describe('text', () => {
+    const jsonResponse = (body: unknown) =>
+      new Response(JSON.stringify(body), { headers: { 'content-type': 'application/json' } });
+
+    const sseResponse = (events: Array<{ data: unknown; event?: string }>, chunkSize = 7) => {
+      const raw = events
+        .map(({ data, event }) =>
+          [
+            'id: chat_test',
+            event ? `event: ${event}` : undefined,
+            `data: ${typeof data === 'string' && data === '[DONE]' ? data : JSON.stringify(data)}`,
+            '',
+            '',
+          ]
+            .filter((line) => line !== undefined)
+            .join('\n'),
+        )
+        .join('');
+      const encoder = new TextEncoder();
+      // Split into small chunks so events straddle read() boundaries
+      const stream = new ReadableStream({
+        start(controller) {
+          for (let i = 0; i < raw.length; i += chunkSize) {
+            controller.enqueue(encoder.encode(raw.slice(i, i + chunkSize)));
+          }
+          controller.close();
+        },
+      });
+      return new Response(stream, { headers: { 'content-type': 'text/event-stream' } });
+    };
+
+    /** Gemini reply as emitted by `/webapi/chat/*` */
+    const geminiEvents = [
+      { data: { content: 'Hello there', partType: 'text' }, event: 'content_part' },
+      { data: { content: ', how are you?', partType: 'text' }, event: 'content_part' },
+      { data: 'STOP', event: 'stop' },
+      { data: { totalInputTokens: 6, totalOutputTokens: 7 }, event: 'usage' },
+      { data: { latency: 650, ttft: 607 }, event: 'speed' },
+    ];
+
+    /** OpenAI Responses reply as emitted by `/webapi/chat/*` */
+    const openaiEvents = [
+      { data: 'in_progress', event: 'data' },
+      { data: { type: 'response.in_progress' }, event: 'data' },
+      { data: 'encrypted-signature', event: 'reasoning_signature' },
+      { data: 'Hello', event: 'text' },
+      { data: ', world', event: 'text' },
+      { data: { type: 'response.completed' }, event: 'data' },
+      { data: { totalTokens: 272 }, event: 'usage' },
+    ];
+
+    const writtenText = () =>
+      stdoutSpy.mock.calls.map(([chunk]: [unknown]) => String(chunk)).join('');
+
     it('should default to non-streaming and output plain text', async () => {
       vi.stubGlobal(
         'fetch',
-        vi.fn().mockResolvedValue({
-          json: vi.fn().mockResolvedValue({
-            choices: [{ message: { content: 'Response text' } }],
-          }),
-          ok: true,
-        }),
+        vi
+          .fn()
+          .mockResolvedValue(
+            jsonResponse({ choices: [{ message: { content: 'Response text' } }] }),
+          ),
       );
 
       const program = createProgram();
@@ -116,13 +179,7 @@ describe('generate command', () => {
         model: 'gpt-4o-mini',
         usage: { completion_tokens: 5, prompt_tokens: 10 },
       };
-      vi.stubGlobal(
-        'fetch',
-        vi.fn().mockResolvedValue({
-          json: vi.fn().mockResolvedValue(responseBody),
-          ok: true,
-        }),
-      );
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse(responseBody)));
 
       const program = createProgram();
       await program.parseAsync(['node', 'test', 'generate', 'text', 'Hello', '--json']);
@@ -130,19 +187,31 @@ describe('generate command', () => {
       expect(consoleSpy).toHaveBeenCalledWith(JSON.stringify(responseBody, null, 2));
     });
 
-    it('should stream when --stream is explicitly passed', async () => {
-      const encoder = new TextEncoder();
-      const stream = new ReadableStream({
-        start(controller) {
-          controller.enqueue(
-            encoder.encode('data: {"choices":[{"delta":{"content":"Hello"}}]}\n\n'),
-          );
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
-          controller.close();
-        },
-      });
+    it('should collect SSE text when the server ignores non-streaming mode', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(geminiEvents)));
 
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ body: stream, ok: true }));
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', 'generate', 'text', 'Hello']);
+
+      expect(writtenText()).toBe('Hello there, how are you?\n');
+      expect(log.error).not.toHaveBeenCalled();
+    });
+
+    it('should output collected SSE as JSON when --json is used without --stream', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(geminiEvents)));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', 'generate', 'text', 'Hello', '--json']);
+
+      expect(JSON.parse(consoleSpy.mock.calls[0][0] as string)).toEqual({
+        content: 'Hello there, how are you?',
+        finishReason: 'STOP',
+        usage: { totalInputTokens: 6, totalOutputTokens: 7 },
+      });
+    });
+
+    it('should stream Gemini content parts without printing the stop reason', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(geminiEvents)));
 
       const program = createProgram();
       await program.parseAsync(['node', 'test', 'generate', 'text', 'Hi', '--stream']);
@@ -151,18 +220,118 @@ describe('generate command', () => {
       const body = JSON.parse(fetchCall[1]!.body as string);
       expect(body.stream).toBe(true);
 
-      expect(stdoutSpy).toHaveBeenCalledWith('Hello');
+      expect(writtenText()).toBe('Hello there, how are you?\n');
+    });
+
+    it('should stream only text events from the LobeHub protocol', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(openaiEvents)));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', 'generate', 'text', 'Hi', '--stream']);
+
+      expect(writtenText()).toBe('Hello, world\n');
+    });
+
+    it('should keep reasoning parts out of the reply text', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          sseResponse([
+            // Gemini thought parts, as emitted by the google stream transformer
+            {
+              data: {
+                content: 'Thinking...',
+                inReasoning: true,
+                partType: 'text',
+                thoughtSignature: 'sig',
+              },
+              event: 'reasoning_part',
+            },
+            { data: 'more thoughts', event: 'reasoning' },
+            { data: { content: 'Answer', partType: 'text' }, event: 'content_part' },
+          ]),
+        ),
+      );
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', 'generate', 'text', 'Hi', '--json']);
+
+      expect(JSON.parse(consoleSpy.mock.calls[0][0] as string)).toMatchObject({
+        content: 'Answer',
+        reasoning: 'Thinking...more thoughts',
+      });
+    });
+
+    it('should warn when an image model replies without text', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          sseResponse([
+            { data: { content: 'iVBORw0KGgo=', partType: 'image' }, event: 'content_part' },
+            { data: 'STOP', event: 'stop' },
+          ]),
+        ),
+      );
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', 'generate', 'text', 'Draw a cat']);
+
+      expect(writtenText()).toBe('\n');
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('generate image'));
+    });
+
+    it('should stream plain OpenAI chat-completion chunks', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi
+          .fn()
+          .mockResolvedValue(
+            sseResponse([
+              { data: { choices: [{ delta: { content: 'Hello' } }] } },
+              { data: '[DONE]' },
+            ]),
+          ),
+      );
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', 'generate', 'text', 'Hi', '--stream']);
+
+      expect(writtenText()).toBe('Hello\n');
+    });
+
+    it('should print each SSE event as a JSON line with --stream --json', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue(sseResponse(geminiEvents.slice(0, 3))));
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', 'generate', 'text', 'Hi', '--stream', '--json']);
+
+      expect(consoleSpy.mock.calls.map(([line]) => JSON.parse(line as string))).toEqual(
+        geminiEvents.slice(0, 3),
+      );
+    });
+
+    it('should exit when the SSE stream reports an error', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(
+          sseResponse([
+            { data: 'Partial', event: 'text' },
+            { data: { message: 'quota exceeded' }, event: 'error' },
+          ]),
+        ),
+      );
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', 'generate', 'text', 'Hi']);
+
+      expect(log.error).toHaveBeenCalledWith(expect.stringContaining('quota exceeded'));
+      expect(exitSpy).toHaveBeenCalledWith(1);
     });
 
     it('should parse provider from model string', async () => {
       vi.stubGlobal(
         'fetch',
-        vi.fn().mockResolvedValue({
-          json: vi.fn().mockResolvedValue({
-            choices: [{ message: { content: 'ok' } }],
-          }),
-          ok: true,
-        }),
+        vi.fn().mockResolvedValue(jsonResponse({ choices: [{ message: { content: 'ok' } }] })),
       );
 
       const program = createProgram();
@@ -185,11 +354,7 @@ describe('generate command', () => {
     it('should exit on error response', async () => {
       vi.stubGlobal(
         'fetch',
-        vi.fn().mockResolvedValue({
-          ok: false,
-          status: 500,
-          text: vi.fn().mockResolvedValue('Internal error'),
-        }),
+        vi.fn().mockResolvedValue(new Response('Internal error', { status: 500 })),
       );
 
       const program = createProgram();
@@ -315,7 +480,7 @@ describe('generate command', () => {
   });
 
   describe('tts', () => {
-    it('should call TTS endpoint and save file', async () => {
+    it('should call OpenAI TTS endpoint and save file', async () => {
       const audioBuffer = new ArrayBuffer(100);
       vi.stubGlobal(
         'fetch',
@@ -343,22 +508,6 @@ describe('generate command', () => {
       expect(mockWriteFileSync).toHaveBeenCalledWith('/tmp/test.mp3', expect.any(Buffer));
       expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Audio saved'));
     });
-
-    it('should reject invalid backend', async () => {
-      const program = createProgram();
-      await program.parseAsync([
-        'node',
-        'test',
-        'generate',
-        'tts',
-        'Hello',
-        '--backend',
-        'invalid',
-      ]);
-
-      expect(log.error).toHaveBeenCalledWith(expect.stringContaining('Invalid backend'));
-      expect(exitSpy).toHaveBeenCalledWith(1);
-    });
   });
 
   describe('asr', () => {
@@ -367,6 +516,130 @@ describe('generate command', () => {
       await program.parseAsync(['node', 'test', 'generate', 'asr', '/nonexistent/audio.mp3']);
 
       expect(log.error).toHaveBeenCalledWith(expect.stringContaining('not found'));
+      expect(exitSpy).toHaveBeenCalledWith(1);
+    });
+
+    it('should upload large local audio and transcribe by fileId', async () => {
+      // Real >3MB temp file so existsSync/statSync (unmocked) see it as large.
+      const bigPath = path.join(os.tmpdir(), `lh-asr-test-${process.pid}-${Date.now()}.mp3`);
+      await fsWriteFile(bigPath, Buffer.alloc(4 * 1024 * 1024));
+      mockUploadLocalFile.mockResolvedValue({ id: 'file_999' });
+      mockTrpcClient.asr.transcribe.mutate.mockResolvedValue({ text: 'big result' });
+
+      try {
+        const program = createProgram();
+        await program.parseAsync(['node', 'test', 'generate', 'asr', bigPath]);
+
+        expect(mockUploadLocalFile).toHaveBeenCalledWith(expect.anything(), bigPath);
+        expect(mockTrpcClient.asr.transcribe.mutate).toHaveBeenCalledWith(
+          expect.objectContaining({ fileId: 'file_999', model: 'whisper-1', provider: 'openai' }),
+        );
+        // never inlines bytes for the large file
+        expect(mockTrpcClient.asr.transcribe.mutate.mock.calls[0][0]).not.toHaveProperty(
+          'audioBase64',
+        );
+        expect(stdoutSpy).toHaveBeenCalledWith('big result');
+      } finally {
+        await fsRm(bigPath, { force: true });
+      }
+    });
+
+    it('should download and transcribe an audio URL', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({
+        arrayBuffer: vi.fn().mockResolvedValue(new TextEncoder().encode('audio-bytes').buffer),
+        headers: new Headers(),
+        ok: true,
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      mockTrpcClient.asr.transcribe.mutate.mockResolvedValue({ text: 'hello world' });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node',
+        'test',
+        'generate',
+        'asr',
+        'https://example.com/audio/sample.mp3',
+      ]);
+
+      expect(fetchMock).toHaveBeenCalledWith('https://example.com/audio/sample.mp3');
+      expect(mockTrpcClient.asr.transcribe.mutate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audioBase64: Buffer.from('audio-bytes').toString('base64'),
+          fileName: 'sample.mp3',
+          model: 'whisper-1',
+          provider: 'openai',
+        }),
+      );
+      expect(stdoutSpy).toHaveBeenCalledWith('hello world');
+      expect(exitSpy).not.toHaveBeenCalled();
+    });
+
+    it('should derive an extension and mime type from Content-Type when the URL has none', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          arrayBuffer: vi.fn().mockResolvedValue(new TextEncoder().encode('audio-bytes').buffer),
+          headers: new Headers({ 'content-type': 'audio/mpeg; charset=binary' }),
+          ok: true,
+        }),
+      );
+      mockTrpcClient.asr.transcribe.mutate.mockResolvedValue({ text: 'ok' });
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', 'generate', 'asr', 'https://example.com/download']);
+
+      expect(mockTrpcClient.asr.transcribe.mutate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          fileName: 'download.mp3',
+          mimeType: 'audio/mpeg',
+        }),
+      );
+    });
+
+    it('should prefer the filename from Content-Disposition', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({
+          arrayBuffer: vi.fn().mockResolvedValue(new TextEncoder().encode('audio-bytes').buffer),
+          headers: new Headers({
+            'content-disposition': 'attachment; filename="recording.wav"',
+          }),
+          ok: true,
+        }),
+      );
+      mockTrpcClient.asr.transcribe.mutate.mockResolvedValue({ text: 'ok' });
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node',
+        'test',
+        'generate',
+        'asr',
+        'https://example.com/files/abc123?sig=xyz',
+      ]);
+
+      expect(mockTrpcClient.asr.transcribe.mutate).toHaveBeenCalledWith(
+        expect.objectContaining({ fileName: 'recording.wav' }),
+      );
+    });
+
+    it('should exit when audio URL download fails', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue({ ok: false, status: 404, statusText: 'Not Found' }),
+      );
+
+      const program = createProgram();
+      await program.parseAsync([
+        'node',
+        'test',
+        'generate',
+        'asr',
+        'https://example.com/missing.mp3',
+      ]);
+
+      expect(log.error).toHaveBeenCalledWith(expect.stringContaining('Failed to download audio'));
       expect(exitSpy).toHaveBeenCalledWith(1);
     });
   });

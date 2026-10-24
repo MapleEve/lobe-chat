@@ -14,9 +14,21 @@
  * Services must be injected via constructor for runtime-agnostic usage
  * (e.g., server-side services vs client-side services).
  */
-import { KLAVIS_SERVER_TYPES, LOBEHUB_SKILL_PROVIDERS } from '@lobechat/const';
-import { marketToolsResultsPrompt, modelsResultsPrompt } from '@lobechat/prompts';
-import type { BuiltinToolResult } from '@lobechat/types';
+import type { ComposioAppType, LobehubSkillProviderType } from '@lobechat/const';
+import { resolveConnectorCatalogItem } from '@lobechat/const';
+import {
+  marketToolsResultsPrompt,
+  modelsResultsPrompt,
+  searchAgentsResultsPrompt,
+} from '@lobechat/prompts';
+import {
+  type BuiltinToolResult,
+  type DiscoverAssistantDetail,
+  getPluginMode,
+  type HeterogeneousProviderConfig,
+  parsePluginEntry,
+  upsertPluginMode,
+} from '@lobechat/types';
 
 import { getAgentStoreState } from '@/store/agent';
 import { agentSelectors } from '@/store/agent/selectors/selectors';
@@ -24,15 +36,18 @@ import { getAiInfraStoreState } from '@/store/aiInfra';
 import { getToolStoreState } from '@/store/tool';
 import {
   builtinToolSelectors,
-  klavisStoreSelectors,
+  composioStoreSelectors,
   lobehubSkillStoreSelectors,
   pluginSelectors,
 } from '@/store/tool/selectors';
-import { KlavisServerStatus } from '@/store/tool/slices/klavisStore/types';
+import type { ComposioServer } from '@/store/tool/slices/composioStore/types';
+import { ComposioServerStatus } from '@/store/tool/slices/composioStore/types';
+import type { LobehubSkillServer } from '@/store/tool/slices/lobehubSkillStore/types';
 import { LobehubSkillStatus } from '@/store/tool/slices/lobehubSkillStore/types';
 import { getUserStoreState } from '@/store/user';
 import { userProfileSelectors } from '@/store/user/selectors';
 
+import { describeHeterogeneousAgent, renderHeteroRuntimeLines } from './heteroAgentDescriptor';
 import type {
   AgentManagerRuntimeServices,
   AgentSearchItem,
@@ -58,7 +73,16 @@ import type {
   UpdatePromptState,
 } from './types';
 
+/** Max results per searchAgents call (mirrored in the tool manifests: "max: 20") */
+const MAX_SEARCH_AGENT_LIMIT = 20;
+
 export class AgentManagerRuntime {
+  /**
+   * Preserve invocation order for prompt updates targeting the same agent,
+   * including calls issued through different AgentManagerRuntime instances.
+   */
+  private static promptUpdateQueues = new Map<string, Promise<unknown>>();
+
   private agentService: IAgentService;
   private discoverService: IDiscoverService;
 
@@ -78,17 +102,30 @@ export class AgentManagerRuntime {
    */
   async createAgent(params: CreateAgentParams): Promise<BuiltinToolResult> {
     try {
+      // Guard against LLM double-encoding: if array fields are JSON strings, parse them.
+      // Use `as any` to bypass TS narrowing — at runtime LLMs can send strings for typed array params.
+      const parseArrayParam = (v: any): string[] | undefined => {
+        if (typeof v === 'string') {
+          try {
+            return JSON.parse(v);
+          } catch {
+            return undefined;
+          }
+        }
+        return v;
+      };
+
       const config = {
         avatar: params.avatar,
         backgroundColor: params.backgroundColor,
         description: params.description,
         model: params.model,
         openingMessage: params.openingMessage,
-        openingQuestions: params.openingQuestions,
-        plugins: params.plugins,
+        openingQuestions: parseArrayParam(params.openingQuestions),
+        plugins: parseArrayParam(params.plugins),
         provider: params.provider,
         systemRole: params.systemRole,
-        tags: params.tags,
+        tags: parseArrayParam(params.tags),
         title: params.title,
       };
 
@@ -98,7 +135,6 @@ export class AgentManagerRuntime {
         content: `Successfully created agent "${params.title}" with ID: ${result.agentId}`,
         state: {
           agentId: result.agentId,
-          sessionId: result.sessionId,
           success: true,
         } as CreateAgentState,
         success: true,
@@ -153,18 +189,17 @@ export class AgentManagerRuntime {
       // Handle togglePlugin - merge into config.plugins
       if (params.togglePlugin) {
         const { pluginId, enabled } = params.togglePlugin;
-        const currentPlugins = previousConfig?.plugins || [];
-        const isCurrentlyEnabled = currentPlugins.includes(pluginId);
+        const isCurrentlyEnabled = getPluginMode(previousConfig?.plugins, pluginId) === 'pinned';
         const shouldEnable = enabled !== undefined ? enabled : !isCurrentlyEnabled;
 
-        let newPlugins: string[];
-        if (shouldEnable && !isCurrentlyEnabled) {
-          newPlugins = [...currentPlugins, pluginId];
-        } else if (!shouldEnable && isCurrentlyEnabled) {
-          newPlugins = currentPlugins.filter((id) => id !== pluginId);
-        } else {
-          newPlugins = currentPlugins;
-        }
+        // upsertPluginMode preserves an already-matching entry as-is and
+        // flips a disabled entry back to pinned in place, instead of
+        // blindly pushing a duplicate bare-string identifier.
+        const newPlugins = upsertPluginMode(
+          previousConfig?.plugins,
+          pluginId,
+          shouldEnable ? 'pinned' : 'auto',
+        );
 
         finalConfig = { ...finalConfig, plugins: newPlugins };
 
@@ -279,6 +314,12 @@ export class AgentManagerRuntime {
       const config = await this.agentService.getAgentConfigById(agentId);
 
       if (!config) {
+        // searchAgents can surface marketplace agents (short-code ids) that
+        // have no local agents row; read their detail through the market
+        // fallback instead of reporting a false "not found".
+        const marketDetail = await this.getMarketAgentDetail(agentId);
+        if (marketDetail) return marketDetail;
+
         return {
           content: `Agent "${agentId}" not found.`,
           success: false,
@@ -289,13 +330,30 @@ export class AgentManagerRuntime {
       // (e.g., description, tags) that aren't on LobeAgentConfig type
       const raw = config as Record<string, any>;
 
+      // Heterogeneous agents (Claude Code / Codex / …) bring their own toolset
+      // and ignore the chat model/plugins. Surface a runtime descriptor so the
+      // orchestrator can reason about what the external agent can actually do.
+      const runtime = describeHeterogeneousAgent(config.agencyConfig);
+
+      // Normalize to identifier strings (annotated with mode when not
+      // pinned) — `config.plugins` is the raw AgentPluginEntry[] (string |
+      // {identifier, mode}), but both the LLM-facing summary and the
+      // GetAgentDetailState.config.plugins contract expect string[]. Passing
+      // object-shaped entries through would break GetAgentDetailRender's
+      // <Tag key={plugin}>{plugin}</Tag>.
+      const pluginSummaries = config.plugins?.map((entry) => {
+        const { identifier, mode } = parsePluginEntry(entry);
+        return mode === 'pinned' ? identifier : `${identifier} (${mode})`;
+      });
+
       const detail = {
         config: {
           model: config.model,
           openingMessage: config.openingMessage,
           openingQuestions: config.openingQuestions,
-          plugins: config.plugins,
+          plugins: pluginSummaries,
           provider: config.provider,
+          ...(runtime && { runtime }),
           systemRole: config.systemRole,
         },
         meta: {
@@ -312,7 +370,10 @@ export class AgentManagerRuntime {
       if (detail.meta.description) parts.push(detail.meta.description);
       if (detail.config.model)
         parts.push(`Model: ${detail.config.provider || ''}/${detail.config.model}`);
-      if (detail.config.plugins?.length) parts.push(`Plugins: ${detail.config.plugins.join(', ')}`);
+      if (detail.config.plugins?.length) {
+        parts.push(`Plugins: ${detail.config.plugins.join(', ')}`);
+      }
+      parts.push(...renderHeteroRuntimeLines(runtime));
       if (detail.config.systemRole) {
         parts.push(`System Prompt: ${detail.config.systemRole}`);
       }
@@ -369,15 +430,27 @@ export class AgentManagerRuntime {
   async searchAgents(params: SearchAgentParams): Promise<BuiltinToolResult> {
     try {
       const source = params.source || 'all';
-      const limit = Math.min(params.limit || 10, 20);
+      const limit = Math.min(params.limit || 10, MAX_SEARCH_AGENT_LIMIT);
+      const offset = Math.max(params.offset || 0, 0);
       const agents: AgentSearchItem[] = [];
 
-      // Search user's agents
+      let userTotal = 0;
+      let marketTotal = 0;
+
+      // This is the CRUD surface: every id it returns can be forwarded to
+      // `removeAgent`/`updateAgent`, and the inbox is product-owned. Opt it out
+      // explicitly so the reserved assistant is never offered as a target here.
       if (source === 'user' || source === 'all') {
-        const userAgents = await this.agentService.queryAgents({
-          keyword: params.keyword,
-          limit,
-        });
+        const [userAgents, total] = await Promise.all([
+          this.agentService.queryAgents({
+            includeInbox: false,
+            keyword: params.keyword,
+            limit,
+            offset,
+          }),
+          this.agentService.countAgents({ includeInbox: false, keyword: params.keyword }),
+        ]);
+        userTotal = total;
 
         agents.push(
           ...userAgents.map(
@@ -385,12 +458,14 @@ export class AgentManagerRuntime {
               avatar?: string | null;
               backgroundColor?: string | null;
               description?: string | null;
+              heteroType?: HeterogeneousProviderConfig['type'];
               id: string;
               title?: string | null;
             }) => ({
               avatar: agent.avatar ?? undefined,
               backgroundColor: agent.backgroundColor ?? undefined,
               description: agent.description ?? undefined,
+              heteroType: agent.heteroType,
               id: agent.id,
               isMarket: false,
               title: agent.title ?? undefined,
@@ -399,13 +474,14 @@ export class AgentManagerRuntime {
         );
       }
 
-      // Search marketplace agents
+      // Search marketplace agents (first page only — offset does not apply)
       if (source === 'market' || source === 'all') {
         const marketAgents = await this.discoverService.getAssistantList({
           pageSize: limit,
           q: params.keyword,
           ...(params.category && { category: params.category }),
         });
+        marketTotal = marketAgents.totalCount ?? marketAgents.items.length;
 
         agents.push(
           ...marketAgents.items.map((agent) => ({
@@ -420,21 +496,32 @@ export class AgentManagerRuntime {
       }
 
       const uniqueAgents = agents.slice(0, limit);
+      const totalCount = userTotal + marketTotal;
 
-      const agentList = uniqueAgents
-        .map((a) => `- ${a.title || 'Untitled'} (${a.id})${a.isMarket ? ' [Market]' : ''}`)
-        .join('\n');
+      // hasMore tracks workspace agents only: marketplace results are not offset-paged
+      const shownUserCount = uniqueAgents.filter((a) => !a.isMarket).length;
+      const hasMore = offset + shownUserCount < userTotal;
+
+      const content = searchAgentsResultsPrompt({
+        agents: uniqueAgents,
+        hasMore,
+        marketTotal,
+        maxLimit: MAX_SEARCH_AGENT_LIMIT,
+        offset,
+        requestedLimit: params.limit,
+        source,
+        userTotal,
+      });
 
       return {
-        content:
-          uniqueAgents.length > 0
-            ? `Found ${uniqueAgents.length} agents:\n${agentList}`
-            : 'No agents found matching your search criteria.',
+        content,
         state: {
           agents: uniqueAgents,
+          hasMore,
           keyword: params.keyword,
+          offset,
           source,
-          totalCount: uniqueAgents.length,
+          totalCount,
         } as SearchAgentState,
         success: true,
       };
@@ -459,21 +546,19 @@ export class AgentManagerRuntime {
 
       const providers: AvailableProvider[] = filteredList.map((provider) => ({
         id: provider.id,
-        models: provider.children.map(
-          (model): AvailableModel => ({
-            abilities: model.abilities
-              ? {
-                  files: model.abilities.files,
-                  functionCall: model.abilities.functionCall,
-                  reasoning: model.abilities.reasoning,
-                  vision: model.abilities.vision,
-                }
-              : undefined,
-            description: model.description,
-            id: model.id,
-            name: model.displayName || model.id,
-          }),
-        ),
+        models: provider.children.map((model): AvailableModel => ({
+          abilities: model.abilities
+            ? {
+                files: model.abilities.files,
+                functionCall: model.abilities.functionCall,
+                reasoning: model.abilities.reasoning,
+                vision: model.abilities.vision,
+              }
+            : undefined,
+          description: model.description,
+          id: model.id,
+          name: model.displayName || model.id,
+        })),
         name: provider.name,
       }));
 
@@ -499,19 +584,22 @@ export class AgentManagerRuntime {
    */
   async updatePrompt(agentId: string, params: UpdatePromptParams): Promise<BuiltinToolResult> {
     try {
-      await this.ensureAgentLoaded(agentId);
-      const state = getAgentStoreState();
-      const previousConfig = agentSelectors.getAgentConfigById(agentId)(state);
-      const previousPrompt = previousConfig?.systemRole;
+      const previousPrompt = await this.enqueuePromptUpdate(agentId, async () => {
+        await this.ensureAgentLoaded(agentId);
+        const state = getAgentStoreState();
+        const previousConfig = agentSelectors.getAgentConfigById(agentId)(state);
 
-      if (params.streaming) {
-        await this.streamUpdatePrompt(agentId, params.prompt);
-      } else {
-        await getAgentStoreState().optimisticUpdateAgentConfig(agentId, {
-          editorData: null,
-          systemRole: params.prompt,
-        });
-      }
+        if (params.streaming) {
+          await this.performStreamingPromptUpdate(agentId, params.prompt);
+        } else {
+          await getAgentStoreState().optimisticUpdateAgentConfig(agentId, {
+            editorData: null,
+            systemRole: params.prompt,
+          });
+        }
+
+        return previousConfig?.systemRole;
+      });
 
       const content = params.prompt
         ? `Successfully updated system prompt (${params.prompt.length} characters)`
@@ -535,24 +623,142 @@ export class AgentManagerRuntime {
   }
 
   /**
+   * Queue prompt mutations by agent so later invocations cannot finish first
+   * and then be overwritten by an older, slower stream.
+   */
+  /**
+   * Marketplace fallback for getAgentDetail. searchAgents surfaces agents
+   * from the external market index (short-code identifiers), but those rows
+   * do not exist in the local agents table — reading their detail through
+   * the local path alone reports "not found" even though search found them.
+   * Project the market detail into the same shape getAgentDetail returns so
+   * callers can read (not edit) market agents.
+   */
+  private async getMarketAgentDetail(agentId: string): Promise<BuiltinToolResult | null> {
+    if (!this.discoverService.getAssistantDetail) return null;
+
+    let detail: DiscoverAssistantDetail | undefined;
+    try {
+      detail = await this.discoverService.getAssistantDetail({
+        identifier: agentId,
+        source: 'new',
+      });
+    } catch {
+      // Market lookup is best-effort: fall through to the local "not found".
+      return null;
+    }
+
+    const config = detail?.config as Record<string, any> | undefined;
+    if (!detail || !config) return null;
+
+    const plugins = config.plugins?.map((entry: any) => {
+      const { identifier, mode } = parsePluginEntry(entry);
+      return mode === 'pinned' ? identifier : `${identifier} (${mode})`;
+    }) as string[] | undefined;
+
+    // Marketplace configs can carry the model as an object
+    // ({ model, provider, parameters }) — extract the nested model/provider so
+    // the LLM-facing summary and GetAgentDetailRender never see "[object
+    // Object]" (same normalization as src/services/agent.ts).
+    let provider = config.provider as string | undefined;
+    let model = config.model as string | undefined;
+    if (model !== null && typeof model === 'object') {
+      const { model: modelName, provider: modelProvider } = model as {
+        model?: string;
+        provider?: string;
+      };
+      model = modelName;
+      provider = provider ?? modelProvider;
+    }
+    const systemRole = config.systemRole as string | undefined;
+
+    const parts: string[] = [];
+    if (detail.title) parts.push(`**${detail.title}**`);
+    if (detail.description) parts.push(detail.description);
+    if (model) parts.push(`Model: ${provider ? `${provider}/` : ''}${model}`);
+    if (plugins?.length) parts.push(`Plugins: ${plugins.join(', ')}`);
+    if (systemRole) parts.push(`System Prompt: ${systemRole}`);
+    parts.push(
+      'ℹ️ This is a marketplace agent (read-only). Install it into a workspace before editing.',
+    );
+
+    return {
+      content: parts.join('\n'),
+      state: {
+        agentId,
+        config: {
+          model,
+          openingMessage: config.openingMessage as string | undefined,
+          openingQuestions: config.openingQuestions as string[] | undefined,
+          plugins,
+          provider,
+          ...(config.agencyConfig && { runtime: describeHeterogeneousAgent(config.agencyConfig) }),
+          systemRole,
+        },
+        isMarket: true,
+        meta: {
+          avatar: detail.avatar,
+          backgroundColor: detail.backgroundColor,
+          description: detail.description,
+          tags: detail.tags,
+          title: detail.title,
+        },
+        success: true,
+      },
+      success: true,
+    };
+  }
+
+  private async enqueuePromptUpdate<T>(agentId: string, update: () => Promise<T>): Promise<T> {
+    const previousUpdate = AgentManagerRuntime.promptUpdateQueues.get(agentId);
+    const previousSettled = previousUpdate
+      ? previousUpdate.then(
+          () => undefined,
+          () => undefined,
+        )
+      : Promise.resolve();
+    const queuedUpdate = previousSettled.then(update);
+
+    AgentManagerRuntime.promptUpdateQueues.set(agentId, queuedUpdate);
+
+    try {
+      return await queuedUpdate;
+    } finally {
+      if (AgentManagerRuntime.promptUpdateQueues.get(agentId) === queuedUpdate) {
+        AgentManagerRuntime.promptUpdateQueues.delete(agentId);
+      }
+    }
+  }
+
+  /**
    * Stream update prompt with typewriter effect
    */
-  private async streamUpdatePrompt(agentId: string, prompt: string): Promise<void> {
-    getAgentStoreState().startStreamingSystemRole();
+  private async performStreamingPromptUpdate(agentId: string, prompt: string): Promise<void> {
+    const generation = getAgentStoreState().startStreamingSystemRole(agentId);
 
     const chunkSize = 5;
     const delay = 10;
 
     for (let i = 0; i < prompt.length; i += chunkSize) {
       const chunk = prompt.slice(i, i + chunkSize);
-      getAgentStoreState().appendStreamingSystemRole(chunk);
+      getAgentStoreState().appendStreamingSystemRole(agentId, generation, chunk);
 
       if (i + chunkSize < prompt.length) {
         await new Promise((resolve) => setTimeout(resolve, delay));
       }
     }
 
-    await getAgentStoreState().finishStreamingSystemRole(agentId);
+    try {
+      // Persistence is invocation-scoped and independent from ownership of the
+      // global visual stream. Another agent may take over the animation without
+      // turning this explicit update into a successful no-op.
+      await getAgentStoreState().optimisticUpdateAgentConfig(agentId, {
+        editorData: null,
+        systemRole: prompt,
+      });
+    } finally {
+      await getAgentStoreState().finishStreamingSystemRole(agentId, generation);
+    }
   }
 
   // ==================== Plugin/Tools ====================
@@ -623,41 +829,39 @@ export class AgentManagerRuntime {
       const toolState = getToolStoreState();
 
       if (source === 'official') {
-        // Check if it's a Klavis tool
-        const isKlavisEnabled =
+        const isComposioEnabled =
           typeof window !== 'undefined' &&
-          window.global_serverConfigStore?.getState()?.serverConfig?.enableKlavis;
-
-        if (isKlavisEnabled) {
-          const klavisServer = klavisStoreSelectors
-            .getServers(toolState)
-            .find((s) => s.identifier === identifier);
-          const klavisTypeInfo = KLAVIS_SERVER_TYPES.find((t) => t.identifier === identifier);
-
-          if (klavisTypeInfo) {
-            return this.handleKlavisInstall(agentId, identifier, klavisTypeInfo, klavisServer);
-          }
-        }
-
-        // Check if it's a LobehubSkill provider
+          window.global_serverConfigStore?.getState()?.serverConfig?.enableComposio;
         const isLobehubSkillEnabled =
           typeof window !== 'undefined' &&
           window.global_serverConfigStore?.getState()?.serverConfig?.enableLobehubSkill;
+        const connector = resolveConnectorCatalogItem(identifier, {
+          composio: Boolean(isComposioEnabled),
+          lobehub: Boolean(isLobehubSkillEnabled),
+        });
 
-        if (isLobehubSkillEnabled) {
+        if (connector?.type === 'composio') {
+          const composioServer = composioStoreSelectors
+            .getServers(toolState)
+            .find((s) => s.identifier === identifier);
+          return this.handleComposioInstall(
+            agentId,
+            identifier,
+            connector.serverType,
+            composioServer,
+          );
+        }
+
+        if (connector?.type === 'lobehub') {
           const lobehubSkillServer = lobehubSkillStoreSelectors
             .getServers(toolState)
             .find((s) => s.identifier === identifier);
-          const lobehubSkillProviderInfo = LOBEHUB_SKILL_PROVIDERS.find((p) => p.id === identifier);
-
-          if (lobehubSkillProviderInfo) {
-            return this.handleLobehubSkillInstall(
-              agentId,
-              identifier,
-              lobehubSkillProviderInfo,
-              lobehubSkillServer,
-            );
-          }
+          return this.handleLobehubSkillInstall(
+            agentId,
+            identifier,
+            connector.provider,
+            lobehubSkillServer,
+          );
         }
 
         // Check if it's a builtin tool
@@ -722,39 +926,42 @@ export class AgentManagerRuntime {
     }
   }
 
-  private async handleKlavisInstall(
+  private async handleComposioInstall(
     agentId: string,
     identifier: string,
-    klavisTypeInfo: (typeof KLAVIS_SERVER_TYPES)[0],
-    klavisServer: any,
+    composioAppInfo: ComposioAppType,
+    composioServer?: ComposioServer,
   ): Promise<BuiltinToolResult> {
-    if (klavisServer) {
-      if (klavisServer.status === KlavisServerStatus.CONNECTED) {
+    if (composioServer) {
+      if (composioServer.status === ComposioServerStatus.ACTIVE) {
         await this.enablePluginForAgent(agentId, identifier);
         return {
-          content: `Successfully enabled Klavis tool: ${klavisTypeInfo.label}`,
+          content: `Successfully enabled Composio tool: ${composioAppInfo.label}`,
           state: {
             installed: true,
-            isKlavis: true,
+            isComposio: true,
             pluginId: identifier,
-            pluginName: klavisTypeInfo.label,
+            pluginName: composioAppInfo.label,
             serverStatus: 'connected',
             success: true,
           } as InstallPluginState,
           success: true,
         };
-      } else if (klavisServer.status === KlavisServerStatus.PENDING_AUTH) {
-        if (klavisServer.oauthUrl) {
-          const authResult = await this.openOAuthWindowAndWait(klavisServer.oauthUrl, identifier);
+      } else if (composioServer.status === ComposioServerStatus.PENDING_AUTH) {
+        if (composioServer.redirectUrl) {
+          const authResult = await this.openOAuthWindowAndWait(
+            composioServer.redirectUrl,
+            identifier,
+          );
           if (authResult.success) {
             await this.enablePluginForAgent(agentId, identifier);
             return {
-              content: `Successfully connected and enabled Klavis tool: ${klavisTypeInfo.label}`,
+              content: `Successfully connected and enabled Composio tool: ${composioAppInfo.label}`,
               state: {
                 installed: true,
-                isKlavis: true,
+                isComposio: true,
                 pluginId: identifier,
-                pluginName: klavisTypeInfo.label,
+                pluginName: composioAppInfo.label,
                 serverStatus: 'connected',
                 success: true,
               } as InstallPluginState,
@@ -763,12 +970,12 @@ export class AgentManagerRuntime {
           }
         }
         return {
-          content: `OAuth authorization was cancelled or failed for Klavis tool: ${klavisTypeInfo.label}. Please try again.`,
+          content: `OAuth authorization was cancelled or failed for Composio tool: ${composioAppInfo.label}. Please try again.`,
           state: {
             installed: false,
-            isKlavis: true,
+            isComposio: true,
             pluginId: identifier,
-            pluginName: klavisTypeInfo.label,
+            pluginName: composioAppInfo.label,
             serverStatus: 'pending_auth',
             success: false,
           } as InstallPluginState,
@@ -781,53 +988,52 @@ export class AgentManagerRuntime {
     const userId = userProfileSelectors.userId(getUserStoreState());
     if (!userId) {
       return {
-        content: `Cannot connect Klavis tool: User not logged in.`,
+        content: `Cannot connect Composio tool: User not logged in.`,
         error: { message: 'User not logged in', type: 'AuthRequired' },
-        state: {
-          installed: false,
-          pluginId: identifier,
-          success: false,
-        } as InstallPluginState,
+        state: { installed: false, pluginId: identifier, success: false } as InstallPluginState,
         success: false,
       };
     }
 
-    const newServer = await getToolStoreState().createKlavisServer({
+    const newServer = await getToolStoreState().createComposioConnection({
+      appSlug: composioAppInfo.appSlug,
       identifier,
-      serverName: klavisTypeInfo.serverName,
-      userId,
+      label: composioAppInfo.label,
     });
 
     if (newServer) {
-      await this.enablePluginForAgent(agentId, identifier);
-
-      if (newServer.isAuthenticated) {
-        await getToolStoreState().refreshKlavisServerTools(newServer.identifier);
+      // Enable the plugin only once the connection is actually usable. Enabling
+      // before OAuth completes would leave an enabled-but-unauthorized tool on
+      // the agent if the user cancels the authorization.
+      if (newServer.status === ComposioServerStatus.ACTIVE) {
+        await this.enablePluginForAgent(agentId, identifier);
+        await getToolStoreState().refreshComposioConnectionStatus(newServer.identifier);
         return {
-          content: `Successfully connected and enabled Klavis tool: ${klavisTypeInfo.label}`,
+          content: `Successfully connected and enabled Composio tool: ${composioAppInfo.label}`,
           state: {
             installed: true,
-            isKlavis: true,
+            isComposio: true,
             pluginId: identifier,
-            pluginName: klavisTypeInfo.label,
+            pluginName: composioAppInfo.label,
             serverStatus: 'connected',
             success: true,
           } as InstallPluginState,
           success: true,
         };
-      } else if (newServer.oauthUrl) {
+      } else if (newServer.redirectUrl) {
         const authResult = await this.openOAuthWindowAndWait(
-          newServer.oauthUrl,
+          newServer.redirectUrl,
           newServer.identifier,
         );
         if (authResult.success) {
+          await this.enablePluginForAgent(agentId, identifier);
           return {
-            content: `Successfully connected and enabled Klavis tool: ${klavisTypeInfo.label}`,
+            content: `Successfully connected and enabled Composio tool: ${composioAppInfo.label}`,
             state: {
               installed: true,
-              isKlavis: true,
+              isComposio: true,
               pluginId: identifier,
-              pluginName: klavisTypeInfo.label,
+              pluginName: composioAppInfo.label,
               serverStatus: 'connected',
               success: true,
             } as InstallPluginState,
@@ -838,8 +1044,8 @@ export class AgentManagerRuntime {
     }
 
     return {
-      content: `Failed to connect Klavis tool: ${klavisTypeInfo.label}`,
-      error: { message: 'Failed to create Klavis server', type: 'KlavisError' },
+      content: `Failed to connect Composio tool: ${composioAppInfo.label}`,
+      error: { message: 'Failed to create Composio connection', type: 'ComposioError' },
       state: {
         installed: false,
         pluginId: identifier,
@@ -852,8 +1058,8 @@ export class AgentManagerRuntime {
   private async handleLobehubSkillInstall(
     agentId: string,
     identifier: string,
-    providerInfo: (typeof LOBEHUB_SKILL_PROVIDERS)[0],
-    server: any,
+    providerInfo: LobehubSkillProviderType,
+    server?: LobehubSkillServer,
   ): Promise<BuiltinToolResult> {
     if (server?.status === LobehubSkillStatus.CONNECTED) {
       await this.enablePluginForAgent(agentId, identifier);
@@ -987,27 +1193,30 @@ export class AgentManagerRuntime {
   private async enablePluginForAgent(agentId: string, pluginId: string): Promise<void> {
     await this.ensureAgentLoaded(agentId);
     const agentState = getAgentStoreState();
-    const currentPlugins = agentSelectors.getAgentConfigById(agentId)(agentState)?.plugins || [];
+    const currentPlugins = agentSelectors.getAgentConfigById(agentId)(agentState)?.plugins;
 
-    if (!currentPlugins.includes(pluginId)) {
+    // upsertPluginMode preserves an already-matching entry as-is and flips a
+    // disabled entry back to pinned in place, instead of blindly pushing a
+    // duplicate bare-string identifier.
+    if (getPluginMode(currentPlugins, pluginId) !== 'pinned') {
       await getAgentStoreState().optimisticUpdateAgentConfig(agentId, {
-        plugins: [...currentPlugins, pluginId],
+        plugins: upsertPluginMode(currentPlugins, pluginId, 'pinned'),
       });
     }
   }
 
   private openOAuthWindowAndWait(
-    oauthUrl: string,
+    redirectUrl: string,
     identifier: string,
   ): Promise<{ cancelled: boolean; success: boolean }> {
     const checkAuthStatus = async (): Promise<boolean> => {
       try {
-        await getToolStoreState().refreshKlavisServerTools(identifier);
+        await getToolStoreState().refreshComposioConnectionStatus(identifier);
         const freshToolStore = getToolStoreState();
-        const server = klavisStoreSelectors
+        const server = composioStoreSelectors
           .getServers(freshToolStore)
           .find((s) => s.identifier === identifier);
-        return server?.status === KlavisServerStatus.CONNECTED;
+        return server?.status === ComposioServerStatus.ACTIVE;
       } catch {
         return false;
       }
@@ -1048,7 +1257,7 @@ export class AgentManagerRuntime {
         );
       };
 
-      const oauthWindow = window.open(oauthUrl, '_blank', 'width=600,height=700');
+      const oauthWindow = window.open(redirectUrl, '_blank', 'width=600,height=700');
 
       if (oauthWindow) {
         windowCheckInterval = setInterval(async () => {
@@ -1070,7 +1279,7 @@ export class AgentManagerRuntime {
   }
 
   private openLobehubSkillOAuthWindowAndWait(
-    oauthUrl: string,
+    redirectUrl: string,
     provider: string,
   ): Promise<{ cancelled: boolean; success: boolean }> {
     const checkAuthStatus = async (): Promise<boolean> => {
@@ -1133,7 +1342,7 @@ export class AgentManagerRuntime {
         );
       };
 
-      const oauthWindow = window.open(oauthUrl, '_blank', 'width=600,height=700');
+      const oauthWindow = window.open(redirectUrl, '_blank', 'width=600,height=700');
 
       if (oauthWindow) {
         windowCheckInterval = setInterval(async () => {

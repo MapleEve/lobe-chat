@@ -2,7 +2,7 @@
 
 This doc covers everything that **isn't UI**: the tool's identifier, API surface, manifest, types, system prompt, ExecutionRuntime, and the executor that wires it into the frontend.
 
-For UI surfaces (Inspector / Render / Placeholder / Streaming / Intervention / Portal), see [ui.md](ui.md).
+For UI surfaces (Inspector / Render / Placeholder / Streaming / Intervention / Portal), see [ui/](ui/README.md).
 For where files live and how registries work, see [architecture.md](architecture.md).
 
 ---
@@ -156,7 +156,7 @@ export const TaskManifest: BuiltinToolManifest = {
   executors: ['client', 'server'],
 
   /* Default human intervention policy for all APIs that don't specify one.
-     Pair with an Intervention component (see ui.md). */
+     Pair with an Intervention component (see ui/intervention.md). */
   humanIntervention: 'never' | 'always' | { /* extended config */ },
 }
 ```
@@ -275,7 +275,7 @@ Use when the same logic runs in browser and Node (e.g. mathjs, nerdamer). The ru
 
 ### Pattern C: Extend a shared base
 
-When you're implementing a domain that already has a base runtime (file ops via `ComputerRuntime`), extend and only override `callService` + result normalization. See `builtin-tool-local-system/src/ExecutionRuntime/index.ts`.
+When you're implementing a domain that already has a base runtime (file ops via `ComputerRuntime`), extend and only override `callService` + result normalization. See `packages/tool-runtime/src/LocalSystemExecutionRuntime.ts`.
 
 ### Runtime contract
 
@@ -446,9 +446,7 @@ This entry is what `packages/builtin-tools/src/index.ts` and `identifiers.ts` im
   "main": "./src/index.ts",
   "name": "@lobechat/builtin-tool-<name>",
   "peerDependencies": {
-    "@lobehub/ui": "^5",
-    "antd": "^6",
-    "antd-style": "*",
+    "@lobehub/ui": "^6",
     "lucide-react": "*",
     "react": "*",
     "react-i18next": "*"

@@ -1,12 +1,20 @@
 'use client';
 
 import { type FlexboxProps } from '@lobehub/ui';
-import { Button, Flexbox, Icon, Tag } from '@lobehub/ui';
-import { createStaticStyles, responsive, useResponsive } from 'antd-style';
+import {
+  Button,
+  createStaticStyles,
+  Flexbox,
+  Icon,
+  responsive,
+  Tag,
+  useResponsive,
+} from '@lobehub/ui';
 import { ChevronRight } from 'lucide-react';
 import { type ReactNode } from 'react';
 import { memo } from 'react';
-import { Link } from 'react-router-dom';
+
+import WorkspaceLink from '@/features/Workspace/WorkspaceLink';
 
 import { SCROLL_PARENT_ID } from '../features/const';
 
@@ -75,7 +83,7 @@ const Title = memo<TitleProps>(({ tag, children, moreLink, more }) => {
         title
       )}
       {moreLink && (
-        <Link
+        <WorkspaceLink
           target={moreLink.startsWith('http') ? '_blank' : undefined}
           to={moreLink}
           onClick={handleMoreClick}
@@ -84,7 +92,7 @@ const Title = memo<TitleProps>(({ tag, children, moreLink, more }) => {
             <span>{more}</span>
             <Icon icon={ChevronRight} />
           </Button>
-        </Link>
+        </WorkspaceLink>
       )}
     </Flexbox>
   );

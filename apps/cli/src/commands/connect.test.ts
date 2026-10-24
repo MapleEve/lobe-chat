@@ -1,9 +1,48 @@
+import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+
+import type * as DeviceControlModule from '@lobechat/device-control';
+import { GatewayClient } from '@lobechat/device-gateway-client';
 import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('../auth/refresh', () => ({
+import type * as RefreshModule from '../auth/refresh';
+import { resolveToken } from '../auth/resolveToken';
+import { removeStatus, spawnDaemon, stopDaemon, writeStatus } from '../daemon/manager';
+import type * as DeviceRegister from '../device/register';
+import type * as SystemInfoModule from '../device/systemInfo';
+import { loadSettings, saveSettings } from '../settings';
+import { executeToolCall } from '../tools';
+import { cleanupAllProcesses } from '../tools/shell';
+import { log, setVerbose } from '../utils/logger';
+import { registerConnectCommand } from './connect';
+
+// Native runtime probing spawns Codex; connect.nativeRuntimes.test.ts covers it.
+vi.mock('../device/systemInfo', async (importOriginal) => ({
+  ...(await importOriginal<typeof SystemInfoModule>()),
+  probeNativeRuntimes: vi.fn().mockResolvedValue([]),
+}));
+
+const registerDeviceMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const mintWorkspaceConnectTokenMock = vi.hoisted(() => vi.fn());
+const registerWorkspaceDeviceMock = vi.hoisted(() => vi.fn());
+
+vi.mock('../device/register', async (importOriginal) => {
+  const actual = await importOriginal<typeof DeviceRegister>();
+  return {
+    ...actual,
+    mintWorkspaceConnectToken: mintWorkspaceConnectTokenMock,
+    registerDevice: registerDeviceMock,
+    registerWorkspaceDevice: registerWorkspaceDeviceMock,
+  };
+});
+
+vi.mock('../auth/refresh', async (importOriginal) => ({
+  ...(await importOriginal<typeof RefreshModule>()),
   getValidToken: vi.fn().mockResolvedValue({
     credentials: { accessToken: 'test-token', expiresAt: undefined, refreshToken: 'test-refresh' },
+    status: 'ok',
   }),
 }));
 vi.mock('../auth/resolveToken', () => ({
@@ -15,21 +54,15 @@ vi.mock('../auth/resolveToken', () => ({
   }),
 }));
 vi.mock('../settings', () => ({
+  addWorkspaceEnrollment: vi.fn(),
+  loadOrCreateConnectionId: vi.fn().mockReturnValue('test-connection-id'),
   loadSettings: vi.fn().mockReturnValue(null),
+  // Default: no persisted workspace shares, so runConnect skips the restore path.
+  loadWorkspaceEnrollments: vi.fn().mockReturnValue([]),
   normalizeUrl: vi.fn((url?: string) => (url ? url.replace(/\/$/, '') : undefined)),
+  removeWorkspaceEnrollment: vi.fn(),
+  resolveDeviceMetricsBacklogPath: vi.fn((id: string) => `/tmp/device-metrics/${id}.json`),
   saveSettings: vi.fn(),
-}));
-
-vi.mock('../utils/logger', () => ({
-  log: {
-    debug: vi.fn(),
-    error: vi.fn(),
-    info: vi.fn(),
-    toolCall: vi.fn(),
-    toolResult: vi.fn(),
-    warn: vi.fn(),
-  },
-  setVerbose: vi.fn(),
 }));
 
 vi.mock('../tools/shell', () => ({
@@ -46,6 +79,7 @@ vi.mock('../daemon/manager', () => ({
   readStatus: vi.fn().mockImplementation(() => mockStatus),
   removePid: vi.fn(),
   removeStatus: vi.fn(),
+  reportDaemonStartupReady: vi.fn().mockResolvedValue(undefined),
   spawnDaemon: vi.fn().mockImplementation(() => {
     mockSpawnedPid = 99999;
     return mockSpawnedPid;
@@ -72,8 +106,24 @@ let clientOptions: any = {};
 let connectCalled = false;
 let lastSentToolResponse: any = null;
 let lastSentSystemInfoResponse: any = null;
+const clientReportMetrics = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+const metricsSampler = vi.hoisted(() => ({
+  flush: vi.fn().mockResolvedValue(undefined),
+  options: undefined as any,
+  start: vi.fn().mockResolvedValue(undefined),
+  stop: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@lobechat/device-control', async (importOriginal) => ({
+  ...(await importOriginal<typeof DeviceControlModule>()),
+  DeviceMetricsSampler: vi.fn().mockImplementation(function (opts: any) {
+    metricsSampler.options = opts;
+    return metricsSampler;
+  }),
+}));
+
 vi.mock('@lobechat/device-gateway-client', () => ({
-  GatewayClient: vi.fn().mockImplementation((opts: any) => {
+  GatewayClient: vi.fn().mockImplementation(function (opts: any) {
     clientOptions = opts;
     clientEventHandlers = {};
     connectCalled = false;
@@ -89,6 +139,7 @@ vi.mock('@lobechat/device-gateway-client', () => ({
         clientEventHandlers[event] = handler;
       }),
       reconnect: vi.fn().mockResolvedValue(undefined),
+      reportMetrics: clientReportMetrics,
       sendSystemInfoResponse: vi.fn().mockImplementation((data: any) => {
         lastSentSystemInfoResponse = data;
       }),
@@ -100,28 +151,17 @@ vi.mock('@lobechat/device-gateway-client', () => ({
   }),
 }));
 
-// eslint-disable-next-line import-x/first
-import { GatewayClient } from '@lobechat/device-gateway-client';
-
-// eslint-disable-next-line import-x/first
-import { resolveToken } from '../auth/resolveToken';
-// eslint-disable-next-line import-x/first
-import { removeStatus, spawnDaemon, stopDaemon, writeStatus } from '../daemon/manager';
-// eslint-disable-next-line import-x/first
-import { loadSettings, saveSettings } from '../settings';
-// eslint-disable-next-line import-x/first
-import { executeToolCall } from '../tools';
-// eslint-disable-next-line import-x/first
-import { cleanupAllProcesses } from '../tools/shell';
-// eslint-disable-next-line import-x/first
-import { log, setVerbose } from '../utils/logger';
-// eslint-disable-next-line import-x/first
-import { registerConnectCommand } from './connect';
-
 describe('connect command', () => {
   let exitSpy: ReturnType<typeof vi.spyOn>;
+  let signalListeners: Map<NodeJS.Signals, Set<(...args: unknown[]) => void>>;
 
   beforeEach(() => {
+    signalListeners = new Map(
+      (['SIGINT', 'SIGTERM'] as const).map((signal) => [
+        signal,
+        new Set(process.listeners(signal)),
+      ]),
+    );
     exitSpy = vi.spyOn(process, 'exit').mockImplementation((() => {}) as any);
     mockRunningPid = null;
     mockSpawnedPid = 0;
@@ -129,7 +169,13 @@ describe('connect command', () => {
   });
 
   afterEach(() => {
+    for (const [signal, existing] of signalListeners) {
+      for (const listener of process.listeners(signal)) {
+        if (!existing.has(listener)) process.removeListener(signal, listener);
+      }
+    }
     exitSpy.mockRestore();
+    vi.restoreAllMocks();
     vi.clearAllMocks();
   });
 
@@ -170,6 +216,47 @@ describe('connect command', () => {
     );
   });
 
+  it('samples machine health and pushes the backlog to the gateway on connect', async () => {
+    const program = createProgram();
+    await program.parseAsync(['node', 'test', 'connect']);
+
+    expect(metricsSampler.start).toHaveBeenCalled();
+    const deviceId = clientOptions.deviceId;
+    expect(metricsSampler.options.storagePath).toBe(`/tmp/device-metrics/${deviceId}.json`);
+
+    clientEventHandlers.connected?.();
+    expect(metricsSampler.flush).toHaveBeenCalled();
+
+    const samples = [{ observedAt: 1 }] as any;
+    await metricsSampler.options.upload(samples);
+    expect(clientReportMetrics).toHaveBeenCalledWith(samples);
+  });
+
+  it('records the request on arrival and retains its timestamp across connection updates', async () => {
+    const pending = Promise.withResolvers<{ content: string; success: boolean }>();
+    vi.mocked(executeToolCall).mockImplementationOnce(() => pending.promise);
+    await createProgram().parseAsync(['node', 'test', 'connect', '--daemon-child']);
+
+    const running = clientEventHandlers.tool_call_request?.({
+      requestId: 'req-1',
+      toolCall: { apiName: 'readLocalFile', arguments: '{}', identifier: 'test' },
+      type: 'tool_call_request',
+    });
+    const received = vi.mocked(writeStatus).mock.lastCall?.[0];
+    expect(received).toEqual(
+      expect.objectContaining({ deviceId: 'mock-device-id', lastRequestAt: expect.any(String) }),
+    );
+    clientEventHandlers.connected?.();
+    expect(vi.mocked(writeStatus).mock.lastCall?.[0]).toEqual(
+      expect.objectContaining({
+        connectionStatus: 'connected',
+        lastRequestAt: received?.lastRequestAt,
+      }),
+    );
+    pending.resolve({ content: 'ok', success: true });
+    await running;
+  });
+
   it('should connect to gateway', async () => {
     const program = createProgram();
     await program.parseAsync(['node', 'test', 'connect']);
@@ -187,6 +274,58 @@ describe('connect command', () => {
       "Current login uses custom --server https://self-hosted.example.com. Please also provide '--gateway <url>' for the device gateway.",
     );
     expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('exits with a retryable code when the workspace token mint fails transiently', async () => {
+    mintWorkspaceConnectTokenMock.mockRejectedValueOnce(new Error('fetch failed'));
+
+    const program = createProgram();
+    await expect(
+      program.parseAsync(['node', 'test', 'connect', '--workspace', 'ws_1']),
+    ).rejects.toThrow('process.exit');
+    expect(exitSpy).toHaveBeenCalledWith(75);
+  });
+
+  it('exits without retry when the server refuses the workspace token mint', async () => {
+    mintWorkspaceConnectTokenMock.mockRejectedValueOnce(
+      Object.assign(new Error('forbidden'), { data: { code: 'FORBIDDEN' } }),
+    );
+
+    const program = createProgram();
+    await expect(
+      program.parseAsync(['node', 'test', 'connect', '--workspace', 'ws_1']),
+    ).rejects.toThrow('process.exit');
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it.each([
+    { error: new Error('fetch failed'), exitCode: 75, reason: 'fails transiently' },
+    {
+      error: Object.assign(new Error('forbidden'), { data: { code: 'FORBIDDEN' } }),
+      exitCode: 1,
+      reason: 'is refused by the server',
+    },
+  ])('exits with $exitCode when workspace registration $reason', async ({ error, exitCode }) => {
+    mintWorkspaceConnectTokenMock.mockResolvedValueOnce({ token: 'workspace-token' });
+    registerWorkspaceDeviceMock.mockRejectedValueOnce(error);
+    exitSpy.mockImplementation(() => {
+      throw new Error('process.exit');
+    });
+
+    await expect(
+      createProgram().parseAsync([
+        'node',
+        'test',
+        'connect',
+        '--service-child',
+        '--workspace',
+        'ws_1',
+      ]),
+    ).rejects.toThrow('process.exit');
+
+    expect(registerWorkspaceDeviceMock).toHaveBeenCalledOnce();
+    expect(exitSpy).toHaveBeenCalledWith(exitCode);
+    expect(connectCalled).toBe(false);
   });
 
   it('should use explicit gateway for custom login server', async () => {
@@ -225,18 +364,35 @@ describe('connect command', () => {
       type: 'tool_call_request',
     });
 
-    expect(executeToolCall).toHaveBeenCalledWith('readLocalFile', '{"path":"/test"}');
+    // The connected device's credentials ride along so `readFile` can upload images.
+    expect(executeToolCall).toHaveBeenCalledWith(
+      'readLocalFile',
+      '{"path":"/test"}',
+      undefined,
+      expect.objectContaining({ token: 'test-token' }),
+    );
     expect(lastSentToolResponse).toEqual({
       requestId: 'req-1',
-      result: { content: 'tool result', error: undefined, success: true },
+      result: {
+        content: 'tool result',
+        error: undefined,
+        // Timed on this machine's clock, so the value is whatever the mock took
+        // — what matters is that the device reports one at all: the server can
+        // only observe the round trip, and cannot otherwise tell a slow tool
+        // from slow transport.
+        executionTimeMs: expect.any(Number),
+        state: undefined,
+        success: true,
+      },
     });
+    expect(lastSentToolResponse.result.executionTimeMs).toBeGreaterThanOrEqual(0);
   });
 
   it('should handle system info requests', async () => {
     const program = createProgram();
     await program.parseAsync(['node', 'test', 'connect']);
 
-    clientEventHandlers['system_info_request']?.({
+    await clientEventHandlers['system_info_request']?.({
       requestId: 'req-2',
       type: 'system_info_request',
     });
@@ -246,6 +402,8 @@ describe('connect command', () => {
     expect(lastSentSystemInfoResponse.result.success).toBe(true);
     expect(lastSentSystemInfoResponse.result.systemInfo).toHaveProperty('homePath');
     expect(lastSentSystemInfoResponse.result.systemInfo).toHaveProperty('arch');
+    // `getShellInfo` is async; reading `displayName` off the promise sent nothing.
+    expect(lastSentSystemInfoResponse.result.systemInfo.defaultShell).toEqual(expect.any(String));
   });
 
   it('should handle auth_failed', async () => {
@@ -259,16 +417,27 @@ describe('connect command', () => {
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
+  it('stops when another connect process takes over the connection', async () => {
+    const program = createProgram();
+    await program.parseAsync(['node', 'test', 'connect']);
+
+    clientEventHandlers['replaced']?.();
+
+    expect(log.error).toHaveBeenCalledWith(expect.stringContaining('took over'));
+    expect(cleanupAllProcesses).toHaveBeenCalled();
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
   it('should retry auth_failed with token refresh when new token available', async () => {
+    const program = createProgram();
+    await program.parseAsync(['node', 'test', 'connect']);
+
     vi.mocked(resolveToken).mockResolvedValueOnce({
       serverUrl: 'https://app.lobehub.com',
       token: 'refreshed-token',
       tokenType: 'jwt',
       userId: 'test-user',
     });
-
-    const program = createProgram();
-    await program.parseAsync(['node', 'test', 'connect']);
 
     const mockClient = vi.mocked(GatewayClient).mock.results[0].value;
 
@@ -279,22 +448,58 @@ describe('connect command', () => {
     expect(exitSpy).not.toHaveBeenCalled();
   });
 
-  it('should handle auth_expired', async () => {
+  it('should refresh token on auth_expired', async () => {
+    const program = createProgram();
+    await program.parseAsync(['node', 'test', 'connect']);
+
     vi.mocked(resolveToken).mockResolvedValueOnce({
       serverUrl: 'https://app.lobehub.com',
-      token: 'new-tok',
+      token: 'new-token',
       tokenType: 'jwt',
       userId: 'user',
     });
 
-    const program = createProgram();
-    await program.parseAsync(['node', 'test', 'connect']);
+    const mockClient = vi.mocked(GatewayClient).mock.results[0].value;
 
     await clientEventHandlers['auth_expired']?.();
 
-    expect(log.error).toHaveBeenCalledWith(expect.stringContaining('expired'));
-    expect(cleanupAllProcesses).toHaveBeenCalled();
-    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(log.info).toHaveBeenCalledWith(expect.stringContaining('Token refreshed'));
+    expect(mockClient.updateToken).toHaveBeenCalledWith('new-token');
+    expect(mockClient.reconnect).toHaveBeenCalled();
+    expect(cleanupAllProcesses).not.toHaveBeenCalled();
+    expect(exitSpy).not.toHaveBeenCalled();
+  });
+
+  describe.each(['auth_failed', 'auth_expired'] as const)('%s workspace refresh', (event) => {
+    it.each([
+      { error: new Error('fetch failed'), exitCode: 75, reason: 'a transient outage' },
+      {
+        error: Object.assign(new Error('forbidden'), { data: { code: 'FORBIDDEN' } }),
+        exitCode: 1,
+        reason: 'a server refusal',
+      },
+    ])('exits with $exitCode after $reason', async ({ error, exitCode }) => {
+      mintWorkspaceConnectTokenMock.mockResolvedValueOnce({ token: 'workspace-token' });
+      registerWorkspaceDeviceMock.mockResolvedValueOnce(undefined);
+      await createProgram().parseAsync([
+        'node',
+        'test',
+        'connect',
+        '--service-child',
+        '--workspace',
+        'ws_1',
+      ]);
+      expect(connectCalled).toBe(true);
+      mintWorkspaceConnectTokenMock.mockRejectedValueOnce(error);
+
+      await clientEventHandlers[event]?.('token expired');
+
+      expect(exitSpy).toHaveBeenCalledWith(exitCode);
+      expect(cleanupAllProcesses).toHaveBeenCalledOnce();
+      const client = vi.mocked(GatewayClient).mock.results[0].value;
+      expect(client.disconnect).toHaveBeenCalledOnce();
+      expect(client.reconnect).not.toHaveBeenCalled();
+    });
   });
 
   it('should ignore auth_expired for api key auth', async () => {
@@ -332,7 +537,7 @@ describe('connect command', () => {
   });
 
   it('should handle SIGINT', async () => {
-    const sigintHandlers: Array<() => void> = [];
+    const sigintHandlers: Array<() => Promise<void> | void> = [];
     const origOn = process.on;
     vi.spyOn(process, 'on').mockImplementation((event: any, handler: any) => {
       if (event === 'SIGINT') sigintHandlers.push(handler);
@@ -344,9 +549,14 @@ describe('connect command', () => {
 
     // Trigger SIGINT handler
     for (const handler of sigintHandlers) {
-      handler();
+      await handler();
     }
 
+    // Pending health samples get a bounded push before the socket closes.
+    expect(metricsSampler.stop).toHaveBeenCalledWith({ flushTimeoutMs: 3000 });
+    expect(metricsSampler.stop.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(cleanupAllProcesses).mock.invocationCallOrder[0],
+    );
     expect(cleanupAllProcesses).toHaveBeenCalled();
     expect(removeStatus).toHaveBeenCalled();
   });
@@ -365,7 +575,7 @@ describe('connect command', () => {
   });
 
   it('should handle SIGTERM', async () => {
-    const sigtermHandlers: Array<() => void> = [];
+    const sigtermHandlers: Array<() => Promise<void> | void> = [];
     const origOn = process.on;
     vi.spyOn(process, 'on').mockImplementation((event: any, handler: any) => {
       if (event === 'SIGTERM') sigtermHandlers.push(handler);
@@ -376,7 +586,7 @@ describe('connect command', () => {
     await program.parseAsync(['node', 'test', 'connect']);
 
     for (const handler of sigtermHandlers) {
-      handler();
+      await handler();
     }
 
     expect(cleanupAllProcesses).toHaveBeenCalled();
@@ -386,7 +596,7 @@ describe('connect command', () => {
     const program = createProgram();
     await program.parseAsync(['node', 'test', 'connect']);
 
-    clientEventHandlers['system_info_request']?.({
+    await clientEventHandlers['system_info_request']?.({
       requestId: 'req-3',
       type: 'system_info_request',
     });
@@ -398,6 +608,78 @@ describe('connect command', () => {
     } else {
       expect(sysInfo.videosPath).toContain('Videos');
     }
+  });
+
+  describe.skipIf(process.platform === 'win32')('--auv', () => {
+    let auvDir: string;
+    let auvBinary: string;
+
+    beforeEach(async () => {
+      auvDir = await mkdtemp(path.join(os.tmpdir(), 'lh-connect-auv-'));
+      auvBinary = path.join(auvDir, 'auv');
+      await writeFile(auvBinary, `#!/bin/sh\nprintf '{"ok":true}'\n`);
+      await chmod(auvBinary, 0o755);
+    });
+
+    afterEach(async () => {
+      await rm(auvDir, { force: true, recursive: true });
+    });
+
+    const computerUseCall = {
+      requestId: 'req-cu',
+      toolCall: {
+        apiName: 'runCommand',
+        arguments: JSON.stringify({ argv: ['invoke', 'display.list'] }),
+        identifier: 'lobe-computer-use',
+      },
+      type: 'tool_call_request',
+    };
+
+    it('advertises Computer Use and runs it with the given binary', async () => {
+      await createProgram().parseAsync(['node', 'test', 'connect', '--auv', auvBinary]);
+
+      await clientEventHandlers['system_info_request']?.({
+        requestId: 'r',
+        type: 'system_info_request',
+      });
+      expect(lastSentSystemInfoResponse.result.systemInfo.supportedTools).toEqual([
+        'lobe-computer-use',
+      ]);
+
+      // `runCommand` is also the shell tool's apiName; the identifier decides.
+      await clientEventHandlers['tool_call_request']?.(computerUseCall);
+      expect(executeToolCall).not.toHaveBeenCalled();
+      expect(lastSentToolResponse.result).toMatchObject({
+        state: { exitCode: 0, output: { ok: true } },
+        success: true,
+      });
+    });
+
+    it('does not advertise or run Computer Use without --auv', async () => {
+      await createProgram().parseAsync(['node', 'test', 'connect']);
+
+      await clientEventHandlers['system_info_request']?.({
+        requestId: 'r',
+        type: 'system_info_request',
+      });
+      expect(lastSentSystemInfoResponse.result.systemInfo).not.toHaveProperty('supportedTools');
+
+      await clientEventHandlers['tool_call_request']?.(computerUseCall);
+      expect(executeToolCall).not.toHaveBeenCalled();
+      expect(lastSentToolResponse.result).toMatchObject({
+        error: expect.stringContaining('--auv'),
+        success: false,
+      });
+    });
+
+    it('passes the absolute binary path to the daemon child', async () => {
+      const relative = path.relative(process.cwd(), auvBinary);
+      await createProgram().parseAsync(['node', 'test', 'connect', '--daemon', '--auv', relative]);
+
+      expect(vi.mocked(spawnDaemon).mock.calls[0]?.[0]).toEqual(
+        expect.arrayContaining(['--auv', auvBinary]),
+      );
+    });
   });
 
   describe('--daemon flag', () => {
@@ -434,6 +716,25 @@ describe('connect command', () => {
     it('should warn if no daemon is running', async () => {
       const program = createProgram();
       await program.parseAsync(['node', 'test', 'connect', 'stop']);
+
+      expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('No daemon'));
+    });
+  });
+
+  describe('disconnect (alias for connect stop)', () => {
+    it('should stop running daemon', async () => {
+      mockRunningPid = 12345;
+
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', 'disconnect']);
+
+      expect(stopDaemon).toHaveBeenCalled();
+      expect(log.info).toHaveBeenCalledWith(expect.stringContaining('Daemon stopped'));
+    });
+
+    it('should warn if no daemon is running', async () => {
+      const program = createProgram();
+      await program.parseAsync(['node', 'test', 'disconnect']);
 
       expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('No daemon'));
     });

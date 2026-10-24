@@ -1,151 +1,102 @@
 'use client';
 
-import { Avatar, Block, Flexbox, Icon, Text } from '@lobehub/ui';
-import { type ItemType } from 'antd/es/menu/interface';
-import { useTheme } from 'antd-style';
 import isEqual from 'fast-deep-equal';
-import {
-  BookTextIcon,
-  BrainIcon,
-  MessageSquareHeartIcon,
-  MessagesSquareIcon,
-  UserIcon,
-} from 'lucide-react';
-import { memo, useMemo, useState } from 'react';
+import { GitBranchIcon, MessageSquareHeartIcon } from 'lucide-react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { shallow } from 'zustand/shallow';
 
-import Menu from '@/components/Menu';
 import { DEFAULT_AVATAR, DEFAULT_INBOX_AVATAR } from '@/const/meta';
-import { AgentSettings as Settings } from '@/features/AgentSetting';
+import {
+  AgentSettings as Settings,
+  SettingsModalLayout,
+  type SettingsModalTabItem,
+} from '@/features/AgentSetting';
+import { usePermission } from '@/hooks/usePermission';
 import { useAgentStore } from '@/store/agent';
 import { agentSelectors, builtinAgentSelectors } from '@/store/agent/selectors';
 import { ChatSettingsTabs } from '@/store/global/initialState';
+import { useUserStore } from '@/store/user';
+import { labPreferSelectors } from '@/store/user/selectors';
+
+const TAB_META = {
+  [ChatSettingsTabs.Graph]: { icon: GitBranchIcon, labelKey: 'agentTab.graph' },
+  [ChatSettingsTabs.Opening]: { icon: MessageSquareHeartIcon, labelKey: 'agentTab.opening' },
+} as const;
 
 const Content = memo(() => {
   const { t } = useTranslation('setting');
-  const theme = useTheme();
+  const { allowed: canEdit } = usePermission('edit_own_content');
   const [agentId, isInbox] = useAgentStore(
     (s) => [s.activeAgentId, builtinAgentSelectors.isInboxAgent(s)],
     shallow,
   );
   const config = useAgentStore(agentSelectors.currentAgentConfig, isEqual);
   const meta = useAgentStore(agentSelectors.currentAgentMeta, isEqual);
-  const [tab, setTab] = useState(isInbox ? ChatSettingsTabs.Modal : ChatSettingsTabs.Meta);
+  const isHeterogeneous = useAgentStore(agentSelectors.isCurrentAgentHeterogeneous);
+  const enableAgentGraphConfigLab = useUserStore(labPreferSelectors.enableAgentGraphConfig);
+  const [tab, setTab] = useState(ChatSettingsTabs.Opening);
+  const showGraphTab = enableAgentGraphConfigLab && !isInbox && !isHeterogeneous;
+
+  const availableTabs = useMemo(
+    () =>
+      [ChatSettingsTabs.Opening, showGraphTab ? ChatSettingsTabs.Graph : null].filter(
+        Boolean,
+      ) as ChatSettingsTabs[],
+    [showGraphTab],
+  );
+
+  const activeTab = availableTabs.includes(tab) ? tab : availableTabs[0];
+
+  useEffect(() => {
+    if (activeTab && activeTab !== tab) setTab(activeTab);
+  }, [activeTab, tab]);
 
   const updateAgentConfig = async (config: any) => {
+    if (!canEdit) return;
     if (!agentId) return;
     await useAgentStore.getState().optimisticUpdateAgentConfig(agentId, config);
   };
 
   const updateAgentMeta = async (meta: any) => {
+    if (!canEdit) return;
     if (!agentId) return;
     await useAgentStore.getState().optimisticUpdateAgentMeta(agentId, meta);
   };
 
-  const menuItems: ItemType[] = useMemo(
+  const tabs: SettingsModalTabItem[] = useMemo(
     () =>
-      [
-        !isInbox
-          ? {
-              icon: <Icon icon={UserIcon} />,
-              key: ChatSettingsTabs.Meta,
-              label: t('agentTab.meta'),
-            }
-          : null,
-        !isInbox
-          ? {
-              icon: <Icon icon={MessageSquareHeartIcon} />,
-              key: ChatSettingsTabs.Opening,
-              label: t('agentTab.opening'),
-            }
-          : null,
-        {
-          icon: <Icon icon={BookTextIcon} />,
-          key: ChatSettingsTabs.Documents,
-          label: t('agentTab.documents'),
-        },
-        {
-          icon: <Icon icon={MessagesSquareIcon} />,
-          key: ChatSettingsTabs.Chat,
-          label: t('agentTab.chat'),
-        },
-        {
-          icon: <Icon icon={BrainIcon} />,
-          key: ChatSettingsTabs.Modal,
-          label: t('agentTab.modal'),
-        },
-      ].filter(Boolean) as ItemType[],
-    [t, isInbox],
+      availableTabs.map((key) => {
+        const entry = TAB_META[key as keyof typeof TAB_META];
+        return { icon: entry.icon, key, label: t(entry.labelKey) };
+      }),
+    [availableTabs, t],
   );
 
   const displayTitle = isInbox ? 'Lobe AI' : meta.title || t('defaultSession', { ns: 'common' });
 
   return (
-    <Flexbox
-      direction="horizontal"
-      height="100%"
-      style={{
-        padding: 0,
-        position: 'relative',
-      }}
+    <SettingsModalLayout
+      activeTab={activeTab}
+      avatar={isInbox ? DEFAULT_INBOX_AVATAR : meta.avatar || DEFAULT_AVATAR}
+      background={meta.backgroundColor || undefined}
+      tabs={tabs}
+      title={displayTitle}
+      onTabChange={(key) => setTab(key as ChatSettingsTabs)}
     >
-      <Flexbox
-        height={'100%'}
-        paddingBlock={24}
-        paddingInline={8}
-        width={200}
-        style={{
-          background: theme.colorBgLayout,
-          borderRight: `1px solid ${theme.colorBorderSecondary}`,
-        }}
-      >
-        <Block
-          horizontal
-          align={'center'}
-          gap={8}
-          paddingBlock={'14px 16px'}
-          paddingInline={4}
-          variant={'borderless'}
-          style={{
-            overflow: 'hidden',
-          }}
-        >
-          <Avatar
-            avatar={isInbox ? DEFAULT_INBOX_AVATAR : meta.avatar || DEFAULT_AVATAR}
-            background={meta.backgroundColor || undefined}
-            shape={'square'}
-            size={28}
-          />
-          <Text ellipsis weight={500}>
-            {displayTitle}
-          </Text>
-        </Block>
-        <Menu
-          selectable
-          items={menuItems}
-          selectedKeys={[tab]}
-          style={{ width: '100%' }}
-          onClick={({ key }) => setTab(key as ChatSettingsTabs)}
-        />
-      </Flexbox>
-      <Flexbox
-        flex={1}
-        paddingBlock={24}
-        paddingInline={64}
-        style={{ overflow: 'scroll', width: '100%' }}
-      >
+      {activeTab && (
         <Settings
           config={config}
+          disabled={!canEdit}
           id={agentId}
           loading={false}
           meta={meta}
-          tab={tab}
+          tab={activeTab}
           onConfigChange={updateAgentConfig}
           onMetaChange={updateAgentMeta}
         />
-      </Flexbox>
-    </Flexbox>
+      )}
+    </SettingsModalLayout>
   );
 });
 

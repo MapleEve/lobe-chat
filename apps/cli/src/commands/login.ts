@@ -6,8 +6,11 @@ import type { Command } from 'commander';
 
 import { getUserIdFromApiKey } from '../auth/apiKey';
 import { saveCredentials } from '../auth/credentials';
-import { CLI_API_KEY_ENV } from '../constants/auth';
+import { parseJwtSub } from '../auth/resolveToken';
+import { readCliApiKeyEnv } from '../constants/auth';
+import { CLI_PRODUCT_NAME } from '../constants/identity';
 import { OFFICIAL_SERVER_URL } from '../constants/urls';
+import { registerDevice, resolveDeviceIdentity } from '../device/register';
 import { loadSettings, normalizeUrl, saveSettings } from '../settings';
 import { log } from '../utils/logger';
 
@@ -53,20 +56,23 @@ async function parseJsonResponse<T>(res: Response, endpoint: string): Promise<T>
 export function registerLoginCommand(program: Command) {
   program
     .command('login')
-    .description('Log in to LobeHub via browser (Device Code Flow) or configure API key server')
-    .option('--server <url>', 'LobeHub server URL', OFFICIAL_SERVER_URL)
+    .description(
+      `Log in to ${CLI_PRODUCT_NAME} via browser (Device Code Flow) or configure API key server`,
+    )
+    .option('--server <url>', `${CLI_PRODUCT_NAME} server URL`, OFFICIAL_SERVER_URL)
     .action(async (options: LoginOptions) => {
       const serverUrl = normalizeUrl(options.server) || OFFICIAL_SERVER_URL;
 
       log.info('Starting login...');
 
-      const apiKey = process.env[CLI_API_KEY_ENV];
+      const apiKey = readCliApiKeyEnv();
       if (apiKey) {
         try {
           await getUserIdFromApiKey(apiKey, serverUrl);
 
           const existingSettings = loadSettings();
-          const shouldPreserveGateway = existingSettings?.serverUrl === serverUrl;
+          const existingServerUrl = existingSettings?.serverUrl || OFFICIAL_SERVER_URL;
+          const shouldPreserveGateway = !!existingSettings && existingServerUrl === serverUrl;
 
           saveSettings(
             shouldPreserveGateway
@@ -198,7 +204,8 @@ export function registerLoginCommand(program: Command) {
             });
 
             const existingSettings = loadSettings();
-            const shouldPreserveGateway = existingSettings?.serverUrl === serverUrl;
+            const existingServerUrl = existingSettings?.serverUrl || OFFICIAL_SERVER_URL;
+            const shouldPreserveGateway = !!existingSettings && existingServerUrl === serverUrl;
 
             saveSettings(
               shouldPreserveGateway
@@ -212,6 +219,30 @@ export function registerLoginCommand(program: Command) {
                     serverUrl,
                   },
             );
+
+            // Register this device in the server registry right after auth, so
+            // the device row exists without waiting for a later `lh connect`
+            // (which only adds the channel-online step). Mirrors the desktop
+            // app, which registers on login. Best-effort: a failure here must
+            // not fail the login.
+            //
+            // Skip the `fallback` source: `lh login` has no `--device-id` and
+            // persists no fallback id, so a machine without a readable
+            // machine-id would derive a *fresh random* id on every login —
+            // registering it just spawns orphan device rows that never match
+            // the id a later `lh connect` resolves. Defer registration to
+            // `connect` in that case, where the same id is reused for the WS.
+            const identity = resolveDeviceIdentity(parseJwtSub(body.access_token));
+            if (identity && identity.identitySource !== 'fallback') {
+              try {
+                await registerDevice(
+                  { serverUrl, token: body.access_token, tokenType: 'jwt' },
+                  identity,
+                );
+              } catch (err) {
+                log.warn(`Device registration failed (non-fatal): ${(err as Error).message}`);
+              }
+            }
 
             log.info('Login successful! Credentials saved.');
             return;

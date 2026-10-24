@@ -13,6 +13,7 @@ import {
   generations,
   generationTopics,
   users,
+  workspaces,
 } from '../../schemas';
 import type { LobeChatDatabase } from '../../type';
 import { GenerationModel } from '../generation';
@@ -20,23 +21,30 @@ import { GenerationModel } from '../generation';
 const serverDB: LobeChatDatabase = await getTestDB();
 
 // Mock FileService
+const mockGetFileAccessUrl = vi.fn();
 const mockGetFullFileUrl = vi.fn();
 vi.mock('@/server/services/file', () => ({
-  FileService: vi.fn().mockImplementation(() => ({
-    getFullFileUrl: mockGetFullFileUrl,
-  })),
+  FileService: vi.fn(function () {
+    return {
+      getFileAccessUrl: mockGetFileAccessUrl,
+      getFullFileUrl: mockGetFullFileUrl,
+    };
+  }),
 }));
 
 // Mock FileModel
 const mockFileModelCreate = vi.fn();
 vi.mock('../file', () => ({
-  FileModel: vi.fn().mockImplementation(() => ({
-    create: mockFileModelCreate,
-  })),
+  FileModel: vi.fn(function () {
+    return {
+      create: mockFileModelCreate,
+    };
+  }),
 }));
 
 const userId = 'generation-test-user-id';
 const otherUserId = 'other-user-id';
+const workspaceId = 'generation-workspace';
 const generationModel = new GenerationModel(serverDB, userId);
 
 // Test data
@@ -97,10 +105,19 @@ beforeEach(async () => {
 
   // Setup mock return values
   mockGetFullFileUrl.mockImplementation((url: string) => `https://example.com/${url}`);
+  mockGetFileAccessUrl.mockImplementation(({ fileId, url }: { fileId?: string; url: string }) =>
+    fileId ? `https://example.com/f/${fileId}` : mockGetFullFileUrl(url),
+  );
 
   // Clear database and create test users
   await serverDB.delete(users);
   await serverDB.insert(users).values([{ id: userId }, { id: otherUserId }]);
+  await serverDB.insert(workspaces).values({
+    id: workspaceId,
+    name: 'Generation Workspace',
+    primaryOwnerId: userId,
+    slug: workspaceId,
+  });
 
   // Create test topic
   await serverDB.insert(generationTopics).values(testTopic);
@@ -206,6 +223,41 @@ describe('GenerationModel', () => {
       const result = await generationModel.findById(otherUserGeneration.id);
       expect(result).toBeUndefined();
     });
+
+    it('should not find generations from another member private workspace topic', async () => {
+      await serverDB.insert(generationTopics).values({
+        id: 'private-workspace-topic',
+        title: 'Private Workspace Topic',
+        type: 'image',
+        userId,
+        visibility: 'private',
+        workspaceId,
+      });
+      const [batch] = await serverDB
+        .insert(generationBatches)
+        .values({
+          ...testBatch,
+          id: 'private-workspace-batch',
+          generationTopicId: 'private-workspace-topic',
+          userId,
+          workspaceId,
+        })
+        .returning();
+      const [generation] = await serverDB
+        .insert(generations)
+        .values({
+          ...testGeneration,
+          generationBatchId: batch.id,
+          userId,
+          workspaceId,
+        })
+        .returning();
+
+      const otherMemberModel = new GenerationModel(serverDB, otherUserId, workspaceId);
+      const result = await otherMemberModel.findById(generation.id);
+
+      expect(result).toBeUndefined();
+    });
   });
 
   describe('findByIdWithAsyncTask', () => {
@@ -240,6 +292,41 @@ describe('GenerationModel', () => {
         .returning();
 
       const result = await generationModel.findByIdWithAsyncTask(otherUserGeneration.id);
+      expect(result).toBeUndefined();
+    });
+
+    it('should not find generations with async task from another member private workspace topic', async () => {
+      await serverDB.insert(generationTopics).values({
+        id: 'private-workspace-topic-with-task',
+        title: 'Private Workspace Topic with Task',
+        type: 'image',
+        userId,
+        visibility: 'private',
+        workspaceId,
+      });
+      const [batch] = await serverDB
+        .insert(generationBatches)
+        .values({
+          ...testBatch,
+          id: 'private-workspace-batch-with-task',
+          generationTopicId: 'private-workspace-topic-with-task',
+          userId,
+          workspaceId,
+        })
+        .returning();
+      const [generation] = await serverDB
+        .insert(generations)
+        .values({
+          ...testGeneration,
+          generationBatchId: batch.id,
+          userId,
+          workspaceId,
+        })
+        .returning();
+
+      const otherMemberModel = new GenerationModel(serverDB, otherUserId, workspaceId);
+      const result = await otherMemberModel.findByIdWithAsyncTask(generation.id);
+
       expect(result).toBeUndefined();
     });
   });
@@ -337,7 +424,7 @@ describe('GenerationModel', () => {
         newFileData,
       );
 
-      expect(result.file.id).toBe('new-file-id');
+      expect(result?.file.id).toBe('new-file-id');
       expect(mockFileModelCreate).toHaveBeenCalledWith(
         {
           ...newFileData,
@@ -418,6 +505,64 @@ describe('GenerationModel', () => {
       });
       expect(unchanged?.asset).toBeNull();
       expect(unchanged?.fileId).toBeNull();
+    });
+
+    it('should create generated files with private visibility when the workspace topic is private', async () => {
+      await serverDB.insert(generationTopics).values({
+        id: 'private-workspace-topic-for-file',
+        title: 'Private Workspace Topic for File',
+        type: 'image',
+        userId,
+        visibility: 'private',
+        workspaceId,
+      });
+      const [batch] = await serverDB
+        .insert(generationBatches)
+        .values({
+          ...testBatch,
+          id: 'private-workspace-batch-for-file',
+          generationTopicId: 'private-workspace-topic-for-file',
+          userId,
+          workspaceId,
+        })
+        .returning();
+      const [createdGeneration] = await serverDB
+        .insert(generations)
+        .values({
+          ...testGeneration,
+          asset: null,
+          fileId: null,
+          generationBatchId: batch.id,
+          userId,
+          workspaceId,
+        })
+        .returning();
+
+      const workspaceModel = new GenerationModel(serverDB, userId, workspaceId);
+      const newAsset = {
+        url: 'private-asset.jpg',
+        thumbnailUrl: 'private-thumbnail.jpg',
+        width: 2048,
+        height: 2048,
+      } as ImageGenerationAsset;
+      const newFileData = {
+        fileType: 'image/jpeg',
+        name: 'private-generated-image.jpg',
+        size: 2097152,
+        url: 'private-asset.jpg',
+      };
+
+      await workspaceModel.createAssetAndFile(createdGeneration.id, newAsset, newFileData);
+
+      expect(mockFileModelCreate).toHaveBeenCalledWith(
+        {
+          ...newFileData,
+          source: FileSource.ImageGeneration,
+          visibility: 'private',
+        },
+        true,
+        expect.any(Object),
+      );
     });
   });
 
@@ -512,6 +657,7 @@ describe('GenerationModel', () => {
       const generationWithTask = {
         id: 'test-gen-id',
         userId,
+        workspaceId: null,
         generationBatchId: 'batch-id',
         asyncTaskId: '550e8400-e29b-41d4-a716-446655440000',
         fileId: 'file-id',
@@ -524,6 +670,8 @@ describe('GenerationModel', () => {
         } as ImageGenerationAsset,
         accessedAt: new Date(),
         createdAt: new Date(),
+        deletedAt: null,
+        isDeleted: null,
         updatedAt: new Date(),
         asyncTask: {
           id: '550e8400-e29b-41d4-a716-446655440000',
@@ -537,15 +685,17 @@ describe('GenerationModel', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           userId,
+          workspaceId: null,
         },
       };
 
       const result = await generationModel.transformGeneration(generationWithTask);
 
       expect(result).toMatchObject({
+        fileId: 'file-id',
         id: 'test-gen-id',
         asset: {
-          url: 'https://example.com/original-asset.jpg',
+          url: 'https://example.com/f/file-id',
           thumbnailUrl: 'https://example.com/original-thumbnail.jpg',
           width: 1024,
           height: 1024,
@@ -558,7 +708,11 @@ describe('GenerationModel', () => {
         },
       });
 
-      expect(mockGetFullFileUrl).toHaveBeenCalledWith('original-asset.jpg');
+      expect(mockGetFileAccessUrl).toHaveBeenCalledWith({
+        fileId: 'file-id',
+        url: 'original-asset.jpg',
+      });
+      expect(mockGetFullFileUrl).not.toHaveBeenCalledWith('original-asset.jpg');
       expect(mockGetFullFileUrl).toHaveBeenCalledWith('original-thumbnail.jpg');
     });
 
@@ -566,6 +720,7 @@ describe('GenerationModel', () => {
       const generationWithoutAsset = {
         id: 'test-gen-id',
         userId,
+        workspaceId: null,
         generationBatchId: 'batch-id',
         asyncTaskId: '550e8400-e29b-41d4-a716-446655440000',
         fileId: null,
@@ -585,11 +740,13 @@ describe('GenerationModel', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           userId,
+          workspaceId: null,
         },
       };
 
       const result = await generationModel.transformGeneration(generationWithoutAsset as any);
 
+      expect(result).not.toHaveProperty('fileId');
       expect(result).toMatchObject({
         id: 'test-gen-id',
         asset: null,
@@ -608,6 +765,7 @@ describe('GenerationModel', () => {
       const generationWithoutTask = {
         id: 'test-gen-id',
         userId,
+        workspaceId: null,
         generationBatchId: 'batch-id',
         asyncTaskId: null,
         fileId: null,
@@ -639,6 +797,7 @@ describe('GenerationModel', () => {
       const generationWithAsset = {
         id: 'test-gen-id',
         userId,
+        workspaceId: null,
         generationBatchId: 'batch-id',
         asyncTaskId: null,
         fileId: null,
@@ -666,6 +825,7 @@ describe('GenerationModel', () => {
       const generationWithError = {
         id: 'test-gen-id',
         userId,
+        workspaceId: null,
         generationBatchId: 'batch-id',
         asyncTaskId: '550e8400-e29b-41d4-a716-446655440000',
         fileId: null,
@@ -686,6 +846,7 @@ describe('GenerationModel', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           userId,
+          workspaceId: null,
         },
       };
 
@@ -699,6 +860,7 @@ describe('GenerationModel', () => {
       const generationWithNullError = {
         id: 'test-gen-id',
         userId,
+        workspaceId: null,
         generationBatchId: 'batch-id',
         asyncTaskId: '550e8400-e29b-41d4-a716-446655440000',
         fileId: null,
@@ -719,6 +881,7 @@ describe('GenerationModel', () => {
           createdAt: new Date(),
           updatedAt: new Date(),
           userId,
+          workspaceId: null,
         },
       };
 
@@ -740,6 +903,7 @@ describe('GenerationModel', () => {
       const generationWithVideo = {
         id: 'test-gen-id',
         userId,
+        workspaceId: null,
         generationBatchId: 'batch-id',
         asyncTaskId: null,
         fileId: null,
@@ -776,6 +940,7 @@ describe('GenerationModel', () => {
       const generationWithVideo = {
         id: 'test-gen-id',
         userId,
+        workspaceId: null,
         generationBatchId: 'batch-id',
         asyncTaskId: null,
         fileId: null,
@@ -943,6 +1108,37 @@ describe('GenerationModel', () => {
         '00000000-0000-0000-0000-000000000000',
       );
       expect(result).toBeUndefined();
+    });
+
+    it('should not return workspace generation from personal scope', async () => {
+      const workspaceAsyncTaskId = '550e8400-e29b-41d4-a716-446655440111';
+      await serverDB.insert(generationTopics).values({
+        ...testTopic,
+        id: 'workspace-topic-id',
+        workspaceId,
+      });
+      await serverDB.insert(generationBatches).values({
+        ...testBatch,
+        id: 'workspace-batch-id',
+        generationTopicId: 'workspace-topic-id',
+        workspaceId,
+      });
+      await serverDB.insert(asyncTasks).values({
+        ...testAsyncTask,
+        id: workspaceAsyncTaskId,
+        workspaceId,
+      });
+      await serverDB.insert(generations).values({
+        ...testGeneration,
+        asyncTaskId: workspaceAsyncTaskId,
+        generationBatchId: 'workspace-batch-id',
+        userId,
+        workspaceId,
+      });
+
+      await expect(
+        generationModel.findByAsyncTaskId(workspaceAsyncTaskId),
+      ).resolves.toBeUndefined();
     });
   });
 });

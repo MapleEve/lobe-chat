@@ -1,4 +1,6 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { buildWorkspacePayload, buildWorkspaceWhere } from '@lobechat/database';
+import { and, eq, inArray, type SQL } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 
 import type { PERMISSION_ACTIONS } from '@/const/rbac';
 import { ALL_SCOPE } from '@/const/rbac';
@@ -31,13 +33,35 @@ const isNilOrEmptyObject = (value: unknown): boolean => {
  */
 export abstract class BaseService implements IBaseService {
   protected userId: string;
+  protected workspaceId?: string;
   public db: LobeChatDatabase;
   private rbacModel: RbacModel;
 
-  constructor(db: LobeChatDatabase, userId: string | null) {
+  constructor(db: LobeChatDatabase, userId: string | null, workspaceId?: string) {
     this.db = db;
     this.userId = userId || '';
+    this.workspaceId = workspaceId;
     this.rbacModel = new RbacModel(db, this.userId);
+  }
+
+  protected buildWorkspaceWhere(cols: { userId: AnyPgColumn; workspaceId: AnyPgColumn }): SQL {
+    return buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, cols);
+  }
+
+  protected buildWorkspacePayload<T extends object>(
+    base: T,
+  ): T & { userId: string; workspaceId: string | null } {
+    return buildWorkspacePayload({ userId: this.userId, workspaceId: this.workspaceId }, base);
+  }
+
+  protected buildPermissionWhere(
+    cols: { userId: AnyPgColumn; workspaceId: AnyPgColumn },
+    condition?: { userId?: string },
+  ): SQL | undefined {
+    if (this.workspaceId)
+      return buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, cols);
+    if (condition?.userId) return buildWorkspaceWhere({ userId: condition.userId }, cols);
+    return;
   }
 
   /**
@@ -64,6 +88,15 @@ export abstract class BaseService implements IBaseService {
   protected createAuthorizationError(message: string): Error {
     const error = new Error(message);
     error.name = 'AuthorizationError';
+    return error;
+  }
+
+  /**
+   * Conflict error class
+   */
+  protected createConflictError(message: string): Error {
+    const error = new Error(message);
+    error.name = 'ConflictError';
     return error;
   }
 
@@ -99,7 +132,7 @@ export abstract class BaseService implements IBaseService {
    * @param fallbackMessage Default error message
    */
   protected handleServiceError(error: unknown, operation: string): never {
-    this.log('error', `${operation}失败`, { error });
+    this.log('error', `${operation} failed`, { error });
 
     // If it is a known business error, throw it directly
     if (
@@ -108,6 +141,7 @@ export abstract class BaseService implements IBaseService {
         'BusinessError',
         'AuthenticationError',
         'AuthorizationError',
+        'ConflictError',
         'NotFoundError',
         'ValidationError',
       ].includes(error.name)
@@ -115,7 +149,7 @@ export abstract class BaseService implements IBaseService {
       throw error;
     }
 
-    const errorMessage = `${operation}失败: ${error instanceof Error ? error.message : '未知错误'}`;
+    const errorMessage = `${operation} failed: ${error instanceof Error ? error.message : 'unknown error'}`;
 
     // Wrap all other errors as business errors
     throw this.createBusinessError(errorMessage);
@@ -158,10 +192,10 @@ export abstract class BaseService implements IBaseService {
   protected async hasGlobalPermission(
     permissionKey: keyof typeof PERMISSION_ACTIONS,
   ): Promise<boolean> {
-    return await this.rbacModel.hasAnyPermission(
-      getScopePermissions(permissionKey, ['ALL']),
-      this.userId,
-    );
+    return await this.rbacModel.hasAnyPermission(getScopePermissions(permissionKey, ['ALL']), {
+      userId: this.userId,
+      workspaceId: this.workspaceId,
+    });
   }
 
   /**
@@ -172,10 +206,35 @@ export abstract class BaseService implements IBaseService {
   protected async hasOwnerPermission(
     permissionKey: keyof typeof PERMISSION_ACTIONS,
   ): Promise<boolean> {
-    return await this.rbacModel.hasAnyPermission(
-      getScopePermissions(permissionKey, ['OWNER']),
-      this.userId,
-    );
+    return await this.rbacModel.hasAnyPermission(getScopePermissions(permissionKey, ['OWNER']), {
+      userId: this.userId,
+      workspaceId: this.workspaceId,
+    });
+  }
+
+  /**
+   * Row-level creator check for workspace-shared rows, mirroring the tRPC
+   * routers' `assertWorkspaceRowManageable`. Model ownership predicates are
+   * workspace-wide, so a role gate alone lets any member mutate rows created by
+   * someone else. Callers holding the `:all` scope keep managing every row.
+   *
+   * @param rowUserId - `userId` of the row being mutated
+   * @param permissionKey - permission whose `:all` scope grants workspace-wide management
+   * @param resource - resource name used in the error message
+   */
+  protected async assertRowManageable(
+    rowUserId: string | null | undefined,
+    permissionKey: keyof typeof PERMISSION_ACTIONS,
+    resource: string,
+  ): Promise<void> {
+    // Personal mode: the model's ownership filter already scopes rows to the caller.
+    if (!this.workspaceId) return;
+    if (await this.hasGlobalPermission(permissionKey)) return;
+    if (rowUserId !== this.userId) {
+      throw this.createAuthorizationError(
+        `Only the creator or a workspace owner can modify this ${resource}`,
+      );
+    }
   }
 
   /**
@@ -228,6 +287,18 @@ export abstract class BaseService implements IBaseService {
 
         // Query providers table
         case !!target?.targetProviderId: {
+          if (this.workspaceId) {
+            const workspaceProvider = await this.db.query.aiProviders.findFirst({
+              columns: { userId: true },
+              where: and(
+                eq(aiProviders.id, target.targetProviderId),
+                this.buildWorkspaceWhere(aiProviders),
+              ),
+            });
+
+            return workspaceProvider?.userId;
+          }
+
           const currentUserProvider = await this.db.query.aiProviders.findFirst({
             columns: { userId: true },
             where: and(
@@ -281,6 +352,15 @@ export abstract class BaseService implements IBaseService {
 
         // Query aiModels table
         case !!target?.targetModelId: {
+          if (this.workspaceId) {
+            const workspaceModel = await this.db.query.aiModels.findFirst({
+              columns: { userId: true },
+              where: and(eq(aiModels.id, target.targetModelId), this.buildWorkspaceWhere(aiModels)),
+            });
+
+            return workspaceModel?.userId;
+          }
+
           const targetModel = await this.db.query.aiModels.findFirst({
             columns: { userId: true },
             where: eq(aiModels.id, target.targetModelId),
@@ -293,7 +373,7 @@ export abstract class BaseService implements IBaseService {
         }
       }
     } catch (error) {
-      this.log('error', '获取目标用户ID失败', { error, target });
+      this.log('error', 'Failed to get target user ID', { error, target });
       return;
     }
   }
@@ -333,13 +413,17 @@ export abstract class BaseService implements IBaseService {
       userId: this.userId,
     };
 
-    this.log('info', '权限检查', logContext);
+    this.log('info', 'Permission check', logContext);
 
     /**
      * When the user has ALL permission, pass the check directly
      */
     if (hasGlobalAccess) {
-      this.log('info', `权限通过：当前user拥有 ${permissionKey} 的最高权限`, logContext);
+      this.log(
+        'info',
+        `Permission granted: current user has highest ${permissionKey} permission`,
+        logContext,
+      );
       return {
         condition: resourceBelongTo ? { userId: resourceBelongTo } : undefined,
         isPermitted: true,
@@ -347,12 +431,11 @@ export abstract class BaseService implements IBaseService {
     }
 
     /**
-     * When the user does not have ALL permission, the following scenarios are not allowed:
-     * 1. Querying all data
-     * 2. Querying a specific user's data, but the target resource does not belong to the current user
+     * Asking for everyone's data. Without ALL permission there is nothing to
+     * fall back to — an owner-scoped grant cannot answer an unscoped question.
      */
-    if (!resourceBelongTo || resourceBelongTo !== this.userId) {
-      this.log('warn', '权限拒绝：当前user没有ALL权限，或目标资源不属于当前用户', logContext);
+    if (resourceInfo === ALL_SCOPE) {
+      this.log('warn', 'Permission denied: ALL-scope request without ALL permission', logContext);
       return {
         isPermitted: false,
         message: `no permission,current user has no ALL permission,and resource not belong to current user`,
@@ -360,33 +443,49 @@ export abstract class BaseService implements IBaseService {
     }
 
     /**
-     * When the target resource belongs to the current user, any permission allows the operation
-     * Since ALL permission was already checked above, only owner permission needs to be checked here
+     * A named resource owned by somebody else. Owner permission is irrelevant
+     * here — it grants access to your own rows, never to theirs.
      */
-    if (resourceBelongTo === this.userId) {
-      // Check if the user has owner permission for the corresponding action
-      const hasOwnerAccess = await this.hasOwnerPermission(permissionKey);
-
-      if (hasOwnerAccess) {
-        this.log('info', '权限通过：当前user拥有owner权限', logContext);
-        return {
-          condition: { userId: resourceBelongTo },
-          isPermitted: true,
-        };
-      }
-
-      this.log('warn', '权限拒绝：目标资源属于当前用户，但用户没有对应操作的owner权限', logContext);
+    if (resourceBelongTo && resourceBelongTo !== this.userId) {
+      this.log('warn', 'Permission denied: target resource belongs to another user', logContext);
       return {
         isPermitted: false,
-        message: `no permission,resource belong to current user,but current user has no any ${permissionKey} permission`,
+        message: `no permission,current user has no ALL permission,and resource not belong to current user`,
       };
     }
 
-    // If we reach here, apply fallback logic
-    this.log('info', `兜底: no permission`, logContext);
+    /**
+     * Either the resource is the caller's, or no owner could be resolved for
+     * it. Denying the second case alongside the one above is what made every
+     * `POST /api/v1/chat` answer 403.
+     *
+     * `getResourceBelongTo` returns `undefined` for two unrelated situations:
+     * a row that does not exist, and a row that has no per-user owner at all.
+     * Built-in models are the latter — nobody owns them — so "does this model
+     * belong to you" has no true answer, and treating the absent answer as
+     * "it belongs to someone else" denied every caller holding
+     * `ai_model:invoke:owner`, which is exactly what personal accounts get.
+     *
+     * The owner check below is still the gate, and the returned condition is
+     * pinned to the caller either way, so an unowned resource cannot widen a
+     * query past the caller's own rows. A row that genuinely does not exist
+     * now reaches the service and surfaces as "not found" rather than as a
+     * permission error — also the truthful answer.
+     */
+    const hasOwnerAccess = await this.hasOwnerPermission(permissionKey);
+
+    if (hasOwnerAccess) {
+      this.log('info', 'Permission granted: current user has owner permission', logContext);
+      return {
+        condition: { userId: this.userId },
+        isPermitted: true,
+      };
+    }
+
+    this.log('warn', 'Permission denied: no owner permission for this operation', logContext);
     return {
       isPermitted: false,
-      message: `permission validation error for: ${permissionKey}`,
+      message: `no permission,resource belong to current user,but current user has no any ${permissionKey} permission`,
     };
   }
 
@@ -414,7 +513,10 @@ export abstract class BaseService implements IBaseService {
 
     // If the user has global permission, allow the batch operation directly
     if (hasGlobalAccess) {
-      this.log('info', `权限通过：批量操作，当前user拥有 ${permissionKey} ALL权限`);
+      this.log(
+        'info',
+        `Permission granted: batch operation, current user has ${permissionKey} ALL permission`,
+      );
       return { isPermitted: true };
     }
 
@@ -497,25 +599,25 @@ export abstract class BaseService implements IBaseService {
         default: {
           return {
             isPermitted: false,
-            message: '未提供有效的资源 ID',
+            message: 'No valid resource ID provided',
           };
         }
       }
     } catch (error) {
-      this.log('error', '获取目标用户ID失败', { error, targetInfoIds });
+      this.log('error', 'Failed to get target user IDs', { error, targetInfoIds });
       return {
         isPermitted: false,
-        message: '获取资源信息失败',
+        message: 'Failed to get resource info',
       };
     }
 
     // If no resources are found
     if (userIds.length === 0) {
-      this.log('warn', '未找到任何目标资源', { permissionKey, targetInfoIds });
+      this.log('warn', 'No target resources found', { permissionKey, targetInfoIds });
       return {
         condition: { userIds },
         isPermitted: false,
-        message: '未找到任何目标资源',
+        message: 'No target resources found',
       };
     }
 
@@ -528,17 +630,21 @@ export abstract class BaseService implements IBaseService {
       if (hasOwnerAccess) {
         this.log(
           'info',
-          `权限通过：批量操作，所有资源属于当前用户，且拥有 ${permissionKey} owner 权限`,
+          `Permission granted: batch operation, all resources belong to current user and user has ${permissionKey} owner permission`,
         );
         return { condition: { userIds }, isPermitted: true };
       }
 
       // If all resources belong to the current user but the user has no owner permission, deny the operation
-      this.log('warn', '权限拒绝：批量操作需要 ${permissionKey} ALL/owner 权限', {
-        permissionKey,
-        targetInfoIds,
-        userIds,
-      });
+      this.log(
+        'warn',
+        'Permission denied: batch operation requires ${permissionKey} ALL/owner permission',
+        {
+          permissionKey,
+          targetInfoIds,
+          userIds,
+        },
+      );
       return {
         isPermitted: false,
         message: `no permission for batch operation, current user has no ${permissionKey} ALL/owner permission`,
@@ -546,11 +652,15 @@ export abstract class BaseService implements IBaseService {
     }
 
     // Some resources in the operation do not belong to the current user; deny directly
-    this.log('warn', `权限拒绝：批量操作需要 ${permissionKey} ALL/owner 权限`, {
-      permissionKey,
-      targetInfoIds,
-      userIds,
-    });
+    this.log(
+      'warn',
+      `Permission denied: batch operation requires ${permissionKey} ALL/owner permission`,
+      {
+        permissionKey,
+        targetInfoIds,
+        userIds,
+      },
+    );
 
     return {
       isPermitted: false,
@@ -607,7 +717,7 @@ export abstract class BaseService implements IBaseService {
 
     const isPermitted = missingPermissions.length === 0;
 
-    this.log('info', '聊天权限检查', {
+    this.log('info', 'Chat permission check', {
       isPermitted,
       missingPermissions,
       userId: this.userId,
@@ -616,7 +726,7 @@ export abstract class BaseService implements IBaseService {
     if (!isPermitted) {
       return {
         isPermitted: false,
-        message: `缺少必要权限：${missingPermissions.join(', ')}`,
+        message: `Missing required permissions: ${missingPermissions.join(', ')}`,
         missingPermissions,
       };
     }

@@ -16,13 +16,39 @@ export { ContextEngine } from './pipeline';
 
 // Context Providers
 export * from './providers';
+
+// Token accounting (compression triggers + UI breakdown)
+export type {
+  ContextTokenAccounting,
+  CountContextTokensParams,
+  InputTokenBuckets,
+  MessageTokenBreakdown,
+  TokenSourceType,
+  ToolDefinitionTokenBreakdown,
+} from './tokenAccounting';
+export {
+  addTokenBuckets,
+  countContextTokens,
+  DEFAULT_DRIFT_MULTIPLIER,
+  EMPTY_TOKEN_BUCKETS,
+  estimatePendingUploadTokenBuckets,
+  estimateSentMessageAttachmentTokenBuckets,
+  isTextLikeUploadFile,
+} from './tokenAccounting';
+export type {
+  AttachmentPreviewPlan,
+  PlanAttachmentPreviewsParams,
+} from './tokenAccounting/attachmentBudget';
+export { planAttachmentPreviews } from './tokenAccounting/attachmentBudget';
 // Processors
 export type { PlaceholderValue, PlaceholderValueMap } from './processors';
 export {
   buildPlaceholderGenerators,
   formatPlaceholderValues,
+  getSlicedMessages,
   GroupMessageFlattenProcessor,
   HistoryTruncateProcessor,
+  HYDRATED_TOOL_RESULTS,
   InputTemplateProcessor,
   MessageCleanupProcessor,
   MessageContentProcessor,

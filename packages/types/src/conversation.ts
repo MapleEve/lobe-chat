@@ -119,7 +119,23 @@ export interface MessageMapContext {
  * ```
  */
 export interface ConversationContext {
+  /**
+   * Agent document row id (`agent_documents.id`) that the user is currently
+   * viewing. When set, callers can skip the `listDocumentsForTopic` reverse
+   * lookup in `ActiveTopicDocumentContextInjector` and the `<document>` block
+   * is guaranteed to carry `agent_document_id` for downstream tool calls
+   * (`readDocument`, `modifyNodes`).
+   */
+  agentDocumentId?: string;
   agentId: string;
+  /**
+   * Agent share id for the visitor view of a shared agent
+   * (`/agent/:slugOrId`). When present the conversation is mounted for a
+   * non-owner visitor: every owner-scoped read/write (agent-config fetch,
+   * message persistence, topic settle, agent-signal emission) must be skipped
+   * or routed through the share-authorized `shareChat` procedures instead.
+   */
+  agentShareId?: string;
   /**
    * Optional default assignee candidate for task manager conversations.
    * This is a prompt hint only; task tools still require an explicit assigneeAgentId.
@@ -131,6 +147,17 @@ export interface ConversationContext {
    * other agent resources tied to the same topic.
    */
   documentId?: string;
+  /**
+   * Group being configured by the Group Agent Builder panel (`group_agent_builder`
+   * scope).
+   *
+   * Deliberately separate from {@link groupId}: that field marks the run as a
+   * group *chat* turn and gets stamped onto the created topic and messages,
+   * which would drag the builder's side-conversation into the group's own
+   * message read path. This one only scopes the builder's own buckets and topic
+   * list, and travels to the server as `ExecAgentAppContext.editingGroupId`.
+   */
+  editingGroupId?: string;
   /**
    * Group ID for group conversations
    * Used when scope is 'group' or 'group_agent'
@@ -149,12 +176,23 @@ export interface ConversationContext {
    */
   isolatedTopic?: boolean;
   /**
+   * Whether this conversation is an isolated sub-agent execution spawned by
+   * another agent. Used to disable recursive sub-agent dispatch.
+   */
+  isSubAgent?: boolean;
+  /**
    * Whether the current agent is the Supervisor in group orchestration
    * - Used to mark assistant messages with metadata.isSupervisor
    * - conversation-flow will transform role to 'supervisor' for UI rendering
    * - context-engine will restore role back to 'assistant' for model
    */
   isSupervisor?: boolean;
+  /**
+   * Orchestration role of the current agent within a group conversation.
+   * Canonical replacement for {@link isSupervisor} — stamped onto the assistant
+   * message's `metadata.orchestrationRole` so the role snapshot persists.
+   */
+  orchestrationRole?: 'supervisor' | 'member';
   /**
    * Scope type for the conversation
    * - 'main': Agent main conversation (default)
@@ -210,8 +248,20 @@ export interface ConversationContext {
    */
   topicShareId?: string;
   /**
+   * Goal detail page the user is currently viewing. When set, streamingExecutor
+   * builds `RuntimeInitialContext.goalOverview` from the goal store snapshot.
+   */
+  viewedGoal?: { goalId: string };
+  /**
    * Task Manager page the user is currently viewing. When set, streamingExecutor
    * builds `RuntimeInitialContext.taskManager` from the task store.
    */
   viewedTask?: { type: 'list' } | { taskId: string; type: 'detail' };
+  /**
+   * Workspace slug captured at the conversation entry point. Desktop
+   * notifications and other out-of-band navigations use this to return to the
+   * same workspace instead of reinterpreting the target under the currently
+   * active tab.
+   */
+  workspaceSlug?: string;
 }

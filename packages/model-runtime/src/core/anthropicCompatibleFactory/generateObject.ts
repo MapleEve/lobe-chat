@@ -2,6 +2,8 @@ import type Anthropic from '@anthropic-ai/sdk';
 import debug from 'debug';
 import type { Pricing } from 'model-bank';
 
+import { stripUnsupportedClaudeAssistantPrefill } from '../../providers/anthropic/claudePrefill';
+import { rejectsForcedToolChoice } from '../../providers/anthropic/modelId';
 import type { GenerateObjectOptions, GenerateObjectPayload } from '../../types';
 import { buildAnthropicMessages, buildAnthropicTools } from '../contextBuilders/anthropic';
 import { buildAnthropicInitialUsage } from '../usageConverters/anthropic';
@@ -9,15 +11,32 @@ import { withUsageCost } from '../usageConverters/utils/withUsageCost';
 
 const log = debug('lobe-model-runtime:anthropic:generate-object');
 
-/**
- * Generate structured output using Anthropic Claude API with Function Calling
- */
-export const createAnthropicGenerateObject = async (
-  client: Anthropic,
+export interface AnthropicGenerateObjectConfig {
+  maxTokens?: number;
+  requestModel?: string;
+  requestParams?: Pick<Anthropic.MessageCreateParamsNonStreaming, 'output_config' | 'thinking'>;
+  schemaToolChoice?: 'any' | 'tool';
+  schemaToolStrict?: boolean;
+}
+
+interface AnthropicToolUseLike {
+  input?: unknown;
+  name?: string;
+  type?: string;
+}
+
+export interface AnthropicGenerateObjectResponse {
+  content?: AnthropicToolUseLike[];
+  usage?: Anthropic.Messages.Usage | null;
+}
+
+export const buildAnthropicGenerateObjectRequest = async (
   payload: GenerateObjectPayload,
-  options?: GenerateObjectOptions,
-  pricing?: Pricing,
-) => {
+  config?: AnthropicGenerateObjectConfig,
+): Promise<{
+  requestParams: Anthropic.MessageCreateParamsNonStreaming;
+  schemaToolName?: string;
+}> => {
   const { schema, messages, model, tools } = payload;
 
   log('generateObject called with model: %s', model);
@@ -30,81 +49,163 @@ export const createAnthropicGenerateObject = async (
   const systemPromptText =
     typeof system_message === 'string' && system_message.trim() ? system_message : undefined;
   const user_messages = messages.filter((m) => m.role !== 'system');
-  const anthropicMessages = await buildAnthropicMessages(user_messages);
+  // Key the prefill guard on the model actually sent: a custom logical id the
+  // parser doesn't recognize can map to a Claude 4.6+/5 `requestModel`, which
+  // would otherwise skip the strip and 400 on a trailing assistant turn.
+  const anthropicMessages = stripUnsupportedClaudeAssistantPrefill(
+    config?.requestModel ?? model,
+    await buildAnthropicMessages(user_messages),
+  );
 
   log('converted %d messages to Anthropic format', anthropicMessages.length);
 
-  const systemPrompts = systemPromptText
-    ? [
-        {
-          text: systemPromptText,
-          type: 'text' as const,
-        },
-      ]
-    : undefined;
-
   let finalTools;
-  let tool_choice: Anthropic.ToolChoiceAny | Anthropic.ToolChoiceTool;
+  let tool_choice: Anthropic.ToolChoiceAuto | Anthropic.ToolChoiceAny | Anthropic.ToolChoiceTool;
+  let schemaToolName: string | undefined;
+  // Check both the logical model id and the mapped request model: a router may map
+  // `claude-fable-5-1` to an opaque deployment / inference-profile id that
+  // `rejectsForcedToolChoice` cannot parse, and forced tool_choice would still 400.
+  const forcedToolChoiceRejected = [model, config?.requestModel].some(
+    (id): id is string => !!id && rejectsForcedToolChoice(id),
+  );
+  // With `tool_choice: auto` nothing forces the model to call a tool, so the
+  // official migration guide asks callers to state the requirement in the prompt.
+  // Without it the model may answer in plain text and the parser silently returns
+  // `undefined` / `[]` to callers that expect structured output.
+  // https://platform.claude.com/docs/en/models/fable-5-1/whats-new-fable-5-1#forced-tool-use-is-not-supported
+  let toolUseInstruction: string | undefined;
   if (tools) {
     finalTools = buildAnthropicTools(tools);
-    tool_choice = { type: 'any' };
+    tool_choice = forcedToolChoiceRejected ? { type: 'auto' } : { type: 'any' };
+    if (forcedToolChoiceRejected) {
+      toolUseInstruction =
+        'You must respond by calling one of the provided tools. Do not reply with plain text.';
+    }
   } else if (schema) {
     // Convert OpenAI-style schema to Anthropic tool format
     const tool: Anthropic.ToolUnion = {
       description:
         schema.description || 'Generate structured output according to the provided schema',
-      input_schema: schema.schema as any,
+      input_schema: schema.schema as Anthropic.Tool.InputSchema,
       name: schema.name || 'structured_output',
+      // Without forced tool_choice, `strict: true` is what keeps the arguments
+      // schema-valid. Respect an explicit `strict: false` opt-out though: strict
+      // mode requires every declared property to be required, and schemas with
+      // optional fields would otherwise fail validation with a 400.
+      ...(forcedToolChoiceRejected
+        ? { strict: schema.strict !== false }
+        : config?.schemaToolStrict && schema.strict !== undefined
+          ? { strict: schema.strict }
+          : {}),
     };
     log('converted tool: %O', tool);
 
     finalTools = [tool];
-    tool_choice = { name: tool.name, type: 'tool' };
+    schemaToolName = tool.name;
+    tool_choice = forcedToolChoiceRejected
+      ? { type: 'auto' }
+      : config?.schemaToolChoice === 'any'
+        ? { type: 'any' }
+        : { name: tool.name, type: 'tool' };
+    if (forcedToolChoiceRejected) {
+      toolUseInstruction = `You must respond by calling the \`${tool.name}\` tool. Do not reply with plain text.`;
+    }
   } else {
     throw new Error('tools or schema is required');
   }
 
-  try {
-    log('calling Anthropic API with max_tokens: %d', 64_000);
+  const systemPrompts =
+    systemPromptText || toolUseInstruction
+      ? [
+          {
+            text: [systemPromptText, toolUseInstruction].filter(Boolean).join('\n\n'),
+            type: 'text' as const,
+          },
+        ]
+      : undefined;
 
-    const response = await client.messages.create(
-      {
-        max_tokens: 64_000,
-        messages: anthropicMessages,
-        model,
-        system: systemPrompts,
-        tool_choice,
-        tools: finalTools,
-      },
-      { signal: options?.signal },
+  return {
+    requestParams: {
+      max_tokens: config?.maxTokens ?? 64_000,
+      messages: anthropicMessages,
+      model,
+      system: systemPrompts,
+      ...config?.requestParams,
+      tool_choice,
+      tools: finalTools,
+    },
+    schemaToolName,
+  };
+};
+
+export const emitAnthropicGenerateObjectUsage = async (
+  response: AnthropicGenerateObjectResponse,
+  options?: GenerateObjectOptions,
+  pricing?: Pricing,
+) => {
+  const initialUsage = buildAnthropicInitialUsage(response.usage);
+  if (initialUsage) {
+    await options?.onUsage?.(withUsageCost(initialUsage, pricing));
+  }
+};
+
+export const parseAnthropicGenerateObjectResponse = (
+  response: AnthropicGenerateObjectResponse,
+  schemaToolName?: string,
+) => {
+  const content = response.content ?? [];
+
+  if (schemaToolName) {
+    const toolUseBlock = content.find(
+      (block) => block.type === 'tool_use' && block.name === schemaToolName,
     );
+
+    if (!toolUseBlock || toolUseBlock.type !== 'tool_use') {
+      log('no tool use found in response (expected tool: %s)', schemaToolName);
+      return undefined;
+    }
+
+    log('extracted tool input: %O', toolUseBlock.input);
+    return toolUseBlock.input;
+  }
+
+  return content
+    .filter((block) => block.type === 'tool_use')
+    .map((block) => ({ arguments: block.input, name: block.name }));
+};
+
+/**
+ * Generate structured output using Anthropic Claude API with Function Calling
+ */
+export const createAnthropicGenerateObject = async (
+  client: Anthropic,
+  payload: GenerateObjectPayload,
+  options?: GenerateObjectOptions,
+  pricing?: Pricing,
+  config?: AnthropicGenerateObjectConfig,
+) => {
+  const { requestParams, schemaToolName } = await buildAnthropicGenerateObjectRequest(
+    payload,
+    config,
+  );
+  const finalRequestParams = config?.requestModel
+    ? { ...requestParams, model: config.requestModel }
+    : requestParams;
+
+  try {
+    log('calling Anthropic API with max_tokens: %d', finalRequestParams.max_tokens);
+
+    const response = await client.messages.create(finalRequestParams, {
+      headers: options?.headers,
+      signal: options?.signal,
+    });
 
     log('received response with %d content blocks', response.content.length);
     log('response: %O', response);
 
-    const initialUsage = buildAnthropicInitialUsage(response.usage);
-    if (initialUsage) {
-      await options?.onUsage?.(withUsageCost(initialUsage, pricing));
-    }
+    await emitAnthropicGenerateObjectUsage(response, options, pricing);
 
-    // Extract the tool use result
-    if (tool_choice.type === 'tool') {
-      const toolUseBlock = response.content.find(
-        (block) => block.type === 'tool_use' && block.name === tool_choice.name,
-      );
-
-      if (!toolUseBlock || toolUseBlock.type !== 'tool_use') {
-        log('no tool use found in response (expected tool: %s)', tool_choice.name);
-        return undefined;
-      }
-
-      log('extracted tool input: %O', toolUseBlock.input);
-      return toolUseBlock.input;
-    }
-
-    return response.content
-      .filter((block) => block.type === 'tool_use')
-      .map((block) => ({ arguments: block.input, name: block.name }));
+    return parseAnthropicGenerateObjectResponse(response, schemaToolName);
   } catch (error) {
     log('generateObject error: %O', error);
     throw error;

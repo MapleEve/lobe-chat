@@ -21,6 +21,7 @@ export type {
   ContextNode,
   MessageNode,
   PinnedMessage,
+  SignalCallbacksNode,
   TasksNode,
 } from './contextTree';
 
@@ -28,4 +29,12 @@ export type {
 export type { FlatMessage, FlatMessageExtra, FlatMessageRole } from './flatMessageList';
 
 // Shared Types
-export type { HelperMaps, IdNode, Message, MessageGroupMetadata, ParseResult } from './shared';
+export type {
+  HelperMaps,
+  IdNode,
+  Message,
+  MessageGroupMetadata,
+  ParseOptions,
+  ParseResult,
+  ThreadScope,
+} from './shared';

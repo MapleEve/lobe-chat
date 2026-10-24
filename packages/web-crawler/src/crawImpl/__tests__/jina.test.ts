@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createMockResponse } from '../../test-utils';
 import * as withTimeoutModule from '../../utils/withTimeout';
@@ -19,6 +19,15 @@ describe('jina crawler', () => {
     vi.spyOn(withTimeoutModule, 'withTimeout').mockImplementation((fn) =>
       fn(new AbortController().signal),
     );
+    delete process.env.JINA_API_KEY;
+    delete process.env.JINA_READER_API_KEY;
+    delete process.env.JINA_USE_CN_DOMAINS;
+  });
+
+  afterEach(() => {
+    delete process.env.JINA_API_KEY;
+    delete process.env.JINA_READER_API_KEY;
+    delete process.env.JINA_USE_CN_DOMAINS;
   });
 
   it('should crawl url successfully', async () => {
@@ -150,17 +159,44 @@ describe('jina crawler', () => {
     });
   });
 
-  it('should return undefined if response is not ok', async () => {
-    mockFetch.mockResolvedValue(
-      createMockResponse(null, { ok: false, status: 500, statusText: 'Internal Server Error' }),
+  it('should use cn reader domain when JINA_USE_CN_DOMAINS is true', async () => {
+    process.env.JINA_USE_CN_DOMAINS = 'true';
+
+    const mockResponse = createMockResponse(
+      {
+        code: 200,
+        data: {
+          content: 'test content',
+        },
+      },
+      { ok: true },
     );
 
-    const result = await jina('https://example.com', { filterOptions: {} });
+    mockFetch.mockResolvedValue(mockResponse);
 
-    expect(result).toBeUndefined();
+    await jina('https://example.com', { filterOptions: {} });
+
+    expect(mockFetch).toHaveBeenCalledWith('https://r.jinaai.cn/https://example.com', {
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': '',
+        'x-send-from': 'LobeChat Community',
+      },
+      signal: expect.any(AbortSignal),
+    });
   });
 
-  it('should return undefined if response code is not 200', async () => {
+  it('should throw HTTP status error if response is not ok', async () => {
+    mockFetch.mockResolvedValue(
+      createMockResponse(null, { ok: false, status: 429, statusText: 'Too Many Requests' }),
+    );
+
+    await expect(jina('https://example.com', { filterOptions: {} })).rejects.toThrow(
+      'Jina request failed with status 429: Too Many Requests',
+    );
+  });
+
+  it('should throw error if response code is not 200', async () => {
     const mockResponse = createMockResponse(
       {
         code: 400,
@@ -171,9 +207,9 @@ describe('jina crawler', () => {
 
     mockFetch.mockResolvedValue(mockResponse);
 
-    const result = await jina('https://example.com', { filterOptions: {} });
-
-    expect(result).toBeUndefined();
+    await expect(jina('https://example.com', { filterOptions: {} })).rejects.toThrow(
+      'Jina request failed with code 400: Bad Request',
+    );
   });
 
   it('should throw error if fetch throws non-fetch-failed error', async () => {

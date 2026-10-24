@@ -2,38 +2,31 @@
 
 import { useUnmount } from 'ahooks';
 import { memo, Suspense } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams } from 'react-router';
 import { createStoreUpdater } from 'zustand-utils';
 
-import Loading from '@/components/Loading/BrandTextLoading';
+import { delayed } from '@/components/Skeleton/Delayed';
+import SurfaceSkeleton from '@/components/Skeleton/Surface';
 import PageExplorer from '@/features/PageExplorer';
-import { PageTitle } from '@/features/Pages';
 import { usePageStore } from '@/store/page';
 import { getIdFromIdentifier } from '@/utils/identifier';
 
-/**
- * Pages route - dedicated page for managing documents/pages
- * This is extracted from the /resource route to have its own dedicated space
- */
 const PagesPage = memo(() => {
   const storeUpdater = createStoreUpdater(usePageStore);
   const params = useParams<{ id: string }>();
 
   const pageId = getIdFromIdentifier(params.id ?? '', 'docs');
-  storeUpdater('selectedPageId', pageId);
 
-  // Clear activeAgentId when unmounting (leaving chat page)
   useUnmount(() => {
     usePageStore.setState({ selectedPageId: undefined });
   });
 
+  storeUpdater('selectedPageId', pageId);
+
   return (
-    <>
-      <PageTitle />
-      <Suspense fallback={<Loading debugId="PagesPage" />}>
-        <PageExplorer pageId={pageId} />
-      </Suspense>
-    </>
+    <Suspense fallback={delayed(<SurfaceSkeleton variant={'editor'} />)}>
+      <PageExplorer pageId={pageId} />
+    </Suspense>
   );
 });
 

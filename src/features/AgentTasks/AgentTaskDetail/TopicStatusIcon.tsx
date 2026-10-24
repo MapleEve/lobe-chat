@@ -1,26 +1,32 @@
-import { Icon } from '@lobehub/ui';
-import { cssVar } from 'antd-style';
-import {
-  CircleAlert,
-  CircleCheck,
-  CircleDashed,
-  CircleSlash,
-  CircleX,
-  type LucideIcon,
-} from 'lucide-react';
+import { cssVar, Icon } from '@lobehub/ui';
+import { CircleAlert } from 'lucide-react';
 import { memo } from 'react';
 
-type TopicRunStatus = 'canceled' | 'completed' | 'failed' | 'pending' | 'running' | 'timeout';
+import { EXECUTION_STATUS_VISUALS, type ExecutionStatusVisual } from '@/components/ExecutionStatus';
 
-const STATIC_META: Record<
-  Exclude<TopicRunStatus, 'running'>,
-  { color: string; icon: LucideIcon }
-> = {
-  canceled: { color: cssVar.colorTextSecondary, icon: CircleSlash },
-  completed: { color: cssVar.colorSuccess, icon: CircleCheck },
-  failed: { color: cssVar.colorError, icon: CircleX },
-  pending: { color: cssVar.colorTextQuaternary, icon: CircleDashed },
+type TopicRunStatus =
+  | 'canceled'
+  | 'completed'
+  | 'device_offline'
+  | 'failed'
+  | 'pending'
+  | 'quota_limited'
+  | 'running'
+  | 'timeout'
+  | 'transient_failed';
+
+const STATIC_META: Record<Exclude<TopicRunStatus, 'running'>, ExecutionStatusVisual> = {
+  canceled: EXECUTION_STATUS_VISUALS.canceled,
+  completed: EXECUTION_STATUS_VISUALS.completed,
+  // The run's device was unavailable; it is retried, not failed.
+  device_offline: { color: cssVar.colorWarning, icon: CircleAlert },
+  failed: EXECUTION_STATUS_VISUALS.failed,
+  // Not-yet-started run: same glyph as a backlog task.
+  pending: EXECUTION_STATUS_VISUALS.backlog,
+  // A usage limit or a transport fault: retried on a schedule, not failed.
+  quota_limited: { color: cssVar.colorWarning, icon: CircleAlert },
   timeout: { color: cssVar.colorWarning, icon: CircleAlert },
+  transient_failed: { color: cssVar.colorWarning, icon: CircleAlert },
 };
 
 const RunningIcon = memo<{ size: number }>(({ size }) => {

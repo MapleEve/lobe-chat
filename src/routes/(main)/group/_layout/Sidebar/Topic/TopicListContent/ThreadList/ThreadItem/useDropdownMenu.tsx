@@ -1,55 +1,68 @@
-import { type MenuProps } from '@lobehub/ui';
-import { Icon } from '@lobehub/ui';
-import { App } from 'antd';
+import { type DropdownItem } from '@lobehub/ui';
+import { confirmModal, Icon } from '@lobehub/ui';
 import { PencilLine, Trash } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { openRenameModal } from '@/components/RenameModal';
+import { usePermission } from '@/hooks/usePermission';
 import { useChatStore } from '@/store/chat';
 
 interface ThreadItemDropdownMenuProps {
   id: string;
-  toggleEditing: (visible?: boolean) => void;
+  title: string;
 }
 
 export const useThreadItemDropdownMenu = ({
   id,
-  toggleEditing,
-}: ThreadItemDropdownMenuProps): (() => MenuProps['items']) => {
+  title,
+}: ThreadItemDropdownMenuProps): (() => DropdownItem[]) => {
   const { t } = useTranslation(['thread', 'common']);
-  const { modal } = App.useApp();
+  const { allowed: canEditThread } = usePermission('edit_own_content');
 
-  const [removeThread] = useChatStore((s) => [s.removeThread]);
+  const [removeThread, updateThreadTitle] = useChatStore((s) => [
+    s.removeThread,
+    s.updateThreadTitle,
+  ]);
 
   return useCallback(() => {
     return [
       {
+        disabled: !canEditThread,
         icon: <Icon icon={PencilLine} />,
         key: 'rename',
         label: t('rename', { ns: 'common' }),
         onClick: () => {
-          toggleEditing(true);
+          openRenameModal({
+            defaultValue: title,
+            onSave: (newTitle) => updateThreadTitle(id, newTitle),
+          });
         },
+        sfSymbol: 'pencil',
       },
       {
         type: 'divider' as const,
       },
       {
         danger: true,
+        disabled: !canEditThread,
         icon: <Icon icon={Trash} />,
         key: 'delete',
         label: t('delete', { ns: 'common' }),
         onClick: () => {
-          modal.confirm({
-            centered: true,
+          confirmModal({
+            cancelText: t('cancel', { ns: 'common' }),
+            content: t('actions.confirmRemoveThread'),
             okButtonProps: { danger: true },
+            okText: t('delete', { ns: 'common' }),
             onOk: async () => {
               await removeThread(id);
             },
-            title: t('actions.confirmRemoveThread'),
+            title: t('delete', { ns: 'common' }),
           });
         },
+        sfSymbol: 'trash',
       },
-    ].filter(Boolean) as MenuProps['items'];
-  }, [id, removeThread, toggleEditing, t, modal]);
+    ].filter(Boolean) as DropdownItem[];
+  }, [id, canEditThread, removeThread, title, updateThreadTitle, t]);
 };

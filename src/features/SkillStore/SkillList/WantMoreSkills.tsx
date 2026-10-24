@@ -1,29 +1,38 @@
 'use client';
 
-import { Flexbox } from '@lobehub/ui';
-import { Typography } from 'antd';
+import { cssVar, Flexbox, Text } from '@lobehub/ui';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useFeedbackModal } from '@/hooks/useFeedbackModal';
+import { openFeedbackModal } from '@/components/FeedbackModal';
 
 const WantMoreSkills = memo(() => {
   const { t } = useTranslation('setting');
-  const { open: openFeedbackModal } = useFeedbackModal();
 
   const handleClick = () => {
     openFeedbackModal({
-      message: t('skillStore.wantMore.feedback.message'),
-      title: t('skillStore.wantMore.feedback.title'),
+      initialValues: {
+        message: t('skillStore.wantMore.feedback.message'),
+        title: t('skillStore.wantMore.feedback.title'),
+      },
     });
   };
 
   return (
     <Flexbox align="center" justify="center" paddingBlock={24}>
-      <Typography.Text type="secondary">
+      <Text type={'secondary'}>
         {t('skillStore.wantMore.reachedEnd')}{' '}
-        <Typography.Link onClick={handleClick}>{t('skillStore.wantMore.action')}</Typography.Link>
-      </Typography.Text>
+        <a
+          href={'#'}
+          style={{ color: cssVar.colorLink }}
+          onClick={(e) => {
+            e.preventDefault();
+            handleClick();
+          }}
+        >
+          {t('skillStore.wantMore.action')}
+        </a>
+      </Text>
     </Flexbox>
   );
 });

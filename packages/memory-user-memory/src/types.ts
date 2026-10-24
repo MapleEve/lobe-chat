@@ -43,7 +43,18 @@ export interface ExtractorOptions extends ExtractorTemplateProps {
     ) => Promise<void> | void;
   };
   messageIds?: string[];
+  /**
+   * S3 key of the parent memory job trace. When provided, propagated into
+   * the per-call `llm_generation_tracing` row as `metadata.parent_memory_trace_key`,
+   * giving offline analysis a backlink from a single generateObject call to the
+   * job-level memory trace that spawned it.
+   */
+  parentMemoryTraceKey?: string;
   sourceId?: string;
+  /** Stable ID shared by calls in an extraction task without a chat topic. */
+  taskId?: string;
+  /** Topic identity for extraction scoped to one chat topic. Leave unset for cross-topic sources. */
+  topicId?: string;
   userId?: string;
 }
 
@@ -63,7 +74,10 @@ export interface GatekeeperTemplateProps extends ExtractorTemplateProps {
   gateKeeperLanguage?: string;
 }
 
-export type GatekeeperOptions = Pick<ExtractorOptions, 'retrievedContexts' | 'topK'> & {
+export type GatekeeperOptions = Pick<
+  ExtractorOptions,
+  'retrievedContexts' | 'taskId' | 'topicId' | 'topK'
+> & {
   additionalMessages?: OpenAIChatMessage[];
   callbacks?: ExtractorOptions['callbacks'];
   gateKeeperLanguage?: string;

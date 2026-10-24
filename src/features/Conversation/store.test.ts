@@ -10,6 +10,7 @@ import { type ConversationContext, type ConversationHooks } from './types';
 vi.mock('@/store/chat', () => ({
   useChatStore: {
     getState: vi.fn(() => ({
+      dbMessagesMap: {},
       messagesMap: {},
       operations: {},
       optimisticCreateMessage: vi.fn(),
@@ -42,7 +43,6 @@ vi.mock('@/store/chat', () => ({
       sendMessage: vi.fn(),
       switchTopic: vi.fn(),
       summaryTopicTitle: vi.fn(),
-      internal_updateTopicLoading: vi.fn(),
     })),
     setState: vi.fn(),
   },
@@ -59,10 +59,7 @@ vi.mock('@/store/agent', () => ({
 
 vi.mock('@/store/agent/selectors', () => ({
   agentChatConfigSelectors: {
-    currentChatConfig: vi.fn(() => ({
-      enableAutoCreateTopic: false,
-      autoCreateTopicThreshold: 5,
-    })),
+    currentChatConfig: vi.fn(() => ({})),
   },
   agentSelectors: {
     currentAgentConfig: vi.fn(() => ({ model: 'gpt-4', provider: 'openai' })),
@@ -201,6 +198,47 @@ describe('ConversationStore', () => {
   });
 
   describe('UI Actions', () => {
+    describe('fillInputMessage', () => {
+      it('should replace the composer content and focus the editor', () => {
+        const context: ConversationContext = {
+          agentId: 'session-1',
+          topicId: null,
+          threadId: null,
+        };
+        const editor = {
+          focus: vi.fn(),
+          setDocument: vi.fn(),
+        };
+        const store = createStore({ context });
+
+        act(() => {
+          store.getState().setEditor(editor);
+          store.getState().updateInputMessage('Existing draft');
+          store.getState().fillInputMessage('Editable opening question');
+        });
+
+        expect(store.getState().inputMessage).toBe('Editable opening question');
+        expect(editor.setDocument).toHaveBeenNthCalledWith(1, 'text', '');
+        expect(editor.setDocument).toHaveBeenNthCalledWith(2, 'text', 'Editable opening question');
+        expect(editor.focus).toHaveBeenCalledOnce();
+      });
+
+      it('should update the input state before the editor is ready', () => {
+        const context: ConversationContext = {
+          agentId: 'session-1',
+          topicId: null,
+          threadId: null,
+        };
+        const store = createStore({ context });
+
+        act(() => {
+          store.getState().fillInputMessage('Editable opening question');
+        });
+
+        expect(store.getState().inputMessage).toBe('Editable opening question');
+      });
+    });
+
     describe('updateInputMessage', () => {
       it('should update input message', () => {
         const context: ConversationContext = {

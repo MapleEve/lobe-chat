@@ -1,3 +1,9 @@
+import { verifyRunStatuses } from '@lobechat/const/verify';
+import type {
+  AgentOperationCompletionReason,
+  AgentOperationStatus,
+  VerifyCheckItem,
+} from '@lobechat/types';
 import { boolean, index, integer, jsonb, pgTable, text } from 'drizzle-orm/pg-core';
 
 import { amountNumeric, timestamps, timestamptz } from './_helpers';
@@ -5,24 +11,7 @@ import { agents } from './agent';
 import { chatGroups } from './chatGroup';
 import { tasks } from './task';
 import { threads, topics } from './topic';
-
-const operationStatuses = [
-  'idle',
-  'running',
-  'waiting_for_human',
-  'done',
-  'error',
-  'interrupted',
-] as const;
-
-const completionReasons = [
-  'done',
-  'error',
-  'interrupted',
-  'max_steps',
-  'cost_limit',
-  'waiting_for_human',
-] as const;
+import { workspaces } from './workspace';
 
 export interface AgentOperationInterruption {
   canResume: boolean;
@@ -40,6 +29,8 @@ export interface AgentOperationError {
 export interface AgentOperationAppContext {
   defaultTaskAssigneeAgentId?: string;
   documentId?: string | null;
+  /** The agent a builder run edits (scope `agent_builder`); the run itself is owned by the builder. */
+  editingAgentId?: string;
   groupId?: string | null;
   scope?: string | null;
   sessionId?: string;
@@ -57,6 +48,7 @@ export const agentOperations = pgTable(
      * so this column is intentionally not a foreign key.
      */
     userId: text('user_id').notNull(),
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
 
     agentId: text('agent_id').references(() => agents.id, { onDelete: 'set null' }),
     topicId: text('topic_id').references(() => topics.id, { onDelete: 'set null' }),
@@ -68,8 +60,24 @@ export const agentOperations = pgTable(
     parentOperationId: text('parent_operation_id'),
 
     // ---- Lifecycle ----
-    status: text('status', { enum: operationStatuses }).notNull(),
-    completionReason: text('completion_reason', { enum: completionReasons }),
+    status: text('status').$type<AgentOperationStatus>().notNull(),
+    completionReason: text('completion_reason').$type<AgentOperationCompletionReason>(),
+
+    // ---- Verify (delivery checker) — DEPRECATED, moved to verify_runs ----
+    // The plan snapshot + rollup status now live on `verify_runs` (the session
+    // entity), which links back here via `verify_runs.operation_id`. These columns
+    // are retained only to avoid an ALTER on this analytics table; they are no
+    // longer read or written by the verify pipeline and are dropped in a later
+    // cleanup migration.
+    // Denormalized rollup of the verify (delivery checker) state. Shares the
+    // single `verifyRunStatuses` set from `@lobechat/const/verify` so it can't drift
+    // from `verify_runs.status`.
+    /** @deprecated read from verify_runs.status */
+    verifyStatus: text('verify_status', { enum: verifyRunStatuses }),
+    /** @deprecated read from verify_runs.plan */
+    verifyPlan: jsonb('verify_plan').$type<VerifyCheckItem[]>(),
+    /** @deprecated read from verify_runs.plan_confirmed_at */
+    verifyPlanConfirmedAt: timestamptz('verify_plan_confirmed_at'),
 
     startedAt: timestamptz('started_at'),
     completedAt: timestamptz('completed_at'),
@@ -127,6 +135,7 @@ export const agentOperations = pgTable(
   },
   (t) => [
     index('agent_operations_user_id_idx').on(t.userId),
+    index('agent_operations_workspace_id_idx').on(t.workspaceId),
     index('agent_operations_agent_id_idx').on(t.agentId),
     index('agent_operations_topic_id_idx').on(t.topicId),
     index('agent_operations_thread_id_idx').on(t.threadId),

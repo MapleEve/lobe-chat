@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import type { PipelineContext } from '../../types';
 import type { ToolCallConfig } from '../ToolCall';
-import { ToolCallProcessor } from '../ToolCall';
+import { PENDING_TOOL_RESULT_CONTENT, ToolCallProcessor } from '../ToolCall';
 
 describe('ToolCallProcessor', () => {
   const createContext = (messages: any[]): PipelineContext => ({
@@ -264,7 +264,7 @@ describe('ToolCallProcessor', () => {
       });
     });
 
-    // LOBE-7761: protect against history poisoning from invalid tool_call arguments
+    // protect against history poisoning from invalid tool_call arguments
     it('should sanitize invalid tool arguments in history to "{}"', async () => {
       const processor = new ToolCallProcessor(defaultConfig);
       const context = createContext([
@@ -275,7 +275,7 @@ describe('ToolCallProcessor', () => {
           tools: [
             {
               apiName: 'executeCode',
-              // exact shape from the LOBE-7761 NVIDIA/Qwen trace
+              // exact shape from the NVIDIA/Qwen trace
               arguments: '{, "description": "Create data models", "language": "python"}',
               id: 'call_1',
               identifier: 'code',
@@ -337,6 +337,61 @@ describe('ToolCallProcessor', () => {
       expect(result.messages[0].name).toBe('web.search');
       expect(result.messages[0].tool_call_id).toBe('call_1');
       expect(result.messages[0].role).toBe('tool');
+    });
+
+    // A new user turn can run while a deferred callSubAgent is still parked on
+    // its empty placeholder; the model used to read that slot as an empty result.
+    it('should replace a still-pending deferred tool placeholder with a running note', async () => {
+      const processor = new ToolCallProcessor(defaultConfig);
+      const pending = {
+        content: '',
+        id: 'msg-tool-1',
+        plugin: { apiName: 'callSubAgent', identifier: 'lobe-agent', type: 'builtin' },
+        pluginState: { status: 'pending', threadId: 'thd_1' },
+        role: 'tool',
+        tool_call_id: 'call_1',
+      };
+
+      const result = await processor.process(createContext([pending]));
+
+      expect(result.messages[0].content).toBe(PENDING_TOOL_RESULT_CONTENT);
+    });
+
+    it('should keep the running note when the turn switched to a model without tool calling', async () => {
+      const processor = new ToolCallProcessor({ ...defaultConfig, isCanUseFC: () => false });
+      const pending = {
+        content: '',
+        id: 'msg-tool-1',
+        plugin: { apiName: 'callSubAgent', identifier: 'lobe-agent', type: 'builtin' },
+        pluginState: { status: 'pending' },
+        role: 'tool',
+        tool_call_id: 'call_1',
+      };
+
+      const result = await processor.process(createContext([pending]));
+
+      expect(result.messages[0]).toMatchObject({
+        content: PENDING_TOOL_RESULT_CONTENT,
+        role: 'user',
+      });
+    });
+
+    it('should keep the real result once a deferred tool has been backfilled', async () => {
+      const processor = new ToolCallProcessor(defaultConfig);
+      const done = {
+        content: 'Rome was founded in 753 BC.',
+        id: 'msg-tool-1',
+        plugin: { apiName: 'callSubAgent', identifier: 'lobe-agent', type: 'builtin' },
+        pluginState: { status: 'completed', threadId: 'thd_1' },
+        role: 'tool',
+        tool_call_id: 'call_1',
+      };
+      const emptyCompleted = { ...done, content: '', pluginState: { status: 'completed' } };
+
+      const result = await processor.process(createContext([done, emptyCompleted]));
+
+      expect(result.messages[0].content).toBe('Rome was founded in 753 BC.');
+      expect(result.messages[1].content).toBe('');
     });
 
     it('should use custom genToolCallingName for tool messages', async () => {

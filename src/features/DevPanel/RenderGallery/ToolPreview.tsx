@@ -1,46 +1,33 @@
 'use client';
 
-import { Block, Flexbox, Segmented, Tag, Text } from '@lobehub/ui';
-import { createStaticStyles } from 'antd-style';
-import { Component, type ReactNode, useMemo, useState } from 'react';
+import { createStaticStyles, Flexbox, Tabs, Tag, Text } from '@lobehub/ui';
+import { useMemo, useState } from 'react';
 
 import {
   bodyKindForMode,
   deriveFixtureProps,
-  type FixtureBodyKind,
   type LifecycleMode,
   type ToolRenderFixtureVariant,
 } from './lifecycleMode';
+import { ToolBodySlot, ToolInspectorSlot } from './toolSurfaces';
 import type { ApiEntry } from './useDevtoolsEntries';
 import { toApiAnchor } from './useDevtoolsEntries';
 
 const styles = createStaticStyles(({ css, cssVar }) => ({
   card: css`
     scroll-margin-block-start: 16px;
-
     overflow: hidden;
-
-    border: 1px solid ${cssVar.colorBorderSecondary};
-    border-radius: 20px;
-
+    border-block-end: 1px solid ${cssVar.colorBorderSecondary};
     background: ${cssVar.colorBgContainer};
-    box-shadow: ${cssVar.boxShadowSecondary};
   `,
   cardBody: css`
-    padding: 20px;
+    gap: 0;
   `,
   cardHeader: css`
-    gap: 10px;
-
-    padding-block: 20px;
-    padding-inline: 24px;
+    gap: 6px;
+    padding: 12px;
     border-block-end: 1px solid ${cssVar.colorBorderSecondary};
-
-    background: linear-gradient(
-      180deg,
-      ${cssVar.colorFillQuaternary} 0%,
-      ${cssVar.colorBgContainer} 100%
-    );
+    background: ${cssVar.colorFillQuaternary};
   `,
   code: css`
     overflow: auto;
@@ -48,7 +35,6 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
     max-height: 320px;
     margin: 0;
     padding: 12px;
-    border-radius: 12px;
 
     font-size: 12px;
     line-height: 1.55;
@@ -56,76 +42,29 @@ const styles = createStaticStyles(({ css, cssVar }) => ({
 
     background: ${cssVar.colorFillQuaternary};
   `,
+  fixture: css`
+    padding: 12px;
+  `,
   fixtureSummary: css`
     cursor: pointer;
     user-select: none;
     font-size: 12px;
     color: ${cssVar.colorTextTertiary};
   `,
-  missingShell: css`
-    padding-block: 12px;
-    padding-inline: 16px;
-    border: 1px dashed ${cssVar.colorBorderSecondary};
-    border-radius: 12px;
-
-    font-size: 12px;
-    color: ${cssVar.colorTextTertiary};
-  `,
   previewShell: css`
-    padding: 16px;
-    border-radius: 16px;
+    padding: 12px;
     background: ${cssVar.colorFillQuaternary};
+  `,
+  previewSection: css`
+    gap: 8px;
+    padding: 12px;
+    border-block-end: 1px solid ${cssVar.colorBorderSecondary};
   `,
   sectionLabel: css`
     gap: 8px;
     align-items: center;
   `,
 }));
-
-class RenderBoundary extends Component<
-  { children: ReactNode; label: string },
-  { error?: Error | undefined }
-> {
-  constructor(props: { children: ReactNode; label: string }) {
-    super(props);
-    this.state = { error: undefined };
-  }
-
-  static getDerivedStateFromError(error: Error) {
-    return { error };
-  }
-
-  override render() {
-    if (!this.state.error) return this.props.children;
-
-    return (
-      <Block padding={16} variant={'outlined'}>
-        <Flexbox gap={8}>
-          <Text fontSize={14} type={'danger'} weight={500}>
-            {this.props.label} crashed
-          </Text>
-          <Text fontSize={12} type={'secondary'}>
-            {this.state.error.message}
-          </Text>
-        </Flexbox>
-      </Block>
-    );
-  }
-}
-
-const coerceInspectorContent = (value: unknown): string | null => {
-  if (value === null || value === undefined) return null;
-  if (typeof value === 'string') return value;
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
-};
-
-const Missing = ({ kind }: { kind: string }) => (
-  <div className={styles.missingShell}>No {kind} component registered for this API.</div>
-);
 
 interface ToolPreviewProps {
   api: ApiEntry;
@@ -136,106 +75,12 @@ const ToolPreview = ({ api, mode }: ToolPreviewProps) => {
   const messageId = `devtools-${api.identifier}-${api.apiName}`;
   const toolCallId = `${messageId}-tool`;
 
-  const Inspector = api.inspector;
-  const Render = api.render;
-  const Streaming = api.streaming;
-  const Placeholder = api.placeholder;
-  const Intervention = api.intervention;
-
   const variants = api.fixture.variants;
   const [activeVariantId, setActiveVariantId] = useState<string>(variants[0]?.id ?? 'default');
   const activeVariant: ToolRenderFixtureVariant =
     variants.find((variant) => variant.id === activeVariantId) ?? variants[0];
 
   const derived = useMemo(() => deriveFixtureProps(activeVariant, mode), [activeVariant, mode]);
-
-  const targetBodyKind: FixtureBodyKind = bodyKindForMode(mode);
-
-  const inspectorResult = {
-    content: coerceInspectorContent(activeVariant.content),
-    error: derived.pluginError,
-    state: derived.pluginState,
-  };
-
-  const bodyContent = (() => {
-    switch (targetBodyKind) {
-      case 'streaming': {
-        if (Streaming) {
-          return (
-            <RenderBoundary label={'Streaming'}>
-              <Streaming
-                apiName={api.apiName}
-                args={derived.args}
-                identifier={api.identifier}
-                messageId={messageId}
-                toolCallId={toolCallId}
-              />
-            </RenderBoundary>
-          );
-        }
-        // No dedicated Streaming slot — fall back to Render shown in streaming state.
-        if (Render) {
-          return (
-            <RenderBoundary label={'Render'}>
-              <Render
-                apiName={api.apiName}
-                args={derived.args}
-                content={derived.content}
-                identifier={api.identifier}
-                messageId={messageId}
-                pluginError={derived.pluginError}
-                pluginState={derived.pluginState}
-                toolCallId={toolCallId}
-              />
-            </RenderBoundary>
-          );
-        }
-        return <Missing kind={'streaming'} />;
-      }
-      case 'placeholder': {
-        return Placeholder ? (
-          <RenderBoundary label={'Placeholder'}>
-            <Placeholder apiName={api.apiName} args={derived.args} identifier={api.identifier} />
-          </RenderBoundary>
-        ) : (
-          <Missing kind={'placeholder'} />
-        );
-      }
-      case 'intervention': {
-        return Intervention ? (
-          <RenderBoundary label={'Intervention'}>
-            <Intervention
-              apiName={api.apiName}
-              args={derived.args}
-              identifier={api.identifier}
-              interactionMode={'approval'}
-              messageId={messageId}
-            />
-          </RenderBoundary>
-        ) : (
-          <Missing kind={'intervention'} />
-        );
-      }
-      default: {
-        return Render ? (
-          <RenderBoundary label={'Render'}>
-            <Render
-              apiName={api.apiName}
-              args={derived.args}
-              content={derived.content}
-              identifier={api.identifier}
-              messageId={messageId}
-              pluginError={derived.pluginError}
-              pluginState={derived.pluginState}
-              toolCallId={toolCallId}
-            />
-          </RenderBoundary>
-        ) : (
-          <Missing kind={'render'} />
-        );
-      }
-    }
-  })();
 
   return (
     <Flexbox className={styles.card} id={toApiAnchor(api.apiName)}>
@@ -246,14 +91,14 @@ const ToolPreview = ({ api, mode }: ToolPreviewProps) => {
           </Text>
           <Tag>{api.identifier}</Tag>
           {variants.length > 1 && (
-            <Segmented
+            <Tabs
+              activeKey={activeVariant.id}
               size={'small'}
-              value={activeVariant.id}
-              options={variants.map((variant) => ({
+              items={variants.map((variant) => ({
+                key: variant.id,
                 label: variant.label,
-                value: variant.id,
               }))}
-              onChange={(value) => setActiveVariantId(value as string)}
+              onChange={(key) => setActiveVariantId(key)}
             />
           )}
         </Flexbox>
@@ -264,44 +109,42 @@ const ToolPreview = ({ api, mode }: ToolPreviewProps) => {
         )}
       </Flexbox>
 
-      <Flexbox className={styles.cardBody} gap={16}>
-        <Flexbox gap={8}>
+      <Flexbox className={styles.cardBody}>
+        <Flexbox className={styles.previewSection}>
           <Flexbox horizontal className={styles.sectionLabel}>
             <Text fontSize={12} type={'secondary'} weight={600}>
               Inspector
             </Text>
           </Flexbox>
           <div className={styles.previewShell}>
-            {Inspector ? (
-              <RenderBoundary label={'Inspector'}>
-                <Inspector
-                  apiName={api.apiName}
-                  args={derived.args}
-                  identifier={api.identifier}
-                  isArgumentsStreaming={derived.isArgumentsStreaming}
-                  isLoading={derived.isLoading}
-                  partialArgs={derived.partialArgs}
-                  pluginState={derived.pluginState}
-                  result={inspectorResult}
-                />
-              </RenderBoundary>
-            ) : (
-              <Missing kind={'inspector'} />
-            )}
+            <ToolInspectorSlot
+              api={api}
+              derived={derived}
+              toolCallId={toolCallId}
+              variant={activeVariant}
+            />
           </div>
         </Flexbox>
 
-        <Flexbox gap={8}>
+        <Flexbox className={styles.previewSection}>
           <Flexbox horizontal className={styles.sectionLabel}>
             <Text fontSize={12} type={'secondary'} weight={600}>
               Body
             </Text>
-            <Tag>{targetBodyKind}</Tag>
+            <Tag>{bodyKindForMode(mode)}</Tag>
           </Flexbox>
-          <div className={styles.previewShell}>{bodyContent}</div>
+          <div className={styles.previewShell}>
+            <ToolBodySlot
+              api={api}
+              derived={derived}
+              messageId={messageId}
+              mode={mode}
+              toolCallId={toolCallId}
+            />
+          </div>
         </Flexbox>
 
-        <details>
+        <details className={styles.fixture}>
           <summary className={styles.fixtureSummary}>Fixture payload</summary>
           <pre className={styles.code}>
             {JSON.stringify(

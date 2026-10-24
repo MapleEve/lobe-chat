@@ -13,20 +13,29 @@ import type {
   GetBotDetailParams,
   GetChannelInfoParams,
   GetMemberInfoParams,
+  GetMessengerDetailParams,
   GetReactionsParams,
   ListBotsParams,
   ListChannelsParams,
+  ListMessengerLinksParams,
+  ListMessengerPlatformsParams,
+  ListMessengersParams,
   ListPinsParams,
   ListPlatformsParams,
   ListThreadsParams,
   PinMessageParams,
   ReactToMessageParams,
+  ReadDocumentParams,
   ReadMessagesParams,
   ReplyToThreadParams,
   SearchMessagesParams,
   SendDirectMessageParams,
   SendMessageParams,
+  SendMessengerPushParams,
+  SetMessengerActiveAgentParams,
   ToggleBotParams,
+  UninstallMessengerParams,
+  UnlinkMessengerParams,
   UnpinMessageParams,
   UpdateBotParams,
 } from '../types';
@@ -57,6 +66,13 @@ class MessageExecutor extends BaseExecutor<typeof MessageApiName> {
     _ctx?: BuiltinToolContext,
   ): Promise<BuiltinToolResult> => {
     return this.runtime.readMessages(params);
+  };
+
+  readDocument = async (
+    params: ReadDocumentParams,
+    _ctx?: BuiltinToolContext,
+  ): Promise<BuiltinToolResult> => {
+    return this.runtime.readDocument(params);
   };
 
   editMessage = async (
@@ -241,6 +257,64 @@ class MessageExecutor extends BaseExecutor<typeof MessageApiName> {
     _ctx?: BuiltinToolContext,
   ): Promise<BuiltinToolResult> => {
     return this.runtime.connectBot(params);
+  };
+
+  // ==================== System Bot Messenger Management ====================
+
+  listMessengers = async (
+    params: ListMessengersParams,
+    _ctx?: BuiltinToolContext,
+  ): Promise<BuiltinToolResult> => {
+    return this.runtime.listMessengers(params);
+  };
+
+  getMessengerDetail = async (
+    params: GetMessengerDetailParams,
+    _ctx?: BuiltinToolContext,
+  ): Promise<BuiltinToolResult> => {
+    return this.runtime.getMessengerDetail(params);
+  };
+
+  uninstallMessenger = async (
+    params: UninstallMessengerParams,
+    _ctx?: BuiltinToolContext,
+  ): Promise<BuiltinToolResult> => {
+    return this.runtime.uninstallMessenger(params);
+  };
+
+  listMessengerPlatforms = async (
+    params: ListMessengerPlatformsParams,
+    _ctx?: BuiltinToolContext,
+  ): Promise<BuiltinToolResult> => {
+    return this.runtime.listMessengerPlatforms(params);
+  };
+
+  listMessengerLinks = async (
+    params: ListMessengerLinksParams,
+    _ctx?: BuiltinToolContext,
+  ): Promise<BuiltinToolResult> => {
+    return this.runtime.listMessengerLinks(params);
+  };
+
+  setMessengerActiveAgent = async (
+    params: SetMessengerActiveAgentParams,
+    _ctx?: BuiltinToolContext,
+  ): Promise<BuiltinToolResult> => {
+    return this.runtime.setMessengerActiveAgent(params);
+  };
+
+  unlinkMessenger = async (
+    params: UnlinkMessengerParams,
+    _ctx?: BuiltinToolContext,
+  ): Promise<BuiltinToolResult> => {
+    return this.runtime.unlinkMessenger(params);
+  };
+
+  sendMessengerPush = async (
+    params: SendMessengerPushParams,
+    _ctx?: BuiltinToolContext,
+  ): Promise<BuiltinToolResult> => {
+    return this.runtime.sendMessengerPush(params);
   };
 }
 

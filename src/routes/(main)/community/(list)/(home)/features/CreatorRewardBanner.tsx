@@ -1,10 +1,10 @@
 'use client';
 
-import { Button, Flexbox } from '@lobehub/ui';
-import { createStaticStyles, cx, responsive } from 'antd-style';
+import { Button, createStaticStyles, cx, Flexbox, responsive } from '@lobehub/ui';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { imageUrl, OFFICIAL_SITE } from '@/const/url';
 import { useIsDark } from '@/hooks/useIsDark';
 
 const styles = createStaticStyles(({ css }) => ({
@@ -55,7 +55,7 @@ const styles = createStaticStyles(({ css }) => ({
     width: 50%;
     border-radius: 0 12px 12px 0;
 
-    background: url('/images/banner_creator.png') right center / auto 100% no-repeat;
+    background: url(${imageUrl('banner_creator.png')}) right center / auto 100% no-repeat;
 
     ${responsive.sm} {
       display: none;
@@ -96,7 +96,11 @@ const CreatorRewardBanner = memo(() => {
           {t('home.creatorReward.subtitle')}
         </p>
         <div style={{ marginBlockStart: 4 }}>
-          <a href={'https://lobehub.com/creator?utm_source=lobehub'} rel={'noopener noreferrer'} target={'_blank'}>
+          <a
+            href={`${OFFICIAL_SITE}/creator?utm_source=lobehub`}
+            rel={'noopener noreferrer'}
+            target={'_blank'}
+          >
             <Button type={'primary'}>{t('home.creatorReward.action')}</Button>
           </a>
         </div>

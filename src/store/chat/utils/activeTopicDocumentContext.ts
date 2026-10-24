@@ -1,7 +1,18 @@
 import type { AgentRuntimeContext } from '@lobechat/agent-runtime';
-import type { ConversationContext, RuntimeActiveTopicDocumentContext } from '@lobechat/types';
+import type {
+  ConversationContext,
+  InitialPageEditorContext,
+  RuntimeActiveTopicDocumentContext,
+} from '@lobechat/types';
 
 import { agentDocumentService } from '@/services/agentDocument';
+
+interface AgentDocumentSnapshotPayload {
+  content?: string | null;
+  contentCharCount?: number | null;
+  litexml?: string | null;
+  title?: string | null;
+}
 
 export const mergeAgentRuntimeInitialContexts = (
   ...contexts: Array<AgentRuntimeContext | undefined>
@@ -34,16 +45,68 @@ export const mergeAgentRuntimeInitialContexts = (
   );
 };
 
+const resolveActiveTopicDocumentSnapshot = async (
+  agentId: string,
+  agentDocumentId?: string,
+): Promise<InitialPageEditorContext | undefined> => {
+  if (!agentDocumentId) return;
+
+  try {
+    const document = await agentDocumentService.readDocument({
+      agentId,
+      format: 'both',
+      id: agentDocumentId,
+    });
+    if (!document) return;
+
+    const snapshot = document as AgentDocumentSnapshotPayload;
+    const markdown = snapshot.content ?? '';
+    const xml = snapshot.litexml ?? '';
+
+    return {
+      markdown,
+      metadata: {
+        charCount: snapshot.contentCharCount ?? markdown.length,
+        lineCount: markdown.length > 0 ? markdown.split('\n').length : 0,
+        title: snapshot.title || 'Untitled',
+      },
+      xml,
+    };
+  } catch (error) {
+    console.error('[activeTopicDocumentContext] Failed to read topic document snapshot:', error);
+  }
+};
+
 const resolveActiveTopicDocument = async (
   context: ConversationContext,
 ): Promise<RuntimeActiveTopicDocumentContext | undefined> => {
   if (context.scope === 'page') return;
-  if (!context.agentId || !context.topicId || !context.documentId) return;
+  if (!context.agentId || !context.documentId) return;
+
+  // When the caller already knows the agent_documents row id (e.g. portal
+  // openers pass it through), skip the listDocuments reverse lookup entirely —
+  // the lookup is scoped to currentTopic and would miss docs opened outside
+  // the active topic (skills, web docs).
+  if (context.agentDocumentId) {
+    const snapshot = await resolveActiveTopicDocumentSnapshot(
+      context.agentId,
+      context.agentDocumentId,
+    );
+
+    return {
+      agentDocumentId: context.agentDocumentId,
+      documentId: context.documentId,
+      snapshot,
+      ...(snapshot?.metadata.title ? { title: snapshot.metadata.title } : {}),
+    };
+  }
+
+  if (!context.topicId) return;
 
   try {
     const documents = await agentDocumentService.listDocuments({
       agentId: context.agentId,
-      target: 'currentTopic',
+      scope: 'currentTopic',
       topicId: context.topicId,
     });
     const matchedDocument = documents.find(
@@ -53,6 +116,7 @@ const resolveActiveTopicDocument = async (
     return {
       agentDocumentId: matchedDocument?.id,
       documentId: context.documentId,
+      snapshot: await resolveActiveTopicDocumentSnapshot(context.agentId, matchedDocument?.id),
       title: matchedDocument?.title,
     };
   } catch (error) {

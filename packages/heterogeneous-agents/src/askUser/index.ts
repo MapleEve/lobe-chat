@@ -1,6 +1,6 @@
 /**
  * Producer-side MCP server + per-op bridge for Claude Code's AskUserQuestion
- * via local HTTP MCP. See `LOBE-8725` for the full design.
+ * via local HTTP MCP. See `` for the full design.
  *
  * Used by:
  *   - Electron main (`HeterogeneousAgentCtr`) — local app
@@ -13,15 +13,11 @@
  */
 export {
   AskUserBridge,
+  type AskUserBridgeOptions,
   type InterventionAnswer,
   type PendingArgs,
   type PendingOptions,
 } from './AskUserBridge';
-export {
-  AskUserMcpServer,
-  type AskUserMcpServerOptions,
-  type StartedServer,
-} from './AskUserMcpServer';
 export {
   ASK_USER_API_NAME,
   ASK_USER_MCP_SERVER_NAME,

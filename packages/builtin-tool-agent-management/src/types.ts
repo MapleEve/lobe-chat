@@ -1,4 +1,5 @@
-import type { LobeAgentConfig, MetaData } from '@lobechat/types';
+import type { HeteroAgentRuntimeDescriptor } from '@lobechat/agent-manager-runtime';
+import type { HeterogeneousProviderConfig, LobeAgentConfig, MetaData } from '@lobechat/types';
 import type { PartialDeep } from 'type-fest';
 
 /**
@@ -103,10 +104,6 @@ export interface CreateAgentState {
    */
   error?: string;
   /**
-   * The associated session ID
-   */
-  sessionId?: string;
-  /**
    * Whether the creation was successful
    */
   success: boolean;
@@ -194,6 +191,10 @@ export interface SearchAgentParams {
    */
   limit?: number;
   /**
+   * Number of workspace agents to skip, for paginating beyond the per-call limit
+   */
+  offset?: number;
+  /**
    * Search source: 'user' (own agents), 'market' (marketplace), 'all' (both)
    */
   source?: SearchAgentSource;
@@ -212,6 +213,12 @@ export interface AgentSearchItem {
    * Agent description
    */
   description?: string;
+  /**
+   * Heterogeneous agent runtime type (e.g. `claude-code`, `codex`), set only when
+   * the agent delegates execution to an external CLI/device runtime. Absent for
+   * normal model-runtime agents.
+   */
+  heteroType?: HeterogeneousProviderConfig['type'];
   /**
    * Agent ID (for user agents) or identifier (for market agents)
    */
@@ -232,15 +239,23 @@ export interface SearchAgentState {
    */
   agents: AgentSearchItem[];
   /**
+   * Whether more workspace agents exist beyond the returned page
+   */
+  hasMore?: boolean;
+  /**
    * The search keyword used
    */
   keyword?: string;
+  /**
+   * The offset used for this page of workspace agents
+   */
+  offset?: number;
   /**
    * The search source used
    */
   source: SearchAgentSource;
   /**
-   * Total count of matching agents
+   * Real total of matching agents across the searched sources (not just the returned page)
    */
   totalCount: number;
 }
@@ -270,22 +285,10 @@ export interface CallAgentParams {
    */
   instruction: string;
   /**
-   * If true, execute as an async background task
-   */
-  runAsTask?: boolean;
-  /**
    * If true (and in a group context), skip calling supervisor after agent responds.
    * Only relevant when used within agent groups. Default: false
    */
   skipCallSupervisor?: boolean;
-  /**
-   * Task title (required when runAsTask is true)
-   */
-  taskTitle?: string;
-  /**
-   * Timeout in milliseconds for task execution (default: 1800000 = 30 minutes)
-   */
-  timeout?: number;
 }
 
 // ==================== Get Agent Detail ====================
@@ -311,6 +314,12 @@ export interface GetAgentDetailState {
     openingQuestions?: string[];
     plugins?: string[];
     provider?: string;
+    /**
+     * Present only for heterogeneous agents (external CLI/runtime such as Claude
+     * Code or Codex). Describes what the external runtime is and what it can do;
+     * such agents ignore the `model`/`plugins` fields above.
+     */
+    runtime?: HeteroAgentRuntimeDescriptor;
     systemRole?: string;
   };
   /**
@@ -371,7 +380,7 @@ export interface InstallPluginParams {
    */
   identifier: string;
   /**
-   * Plugin source: 'official' (builtin/klavis/lobehub-skill) or 'market' (MCP marketplace)
+   * Plugin source: 'official' (builtin/composio/lobehub-skill) or 'market' (MCP marketplace)
    */
   source: InstallPluginSource;
 }

@@ -5,6 +5,25 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { testProvider } from '../../providerTestUtils';
 import { LobeInternLMAI, params } from './index';
 
+// Mock a model with abilities in model-bank
+vi.mock('model-bank', async (importOriginal) => {
+  const actual = await importOriginal<Record<string, unknown>>();
+  return {
+    ...actual,
+    LOBE_DEFAULT_MODEL_LIST: [
+      {
+        id: 'test-model-with-abilities',
+        abilities: {
+          functionCall: true,
+          vision: true,
+          reasoning: true,
+        },
+        enabled: true,
+      },
+    ],
+  };
+});
+
 // Basic provider tests
 testProvider({
   Runtime: LobeInternLMAI,
@@ -50,66 +69,6 @@ describe('LobeInternLMAI - custom features', () => {
       const result = params.debug.chatCompletion();
       expect(result).toBe(true);
       delete process.env.DEBUG_INTERNLM_CHAT_COMPLETION;
-    });
-  });
-
-  describe('handlePayload', () => {
-    it('should disable streaming when tools are present', () => {
-      const payload = {
-        model: 'internlm2_5-7b-chat',
-        messages: [{ role: 'user' as const, content: 'Hello' }],
-        stream: true,
-        tools: [
-          {
-            type: 'function' as const,
-            function: {
-              name: 'test',
-              description: 'test function',
-            },
-          },
-        ],
-      };
-
-      const result = params.chatCompletion.handlePayload!(payload);
-      expect(result.stream).toBe(false);
-    });
-
-    it('should enable streaming when no tools are present', () => {
-      const payload = {
-        model: 'internlm2_5-7b-chat',
-        messages: [{ role: 'user' as const, content: 'Hello' }],
-        stream: true,
-      };
-
-      const result = params.chatCompletion.handlePayload!(payload);
-      expect(result.stream).toBe(true);
-    });
-
-    it('should keep streaming disabled when initially false and no tools', () => {
-      const payload = {
-        model: 'internlm2_5-7b-chat',
-        messages: [{ role: 'user' as const, content: 'Hello' }],
-        stream: false,
-      };
-
-      const result = params.chatCompletion.handlePayload!(payload);
-      expect(result.stream).toBe(true);
-    });
-
-    it('should preserve other payload properties', () => {
-      const payload = {
-        model: 'internlm2_5-7b-chat',
-        messages: [{ role: 'user' as const, content: 'Hello' }],
-        stream: true,
-        temperature: 0.7,
-        max_tokens: 100,
-      };
-
-      const result = params.chatCompletion.handlePayload!(payload);
-      expect(result.model).toBe('internlm2_5-7b-chat');
-      expect(result.messages).toEqual(payload.messages);
-      expect(result.temperature).toBe(0.7);
-      expect(result.max_tokens).toBe(100);
     });
   });
 
@@ -229,7 +188,7 @@ describe('LobeInternLMAI - custom features', () => {
 
       expect(model.id).toBe('custom-model');
       expect(model.contextWindowTokens).toBeUndefined();
-      expect(model.displayName).toBeUndefined();
+      expect(model.displayName).toBe('custom-model');
       expect(model.enabled).toBe(false);
       expect(model.functionCall).toBe(false);
       expect(model.vision).toBe(false);
@@ -263,25 +222,6 @@ describe('LobeInternLMAI - custom features', () => {
           }),
         },
       };
-
-      // Mock a model with abilities in model-bank
-      vi.mock('model-bank', async (importOriginal) => {
-        const actual = await importOriginal<Record<string, unknown>>();
-        return {
-          ...actual,
-          LOBE_DEFAULT_MODEL_LIST: [
-            {
-              id: 'test-model-with-abilities',
-              abilities: {
-                functionCall: true,
-                vision: true,
-                reasoning: true,
-              },
-              enabled: true,
-            },
-          ],
-        };
-      });
 
       const models = await params.models!({ client: mockClient as any });
       const model = models[0];

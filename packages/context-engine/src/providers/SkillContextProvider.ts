@@ -1,4 +1,4 @@
-import { type SkillItem, skillsPrompts } from '@lobechat/prompts';
+import { type SkillItem, type SkillSource, skillsPrompts } from '@lobechat/prompts';
 import debug from 'debug';
 
 import { BaseSystemRoleProvider } from '../base/BaseSystemRoleProvider';
@@ -34,6 +34,11 @@ export interface SkillMeta {
   identifier: string;
   location?: string;
   name: string;
+  /**
+   * Skill origin. `project` skills are discovered on the device filesystem and
+   * loaded on demand via the readFile tool (see `location`).
+   */
+  source?: SkillSource;
 }
 
 /**
@@ -45,9 +50,20 @@ export interface SkillContextProviderConfig {
 }
 
 /**
+ * Select the activated skills whose full content gets injected into the system
+ * prompt by SkillContextProvider.
+ *
+ * Exported so ActivationResultTrimProcessor can decide, with the exact same
+ * predicate, whether an activateSkill tool result's full content is already
+ * carried by the system prompt and can therefore be trimmed from history.
+ */
+export const selectActivatedSkills = (enabledSkills?: SkillMeta[]): SkillMeta[] =>
+  (enabledSkills ?? []).filter((s) => s.activated && s.content);
+
+/**
  * Skill Context Provider
  * Injects lightweight skill metadata into the system prompt so the LLM knows
- * which skills are available and can invoke them via `runSkill`.
+ * which skills are available and can invoke them via `activateSkill`.
  */
 export class SkillContextProvider extends BaseSystemRoleProvider {
   readonly name = 'SkillContextProvider';
@@ -70,7 +86,7 @@ export class SkillContextProvider extends BaseSystemRoleProvider {
     }
 
     // Separate activated skills (inject content directly) from available skills (list only)
-    const activatedSkills = enabledSkills.filter((s) => s.activated && s.content);
+    const activatedSkills = selectActivatedSkills(enabledSkills);
     const availableSkills = enabledSkills.filter((s) => !s.activated);
 
     const contentParts: string[] = [];
@@ -88,6 +104,7 @@ export class SkillContextProvider extends BaseSystemRoleProvider {
         identifier: skill.identifier,
         location: skill.location,
         name: skill.name,
+        source: skill.source,
       }));
 
       const availableSkillsContent = skillsPrompts(skills);

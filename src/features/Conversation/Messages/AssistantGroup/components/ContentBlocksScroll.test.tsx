@@ -2,23 +2,10 @@
  * @vitest-environment happy-dom
  */
 import { render, screen } from '@testing-library/react';
-import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
 import ContentBlocksScroll from './ContentBlocksScroll';
 import type { RenderableAssistantContentBlock } from './types';
-
-vi.mock('@lobehub/ui', () => ({
-  Flexbox: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-  ScrollArea: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-}));
-
-vi.mock('antd-style', () => ({
-  createStaticStyles: () => ({
-    scrollTask: 'scroll-task',
-    scrollWorkflow: 'scroll-workflow',
-  }),
-}));
 
 vi.mock('./ContentBlock', () => ({
   default: ({ disableMarkdownStreaming, id }: RenderableAssistantContentBlock) => (
@@ -61,5 +48,22 @@ describe('ContentBlocksScroll', () => {
       'data-disable-markdown-streaming',
       'true',
     );
+  });
+
+  it('uses a consistent gap between workflow blocks', () => {
+    render(
+      <ContentBlocksScroll
+        assistantId="assistant-1"
+        scroll={false}
+        variant="workflow"
+        blocks={[
+          { content: 'first workflow block', id: 'block-1' },
+          { content: 'second workflow block', id: 'block-2' },
+        ]}
+      />,
+    );
+
+    const [firstBlock] = screen.getAllByTestId('content-block');
+    expect(firstBlock.parentElement!.style.getPropertyValue('--lobe-flex-gap')).toBe('8px');
   });
 });

@@ -41,13 +41,14 @@ export const KeyEnum = {
 
 export const HotkeyEnum = {
   AddUserMessage: 'addUserMessage',
-  ClearCurrentMessages: 'clearCurrentMessages',
   CommandPalette: 'commandPalette',
   DeleteAndRegenerateMessage: 'deleteAndRegenerateMessage',
   DeleteLastMessage: 'deleteLastMessage',
   EditMessage: 'editMessage',
   NavigateToChat: 'navigateToChat',
+  NextTab: 'nextTab',
   OpenChatSettings: 'openChatSettings',
+  PrevTab: 'prevTab',
   OpenHotkeyHelper: 'openHotkeyHelper',
   RegenerateMessage: 'regenerateMessage',
   SaveDocument: 'saveDocument',
@@ -55,9 +56,10 @@ export const HotkeyEnum = {
   Search: 'search',
   ShowApp: 'showApp',
   SwitchAgent: 'switchAgent',
+  SwitchTab: 'switchTab',
   ToggleLeftPanel: 'toggleLeftPanel',
   ToggleRightPanel: 'toggleRightPanel',
-  ToggleZenMode: 'toggleZenMode',
+  ToggleTerminalPanel: 'toggleTerminalPanel',
 } as const satisfies Record<string, HotkeyId>;
 
 export const HotkeyGroupEnum = {
@@ -96,8 +98,29 @@ export const HOTKEYS_REGISTRATION: HotkeyRegistration = [
   },
   {
     group: HotkeyGroupEnum.Essential,
+    id: HotkeyEnum.SwitchTab,
+    keys: combineKeys([KeyEnum.Mod, KeyEnum.Number]),
+    nonEditable: true,
+    scopes: [HotkeyScopeEnum.Global],
+  },
+  {
+    group: HotkeyGroupEnum.Essential,
+    id: HotkeyEnum.NextTab,
+    keys: combineKeys([KeyEnum.Ctrl, KeyEnum.Tab]),
+    nonEditable: true,
+    scopes: [HotkeyScopeEnum.Global],
+  },
+  {
+    group: HotkeyGroupEnum.Essential,
+    id: HotkeyEnum.PrevTab,
+    keys: combineKeys([KeyEnum.Ctrl, KeyEnum.Shift, KeyEnum.Tab]),
+    nonEditable: true,
+    scopes: [HotkeyScopeEnum.Global],
+  },
+  {
+    group: HotkeyGroupEnum.Essential,
     id: HotkeyEnum.NavigateToChat,
-    keys: combineKeys([KeyEnum.Ctrl, KeyEnum.Backquote]),
+    keys: combineKeys([KeyEnum.Ctrl, KeyEnum.Shift, KeyEnum.Backquote]),
     scopes: [HotkeyScopeEnum.Global],
   },
   {
@@ -120,9 +143,9 @@ export const HOTKEYS_REGISTRATION: HotkeyRegistration = [
   },
   // Chat
   {
-    group: HotkeyGroupEnum.Essential,
-    id: HotkeyEnum.ToggleZenMode,
-    keys: combineKeys([KeyEnum.Mod, KeyEnum.Backslash]),
+    group: HotkeyGroupEnum.Conversation,
+    id: HotkeyEnum.ToggleTerminalPanel,
+    keys: combineKeys([KeyEnum.Ctrl, KeyEnum.Backquote]),
     scopes: [HotkeyScopeEnum.Chat],
   },
   {
@@ -166,12 +189,6 @@ export const HOTKEYS_REGISTRATION: HotkeyRegistration = [
     id: HotkeyEnum.EditMessage,
     keys: combineKeys([KeyEnum.Alt, KeyEnum.LeftDoubleClick]),
     nonEditable: true,
-    scopes: [HotkeyScopeEnum.Chat],
-  },
-  {
-    group: HotkeyGroupEnum.Conversation,
-    id: HotkeyEnum.ClearCurrentMessages,
-    keys: combineKeys([KeyEnum.Alt, KeyEnum.Shift, KeyEnum.Backspace]),
     scopes: [HotkeyScopeEnum.Chat],
   },
   {

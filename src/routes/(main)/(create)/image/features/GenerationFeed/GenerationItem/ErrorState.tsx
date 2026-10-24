@@ -1,14 +1,13 @@
 'use client';
 
-import { AgentRuntimeErrorType } from '@lobechat/model-runtime';
-import { Block, Center, Icon, Text } from '@lobehub/ui';
-import { cssVar } from 'antd-style';
+import { Block, Center, cssVar, Icon, Text } from '@lobehub/ui';
 import { ImageOffIcon } from 'lucide-react';
-import { memo, useMemo } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import defaultErrorLocale from '@/locales/default/error';
 import { AsyncTaskErrorType } from '@/types/asyncTask';
+import { getRuntimeErrorMessage } from '@/utils/locale/runtimeErrorMessage';
 
 import { ActionButtons } from './ActionButtons';
 import { styles } from './styles';
@@ -18,6 +17,7 @@ import { getThumbnailMaxWidth } from './utils';
 const providerContentModerationErrorKeys = [
   'response.ProviderContentModeration',
   'response.ProviderContentModerationWarning',
+  'response.ProviderImageContentModerationCooldown',
   'response.ProviderImageContentModerationWarning',
 ] as const;
 
@@ -26,16 +26,56 @@ const providerContentModerationKeyByDefaultMessage = new Map<
   (typeof providerContentModerationErrorKeys)[number]
 >(providerContentModerationErrorKeys.map((key) => [defaultErrorLocale[key], key]));
 
+/** Older tasks persist this wording instead of a locale key. */
+providerContentModerationKeyByDefaultMessage.set(
+  'Content policy check failed. Please revise your prompt.',
+  'response.ProviderContentModeration',
+);
+
 // Error state component
 export const ErrorState = memo<ErrorStateProps>(
   ({ generation, generationBatch, aspectRatio, onDelete, onCopyError }) => {
     const { t } = useTranslation('image');
-    const { t: tError } = useTranslation('error');
+    const { t: tError, i18n } = useTranslation(['error', 'modelRuntime']);
+    const taskError = generation.task.error;
+    const retryAt = typeof taskError?.body === 'object' ? taskError.body?.retryAt : undefined;
+    const retryTime = retryAt ? Date.parse(retryAt) : NaN;
+    const [retryClock, setRetryClock] = useState(0);
+    const cooldownExpired = retryTime <= Date.now();
+
+    useEffect(() => {
+      const remaining = retryTime - Date.now();
+      if (!Number.isFinite(remaining) || remaining <= 0) return;
+
+      /** Recheck after background-tab suspension and avoid overflowing long timers. */
+      const timer = setTimeout(
+        () => setRetryClock((clock) => clock + 1),
+        Math.min(remaining, 60_000),
+      );
+      return () => clearTimeout(timer);
+    }, [retryTime, retryClock]);
 
     const errorMessage = useMemo(() => {
       if (!generation.task.error) return '';
 
       const error = generation.task.error;
+      if (
+        error.name === AsyncTaskErrorType.ProviderContentModeration &&
+        Number.isFinite(retryTime)
+      ) {
+        if (cooldownExpired) {
+          return tError('response.ProviderImageContentModerationCooldownExpired');
+        }
+
+        const time = new Intl.DateTimeFormat(i18n.resolvedLanguage || i18n.language, {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZoneName: 'short',
+        }).format(retryTime);
+        return tError('response.ProviderImageContentModerationCooldownUntil', { time });
+      }
       const errorBody = typeof error.body === 'string' ? error.body : error.body?.detail;
       const translateErrorKey = (translationKey: string, fallbackKey?: string) => {
         const translated = tError(translationKey as any);
@@ -64,22 +104,28 @@ export const ErrorState = memo<ErrorStateProps>(
           return translateErrorKey(defaultMessageTranslationKey) || errorBody;
         }
 
-        // Check if the error body is an AgentRuntimeErrorType that needs translation
-        const knownErrorTypes = Object.values(AgentRuntimeErrorType);
+        // Try the unified ERROR_CODE_SPECS-driven lookup (routes to either the
+        // new `modelRuntime` namespace or legacy `error.response.<X>`).
+        const runtimeMessage = getRuntimeErrorMessage(tError, errorBody);
         if (
-          knownErrorTypes.includes(
-            errorBody as (typeof AgentRuntimeErrorType)[keyof typeof AgentRuntimeErrorType],
-          )
+          runtimeMessage &&
+          runtimeMessage !== `modelRuntime:${errorBody}` &&
+          runtimeMessage !== `response.${errorBody}`
         ) {
-          // Use localized error message - ComfyUI errors are under 'response' namespace
-          const translationKey = `response.${errorBody}`;
-          return translateErrorKey(translationKey, errorBody) || errorBody;
+          return runtimeMessage;
         }
       }
 
       // Fallback to original error message
       return errorBody || error.name || 'Unknown error';
-    }, [generation.task.error, tError]);
+    }, [
+      generation.task.error,
+      tError,
+      i18n.resolvedLanguage,
+      i18n.language,
+      retryTime,
+      cooldownExpired,
+    ]);
 
     const isProviderContentModerationError =
       generation.task.error?.name === AsyncTaskErrorType.ProviderContentModeration;

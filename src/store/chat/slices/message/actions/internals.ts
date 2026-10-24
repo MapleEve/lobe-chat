@@ -1,5 +1,4 @@
-import { parse } from '@lobechat/conversation-flow';
-import { type TraceEventPayloads } from '@lobechat/types';
+import { type ConversationContext, type TraceEventPayloads } from '@lobechat/types';
 import debug from 'debug';
 import isEqual from 'fast-deep-equal';
 
@@ -11,6 +10,8 @@ import { displayMessageSelectors } from '../../../selectors';
 import { messageMapKey } from '../../../utils/messageMapKey';
 import { type MessageDispatch } from '../reducer';
 import { messagesReducer } from '../reducer';
+import { getMessageTranscript } from '../transcript';
+import { reconcileAssistantToolLinks } from '../utils/reconcileTools';
 
 const log = debug('lobe-store:message-internals');
 
@@ -19,6 +20,12 @@ const log = debug('lobe-store:message-internals');
  */
 
 type Setter = StoreSetter<ChatStore>;
+type MessageDispatchContext = NonNullable<
+  Parameters<ChatStore['internal_getConversationContext']>[0]
+> & {
+  conversationContext?: ConversationContext;
+};
+
 export const messageInternals = (set: Setter, get: () => ChatStore, _api?: unknown) =>
   new MessageInternalsActionImpl(set, get, _api);
 
@@ -32,12 +39,10 @@ export class MessageInternalsActionImpl {
     this.#get = get;
   }
 
-  internal_dispatchMessage = (
-    payload: MessageDispatch,
-    context?: { operationId?: string },
-  ): void => {
+  internal_dispatchMessage = (payload: MessageDispatch, context?: MessageDispatchContext): void => {
     // Get full conversation context (including scope) from operation or global state
-    const ctx = this.#get().internal_getConversationContext(context);
+    const ctx =
+      context?.conversationContext ?? this.#get().internal_getConversationContext(context);
     log(
       '[internal_dispatchMessage] context: agentId=%s, topicId=%s, threadId=%s, scope=%s',
       ctx.agentId,
@@ -52,18 +57,19 @@ export class MessageInternalsActionImpl {
     const rawMessages = this.#get().dbMessagesMap[messagesKey] || [];
     const updatedRawMessages = messagesReducer(rawMessages, payload);
 
-    const nextDbMap = { ...this.#get().dbMessagesMap, [messagesKey]: updatedRawMessages };
+    // Re-link any tool row whose parent assistant lost its tools[] entry — an
+    // optimistic updateMessage{tools} on the wrong/old assistant during a step
+    // boundary can drop the link while the tool row survives, orphaning the
+    // tool bubble. Reconcile on the RAW array so the SoT stays consistent (see
+    // reconcileAssistantToolLinks).
+    const reconciled = reconcileAssistantToolLinks(updatedRawMessages);
 
-    if (isEqual(nextDbMap, this.#get().dbMessagesMap)) return;
+    if (isEqual(reconciled, rawMessages)) return;
 
-    // parse to get display messages
-    const { flatList } = parse(updatedRawMessages);
-    const nextDisplayMap = { ...this.#get().messagesMap, [messagesKey]: flatList };
-
-    this.#set({ dbMessagesMap: nextDbMap, messagesMap: nextDisplayMap }, false, {
-      payload,
-      type: `dispatchMessage/${payload.type}`,
-    });
+    log('[internal_dispatchMessage] %s | key=%s', payload.type, messagesKey);
+    const transcript = getMessageTranscript(this.#set, this.#get);
+    transcript.commit(ctx, reconciled, true);
+    transcript.settle(ctx);
   };
 
   internal_traceMessage = async (id: string, payload: TraceEventPayloads): Promise<void> => {

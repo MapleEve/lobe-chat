@@ -7,6 +7,7 @@ import type {
   EmojiValue,
   FetchOptions,
   FetchResult,
+  FileUpload,
   FormattedContent,
   Logger,
   RawMessage,
@@ -16,10 +17,11 @@ import type {
 import { Message, parseMarkdown } from 'chat';
 import mime from 'mime';
 
-import { WechatApiClient } from './api';
+import { getWechatTextSendCount, WechatApiClient, WechatUploadMediaType } from './api';
 import { WechatFormatConverter } from './format-converter';
-import type { WechatAdapterConfig, WechatRawMessage, WechatThreadId } from './types';
+import type { MessageItem, WechatAdapterConfig, WechatRawMessage, WechatThreadId } from './types';
 import { MessageItemType, MessageState, MessageType } from './types';
+import { decodeWechatVoice } from './voice';
 
 /**
  * Extract text content from a WechatRawMessage's item_list.
@@ -121,8 +123,11 @@ export function extractMediaMetadata(msg: WechatRawMessage): Attachment[] {
       }
       case MessageItemType.VOICE: {
         if (!item.voice_item) break;
+        // Voice arrives as SILK but is decoded to WAV on download (see
+        // `decodeWechatVoice`), so advertise the shape consumers will get.
         attachments.push({
-          mimeType: 'audio/silk',
+          mimeType: 'audio/wav',
+          name: 'voice.wav',
           type: 'audio',
           url: '',
         } as Attachment);
@@ -189,9 +194,17 @@ export async function downloadMediaFromRawMessage(
         case MessageItemType.VOICE: {
           if (!hasCdnMedia(item) || !item.voice_item?.media) break;
           const voiceBuf = await api.downloadCdnMedia(item.voice_item.media);
+          // Raw SILK is unplayable in browsers and unsupported by audio-capable
+          // models; decode to WAV here so every downstream consumer gets a
+          // real audio file (a failed decode falls back to the raw bytes).
+          const voice = await decodeWechatVoice(voiceBuf, item.voice_item, (error) =>
+            warn(`[wechat] voice decode failed, keeping raw SILK bytes: ${String(error)}`),
+          );
           attachments.push({
-            buffer: voiceBuf,
-            mimeType: 'audio/silk',
+            buffer: voice.buffer,
+            mimeType: voice.mimeType,
+            name: voice.name,
+            size: voice.buffer.length,
             type: 'audio',
             url: '',
           } as Attachment);
@@ -307,6 +320,100 @@ async function downloadImageItemFromRaw(
 }
 
 /**
+ * Normalized outbound media descriptor used by `WechatAdapter.postMessage`.
+ * Bridges chat-sdk's two attachment shapes (Attachment vs FileUpload) into a
+ * single buffer-backed record before uploading to the iLink CDN.
+ */
+interface OutboundMediaSpec {
+  buffer: Buffer;
+  mimeType?: string;
+  name?: string;
+  type: 'image' | 'file' | 'video' | 'audio';
+}
+
+/**
+ * Resolve an Attachment's binary bytes from any of the SDK's three sources:
+ * inline `data`, lazy `fetchData()`, or `url`. Returns undefined if none work.
+ */
+async function loadAttachmentBuffer(
+  attachment: Attachment,
+  logger?: Pick<Logger, 'warn'>,
+): Promise<Buffer | undefined> {
+  if (attachment.data) {
+    return blobOrBufferToBuffer(attachment.data);
+  }
+  if (typeof attachment.fetchData === 'function') {
+    try {
+      // chat@4.39.0 widened fetchData to Promise<Buffer | ArrayBuffer>
+      return await blobOrBufferToBuffer(await attachment.fetchData());
+    } catch (error) {
+      logger?.warn?.('Attachment fetchData failed: %s', error);
+    }
+  }
+  if (attachment.url) {
+    try {
+      const response = await fetch(attachment.url, {
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (response.ok) {
+        return Buffer.from(await response.arrayBuffer());
+      }
+      logger?.warn?.('Attachment url fetch failed: HTTP %d', response.status);
+    } catch (error) {
+      logger?.warn?.('Attachment url fetch failed: %s', error);
+    }
+  }
+  return undefined;
+}
+
+async function fileUploadToBuffer(file: FileUpload): Promise<Buffer | undefined> {
+  return blobOrBufferToBuffer(file.data);
+}
+
+async function blobOrBufferToBuffer(
+  data: Buffer | Blob | ArrayBuffer,
+): Promise<Buffer | undefined> {
+  if (Buffer.isBuffer(data)) return data;
+  if (data instanceof ArrayBuffer) return Buffer.from(data);
+  if (typeof Blob !== 'undefined' && data instanceof Blob) {
+    return Buffer.from(await data.arrayBuffer());
+  }
+  return undefined;
+}
+
+/**
+ * Infer a chat-sdk Attachment.type from a filename or mime type when we only
+ * have a FileUpload (which doesn't carry the type field).
+ */
+function inferAttachmentType(
+  filename: string,
+  mimeType?: string,
+): 'image' | 'file' | 'video' | 'audio' {
+  const resolvedMime = mimeType || mime.getType(filename) || '';
+  if (resolvedMime.startsWith('image/')) return 'image';
+  if (resolvedMime.startsWith('video/')) return 'video';
+  if (resolvedMime.startsWith('audio/')) return 'audio';
+  return 'file';
+}
+
+function mapToUploadMediaType(type: 'image' | 'file' | 'video' | 'audio'): WechatUploadMediaType {
+  switch (type) {
+    case 'image': {
+      return WechatUploadMediaType.IMAGE;
+    }
+    case 'video': {
+      return WechatUploadMediaType.VIDEO;
+    }
+    case 'audio': {
+      return WechatUploadMediaType.VOICE;
+    }
+    default: {
+      return WechatUploadMediaType.FILE;
+    }
+  }
+}
+
+/**
  * WeChat (iLink) adapter for Chat SDK.
  *
  * Handles webhook requests forwarded by the long-polling monitor
@@ -316,6 +423,7 @@ export class WechatAdapter implements Adapter<WechatThreadId, WechatRawMessage> 
   readonly name = 'wechat';
   private readonly api: WechatApiClient;
   private readonly formatConverter: WechatFormatConverter;
+  private readonly onBeforeSendMessage?: WechatAdapterConfig['onBeforeSendMessage'];
   private _userName: string;
   private _botUserId?: string;
   private chat!: ChatInstance;
@@ -336,8 +444,9 @@ export class WechatAdapter implements Adapter<WechatThreadId, WechatRawMessage> 
   }
 
   constructor(config: WechatAdapterConfig & { userName?: string }) {
-    this.api = new WechatApiClient(config.botToken, config.botId);
+    this.api = new WechatApiClient(config.botToken, config.botId, config.baseUrl);
     this.formatConverter = new WechatFormatConverter();
+    this.onBeforeSendMessage = config.onBeforeSendMessage;
     this._userName = config.userName || 'wechat-bot';
     this._botUserId = config.botId;
   }
@@ -406,7 +515,39 @@ export class WechatAdapter implements Adapter<WechatThreadId, WechatRawMessage> 
     const text = this.formatConverter.renderPostable(message);
     const contextToken = this.contextTokens.get(threadId) || '';
 
-    await this.api.sendMessage(id, text, contextToken);
+    const sentItems: MessageItem[] = [];
+
+    if (text.trim()) {
+      await this.onBeforeSendMessage?.({ count: getWechatTextSendCount(text), toUserId: id });
+      await this.api.sendMessage(id, text, contextToken);
+      sentItems.push({ text_item: { text }, type: MessageItemType.TEXT });
+    }
+
+    // Per protocol-spec §6.7, media items are sent as separate sendmessage calls
+    // (one item per request). We collect attachments + files from the postable
+    // payload, materialize their bytes, and upload each to the iLink CDN.
+    const mediaSpecs = await this.collectMediaSpecs(message);
+    for (const spec of mediaSpecs) {
+      try {
+        const item = await this.uploadAndBuildMediaItem(id, spec);
+        await this.onBeforeSendMessage?.({ count: 1, toUserId: id });
+        await this.api.sendItem(id, item, contextToken);
+        sentItems.push(item);
+      } catch (error) {
+        // Single-attachment failure shouldn't abort the rest — log and continue.
+        this.logger.warn(
+          'Failed to send %s attachment "%s" to WeChat: %s',
+          spec.type,
+          spec.name ?? '(unnamed)',
+          error,
+        );
+      }
+    }
+
+    // Fall back to an empty TEXT item if nothing was sent (preserves previous
+    // behavior where postMessage always produced a raw message).
+    const itemList =
+      sentItems.length > 0 ? sentItems : [{ text_item: { text }, type: MessageItemType.TEXT }];
 
     return {
       id: `bot_${Date.now()}`,
@@ -415,7 +556,7 @@ export class WechatAdapter implements Adapter<WechatThreadId, WechatRawMessage> 
         context_token: contextToken,
         create_time_ms: Date.now(),
         from_user_id: this._botUserId || '',
-        item_list: [{ text_item: { text }, type: MessageItemType.TEXT }],
+        item_list: itemList,
         message_id: 0,
         message_state: MessageState.FINISH,
         message_type: MessageType.BOT,
@@ -423,6 +564,100 @@ export class WechatAdapter implements Adapter<WechatThreadId, WechatRawMessage> 
       },
       threadId,
     };
+  }
+
+  /**
+   * Pull `attachments` and `files` off a postable message (the shape varies by
+   * union member) and normalize them into a flat list with the bytes we'll need.
+   */
+  private async collectMediaSpecs(message: AdapterPostableMessage): Promise<OutboundMediaSpec[]> {
+    if (typeof message === 'string') return [];
+
+    const attachments: Attachment[] = [];
+    const files: FileUpload[] = [];
+
+    // PostableRaw / PostableMarkdown / PostableAst all use the same `attachments` + `files` shape.
+    // PostableCard only carries `files`. CardElement carries neither.
+    if ('attachments' in message && Array.isArray(message.attachments)) {
+      attachments.push(...message.attachments);
+    }
+    if ('files' in message && Array.isArray(message.files)) {
+      files.push(...message.files);
+    }
+
+    const specs: OutboundMediaSpec[] = [];
+
+    for (const attachment of attachments) {
+      const buffer = await loadAttachmentBuffer(attachment, this.logger);
+      if (!buffer) continue;
+      specs.push({
+        buffer,
+        mimeType: attachment.mimeType,
+        name: attachment.name,
+        type: attachment.type,
+      });
+    }
+
+    for (const file of files) {
+      const buffer = await fileUploadToBuffer(file);
+      if (!buffer) continue;
+      specs.push({
+        buffer,
+        mimeType: file.mimeType,
+        name: file.filename,
+        type: inferAttachmentType(file.filename, file.mimeType),
+      });
+    }
+
+    return specs;
+  }
+
+  /**
+   * Upload one media buffer to the iLink CDN and build the corresponding
+   * MessageItem to send via {@link WechatApiClient.sendItem}.
+   */
+  private async uploadAndBuildMediaItem(
+    toUserId: string,
+    spec: OutboundMediaSpec,
+  ): Promise<MessageItem> {
+    const mediaType = mapToUploadMediaType(spec.type);
+    const result = await this.api.uploadCdnMedia(toUserId, mediaType, spec.buffer);
+    const cdnMedia = {
+      aes_key: result.aesKey,
+      encrypt_query_param: result.encryptQueryParam,
+      encrypt_type: 1 as const,
+    };
+
+    switch (mediaType) {
+      case WechatUploadMediaType.IMAGE: {
+        return {
+          image_item: { media: cdnMedia },
+          type: MessageItemType.IMAGE,
+        };
+      }
+      case WechatUploadMediaType.VIDEO: {
+        return {
+          type: MessageItemType.VIDEO,
+          video_item: { media: cdnMedia, video_size: result.cipherSize },
+        };
+      }
+      case WechatUploadMediaType.VOICE: {
+        return {
+          type: MessageItemType.VOICE,
+          voice_item: { media: cdnMedia },
+        };
+      }
+      default: {
+        return {
+          file_item: {
+            file_name: spec.name,
+            len: String(spec.buffer.length),
+            media: cdnMedia,
+          },
+          type: MessageItemType.FILE,
+        };
+      }
+    }
   }
 
   async editMessage(

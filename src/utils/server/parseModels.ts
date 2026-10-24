@@ -1,7 +1,11 @@
 import { getModelPropertyWithFallback } from '@lobechat/model-runtime';
 import { merge } from '@lobechat/utils';
 import { produce } from 'immer';
-import { type AiFullModelCard, type AiModelType } from 'model-bank';
+import {
+  type AiFullModelCard,
+  type AiModelType,
+  type LobeDefaultAiModelListItem,
+} from 'model-bank';
 
 /**
  * Parse model string to add or remove models.
@@ -10,6 +14,7 @@ export const parseModelString = async (
   providerId: string,
   modelString: string = '',
   withDeploymentName = false,
+  builtinModels?: LobeDefaultAiModelListItem[],
 ) => {
   const models: AiFullModelCard[] = [];
   let removeAll = false;
@@ -54,6 +59,7 @@ export const parseModelString = async (
       id,
       'type',
       providerId,
+      builtinModels,
     );
 
     const model: AiFullModelCard = {
@@ -122,11 +128,13 @@ export const parseModelString = async (
  * Extract a special method to process chatModels
  */
 export const transformToAiModelList = async ({
+  builtinModels,
   modelString = '',
   defaultModels,
   providerId,
   withDeploymentName = false,
 }: {
+  builtinModels?: LobeDefaultAiModelListItem[];
   defaultModels: AiFullModelCard[];
   modelString?: string;
   providerId: string;
@@ -134,7 +142,18 @@ export const transformToAiModelList = async ({
 }): Promise<AiFullModelCard[] | undefined> => {
   if (!modelString) return undefined;
 
-  const modelConfig = await parseModelString(providerId, modelString, withDeploymentName);
+  // Use the same snapshot for type inference and metadata merging.
+  if (!builtinModels) {
+    const { loadModels } = await import('@/business/client/model-bank/loadModels');
+    builtinModels = await loadModels();
+  }
+
+  const modelConfig = await parseModelString(
+    providerId,
+    modelString,
+    withDeploymentName,
+    builtinModels,
+  );
   let chatModels = modelConfig.removeAll ? [] : defaultModels;
 
   // Handle removal logic
@@ -142,20 +161,17 @@ export const transformToAiModelList = async ({
     chatModels = chatModels.filter((m) => !modelConfig.removed.includes(m.id));
   }
 
-  // Asynchronously load configuration
-  const { LOBE_DEFAULT_MODEL_LIST } = await import('model-bank');
-
   return produce(chatModels, (draft) => {
     // Handle add or replace logic
     for (const toAddModel of modelConfig.add) {
-      // first try to find the model in LOBE_DEFAULT_MODEL_LIST to confirm if it is a known model
-      let knownModel = LOBE_DEFAULT_MODEL_LIST.find(
+      // First try to find the model in the provider-specific builtin list.
+      let knownModel = builtinModels.find(
         (model) => model.id === toAddModel.id && model.providerId === providerId,
       );
 
       if (!knownModel) {
-        knownModel = LOBE_DEFAULT_MODEL_LIST.find((model) => model.id === toAddModel.id);
-        if (knownModel) knownModel.providerId = providerId;
+        knownModel = builtinModels.find((model) => model.id === toAddModel.id);
+        if (knownModel) knownModel = { ...knownModel, providerId };
       }
       if (withDeploymentName) {
         toAddModel.config = toAddModel.config || {};
@@ -187,7 +203,7 @@ export const transformToAiModelList = async ({
           );
         }
       } else {
-        // if the model is not in LOBE_DEFAULT_MODEL_LIST, add it as a new custom model
+        // If the model is not in the builtin list, add it as a new custom model.
         draft.push({
           ...toAddModel,
           displayName: toAddModel.displayName || toAddModel.id,
@@ -202,8 +218,14 @@ export const extractEnabledModels = async (
   providerId: string,
   modelString: string = '',
   withDeploymentName = false,
+  builtinModels?: LobeDefaultAiModelListItem[],
 ) => {
-  const modelConfig = await parseModelString(providerId, modelString, withDeploymentName);
+  const modelConfig = await parseModelString(
+    providerId,
+    modelString,
+    withDeploymentName,
+    builtinModels,
+  );
   const list = modelConfig.add.map((m) => m.id);
 
   if (list.length === 0) return;

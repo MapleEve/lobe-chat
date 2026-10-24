@@ -1,6 +1,15 @@
-import { Accordion, AccordionItem, Checkbox, Flexbox, Icon, InputNumber, Text } from '@lobehub/ui';
-import { Select } from '@lobehub/ui/base-ui';
-import { createStaticStyles, cssVar, cx } from 'antd-style';
+import {
+  Accordion,
+  Checkbox,
+  createStaticStyles,
+  cssVar,
+  cx,
+  Flexbox,
+  Icon,
+  InputNumber,
+  Select,
+  Text,
+} from '@lobehub/ui';
 import dayjs, { type Dayjs } from 'dayjs';
 import { Globe, Hash, SlidersHorizontal } from 'lucide-react';
 import { memo, useCallback, useState } from 'react';
@@ -99,10 +108,8 @@ interface SchedulerFormProps {
 const SchedulerForm = memo<SchedulerFormProps>(({ maxExecutions, onChange, pattern, timezone }) => {
   const { t } = useTranslation('chat');
 
-  // Optimistic local state: seed once from props at mount, then own the values
-  // locally. Don't re-sync from props on every change — otherwise the async
-  // server roundtrip (updateSchedule → refreshTaskDetail) bounces stale prop
-  // values back into the form during rapid edits and clobbers the user input.
+  // Local state seeded once from props at mount; never re-synced. Keeps the
+  // form in user control even if an unrelated detail refresh runs concurrently.
   // Parent should `key={taskId}` this component to remount cleanly across tasks.
   const [initial] = useState(() => {
     const parsed = parseCronPattern(pattern || DEFAULT_PATTERN);
@@ -258,20 +265,20 @@ const SchedulerForm = memo<SchedulerFormProps>(({ maxExecutions, onChange, patte
           </Flexbox>
         )}
         {scheduleType === 'hourly' && (
-          <Flexbox flex={1} gap={6}>
+          <Flexbox flex={1.5} gap={6} style={{ minWidth: 0 }}>
             <Text className={styles.fieldLabel}>{t('taskSchedule.every')}</Text>
             <Flexbox horizontal align="center" gap={6}>
               <InputNumber
                 max={24}
                 min={1}
-                style={{ flex: 1 }}
+                style={{ flex: 1, minWidth: 0 }}
+                suffix={<Text type="secondary">{t('taskSchedule.hours')}</Text>}
                 value={hourlyInterval}
                 variant="filled"
                 onChange={handleHourlyIntervalChange}
               />
-              <Text type="secondary">{t('taskSchedule.hours')}</Text>
               <Select
-                style={{ width: 80 }}
+                style={{ flexShrink: 0, width: 80 }}
                 value={triggerTime.minute()}
                 variant="filled"
                 options={[
@@ -307,70 +314,75 @@ const SchedulerForm = memo<SchedulerFormProps>(({ maxExecutions, onChange, patte
         </Flexbox>
       )}
 
-      <Accordion defaultExpandedKeys={[]} gap={0}>
-        <AccordionItem
-          itemKey="advanced"
-          paddingBlock={6}
-          paddingInline={0}
-          title={
-            <Flexbox horizontal align="center" gap={8}>
-              <Icon color={cssVar.colorTextDescription} icon={SlidersHorizontal} size={14} />
-              <Text style={{ color: cssVar.colorTextSecondary }}>
-                {t('taskSchedule.advancedSettings')}
-              </Text>
-            </Flexbox>
-          }
-        >
-          <Flexbox gap={14} paddingBlock={'8px 4px'}>
-            <Flexbox gap={6}>
-              <Flexbox horizontal align="center" gap={6}>
-                <Icon color={cssVar.colorTextDescription} icon={Globe} size={14} />
-                <Text className={styles.fieldLabel}>{t('taskSchedule.timezone')}</Text>
-              </Flexbox>
-              <Select
-                showSearch
-                options={TIMEZONE_OPTIONS}
-                popupMatchSelectWidth={false}
-                value={tz}
-                variant="filled"
-                optionRender={(option) => {
-                  const data = option as TimezoneOption;
-                  return (
-                    <div className={styles.timezoneOption}>
-                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {data.label}
-                      </span>
-                      <span className={styles.timezoneOffset}>{data.offset}</span>
-                    </div>
-                  );
-                }}
-                onChange={handleTimezoneChange}
-              />
-            </Flexbox>
+      <Accordion
+        defaultValue={[]}
+        gap={0}
+        indicatorPlacement="inline"
+        styles={{ header: { paddingBlock: 6, paddingInline: 0 } }}
+        items={[
+          {
+            children: (
+              <Flexbox gap={14} paddingBlock={'8px 4px'}>
+                <Flexbox gap={6}>
+                  <Flexbox horizontal align="center" gap={6}>
+                    <Icon color={cssVar.colorTextDescription} icon={Globe} size={14} />
+                    <Text className={styles.fieldLabel}>{t('taskSchedule.timezone')}</Text>
+                  </Flexbox>
+                  <Select
+                    showSearch
+                    options={TIMEZONE_OPTIONS}
+                    popupMatchSelectWidth={false}
+                    value={tz}
+                    variant="filled"
+                    optionRender={(option) => {
+                      const data = option as TimezoneOption;
+                      return (
+                        <div className={styles.timezoneOption}>
+                          <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {data.label}
+                          </span>
+                          <span className={styles.timezoneOffset}>{data.offset}</span>
+                        </div>
+                      );
+                    }}
+                    onChange={handleTimezoneChange}
+                  />
+                </Flexbox>
 
-            <Flexbox gap={6}>
-              <Flexbox horizontal align="center" gap={6}>
-                <Icon color={cssVar.colorTextDescription} icon={Hash} size={14} />
-                <Text className={styles.fieldLabel}>{t('taskSchedule.maxExecutions')}</Text>
+                <Flexbox gap={6}>
+                  <Flexbox horizontal align="center" gap={6}>
+                    <Icon color={cssVar.colorTextDescription} icon={Hash} size={14} />
+                    <Text className={styles.fieldLabel}>{t('taskSchedule.maxExecutions')}</Text>
+                  </Flexbox>
+                  <Flexbox horizontal align="center" gap={12}>
+                    <InputNumber
+                      disabled={continuous}
+                      min={1}
+                      placeholder={t('taskSchedule.maxExecutionsPlaceholder')}
+                      style={{ flex: 1 }}
+                      value={maxExec ?? undefined}
+                      variant="filled"
+                      onChange={handleMaxExecChange}
+                    />
+                    <Checkbox checked={continuous} onChange={handleContinuousChange}>
+                      {t('taskSchedule.continuous')}
+                    </Checkbox>
+                  </Flexbox>
+                </Flexbox>
               </Flexbox>
-              <Flexbox horizontal align="center" gap={12}>
-                <InputNumber
-                  disabled={continuous}
-                  min={1}
-                  placeholder={t('taskSchedule.maxExecutionsPlaceholder')}
-                  style={{ flex: 1 }}
-                  value={maxExec ?? undefined}
-                  variant="filled"
-                  onChange={handleMaxExecChange}
-                />
-                <Checkbox checked={continuous} onChange={handleContinuousChange}>
-                  {t('taskSchedule.continuous')}
-                </Checkbox>
+            ),
+            key: 'advanced',
+            title: (
+              <Flexbox horizontal align="center" gap={8}>
+                <Icon color={cssVar.colorTextDescription} icon={SlidersHorizontal} size={14} />
+                <Text style={{ color: cssVar.colorTextSecondary }}>
+                  {t('taskSchedule.advancedSettings')}
+                </Text>
               </Flexbox>
-            </Flexbox>
-          </Flexbox>
-        </AccordionItem>
-      </Accordion>
+            ),
+          },
+        ]}
+      />
     </Flexbox>
   );
 });

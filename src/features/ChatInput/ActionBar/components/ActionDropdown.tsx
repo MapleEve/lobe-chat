@@ -1,13 +1,18 @@
 'use client';
 
 import {
+  type BaseMenuItemType,
   type DropdownMenuPopupProps,
   type DropdownMenuProps,
+  type MenuInfo,
   type MenuItemType,
-  type MenuProps,
   type PopoverTrigger,
 } from '@lobehub/ui';
 import {
+  createGlobalStyle,
+  createStaticStyles,
+  cssVar,
+  cx,
   DropdownMenuPopup,
   DropdownMenuPortal,
   DropdownMenuPositioner,
@@ -15,7 +20,6 @@ import {
   DropdownMenuTrigger,
   renderDropdownMenuItems,
 } from '@lobehub/ui';
-import { createStaticStyles, cx } from 'antd-style';
 import { type CSSProperties, type ReactNode } from 'react';
 import {
   isValidElement,
@@ -31,26 +35,154 @@ import {
 import DebugNode from '@/components/DebugNode';
 import { useIsMobile } from '@/hooks/useIsMobile';
 
-const styles = createStaticStyles(({ css }) => ({
+import { type MenuOpenChangeDetails, shouldVetoMenuClose } from './menuCloseVeto';
+
+const styles = createStaticStyles(({ css, cssVar }) => ({
   dropdownMenu: css`
     .ant-avatar {
-      margin-inline-end: var(--ant-margin-xs);
+      margin-inline-end: var(--lobe-margin-xs);
     }
   `,
   trigger: css`
     outline: none;
+
+    /* Keyboard users still need a landmark for where Enter will land. */
+    &:focus-visible {
+      border-radius: ${cssVar.borderRadius};
+      outline: 2px solid ${cssVar.colorPrimary};
+      outline-offset: 2px;
+    }
   `,
 }));
 
+const SubmenuScrollStyle = createGlobalStyle`
+  /* base-ui DropdownMenu.Item reserves an indicator slot (empty aria-hidden
+     span) for checkbox/radio variants. Our menu items don't use it, so the
+     empty slot only contributes left whitespace. Collapse it across both
+     the top-level menu and any nested submenu popups. */
+  [role='menu'] [role='menuitem'] > * > span[aria-hidden='true']:empty,
+  [role='menu'] [role='menuitem'] > span[aria-hidden='true']:empty {
+    display: none;
+  }
+
+  [data-submenu] > [role='menu'] {
+    will-change: auto;
+
+    /* Submenus have 0ms animation, so disabling compositing is safe.
+       Both will-change:transform AND the inherited transform: scaleY(1) from
+       Menu.Positioner ('& > *' rule) create a new containing block, which
+       breaks position:sticky for descendants and lets items leak below the
+       popup. Disable both for submenus where animation is already 0ms. */
+    transform: none !important;
+
+    overflow: hidden auto;
+    overscroll-behavior: contain;
+
+    /* The popup is shrink-to-fit, so one long item title would otherwise widen
+       the whole submenu. Bound the container and let rows fill it — the
+       min-width:0 chain below turns the overflow into an ellipsis. */
+    max-width: min(90vw, 400px);
+    max-height: min(50vh, 640px);
+    padding-block-end: 4px;
+  }
+
+  /* The skill submenu (the one with the search header) has collapsible groups,
+     so shrink-to-fit makes it resize every time a group opens or closes —
+     measured 243px collapsed vs 400px expanded, the jump driven by whichever
+     title happens to be longest. Pin the width so the container stays put and
+     the rows ellipsize into it. */
+  [data-submenu] > [role='menu']:has(.lobe-skill-submenu-search) {
+    width: min(90vw, 400px);
+  }
+
+  /* base-ui menu-item internal containers are flex by default but don't set
+     min-width:0, which blocks descendant text-overflow:ellipsis from working.
+     Force min-width:0 down the chain so long titles can truncate. */
+  [data-submenu] > [role='menu'] [role='menuitem'] > *,
+  [data-submenu] > [role='menu'] [role='menuitem'] > * > * {
+    min-width: 0;
+  }
+
+  /* Align base-ui separator color with the stats-footer's border-block-start
+     (colorBorderSecondary) so all dividers in the menu look consistent. */
+  [data-submenu] > [role='menu'] [role='separator'] {
+    background: ${cssVar.colorBorderSecondary};
+  }
+
+  /* base-ui group label is rendered inside a [role='presentation'] with its
+     own default vertical padding, which stacks with our activationGroupHeader
+     padding and inflates the gap above/below group headers. Reset only the
+     vertical padding for skill activation groups; other groups (e.g. the
+     Knowledge submenu's Libraries/Files headers) keep their default padding. */
+  [data-submenu] > [role='menu'] [role='group']:has([data-skill-activation-group]) > [role='presentation'] {
+    padding-block: 0;
+  }
+
+  /* The skill submenu is the only submenu that uses a header slot (the search
+     bar). renderDropdownMenuItems wraps it in DropdownMenuHeader's default
+     8px/12px padding — which can't be reached via props — leaving the borderless
+     search floating in a tall gap and indented past the rows below. Trim the
+     padding so the search sits snug against the divider and its icon lines up
+     with the 16px icon column shared by the menu rows. */
+  [data-submenu] > [role='menu'] > *:has(.lobe-skill-submenu-search) {
+    padding-block: 4px;
+    padding-inline: 4px;
+  }
+
+  /* Submenu triggers that opt into a custom trailing chevron (the Plus menu's
+     Skills / Web Search / Attachments rows mark their extra icon with .lobe-submenu-chevron)
+     render that chevron themselves; hide base-ui's default triangle submenu arrow
+     — always the last child of the trigger's content — so the two don't stack. */
+  .lobe-submenu-chevron {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+
+  [role='menuitem']:has(.lobe-submenu-chevron) > * > *:last-child {
+    display: none;
+  }
+`;
+
 export type ActionDropdownMenuItem = MenuItemType;
 
-export type ActionDropdownMenuItems = MenuProps<ActionDropdownMenuItem>['items'];
+/**
+ * `renderDropdownMenuItems` accepts Base UI's full item union (`BaseMenuItemType`),
+ * which is wider than antd's `MenuProps['items']` — it also covers `type: 'switch'`
+ * and `type: 'checkbox'` items. Use it here so callers can declare those directly.
+ */
+export type ActionDropdownMenuItems = BaseMenuItemType[];
 
-type ActionDropdownMenu = Omit<
-  Pick<MenuProps<ActionDropdownMenuItem>, 'className' | 'onClick' | 'style'>,
-  'items'
-> & {
-  items: ActionDropdownMenuItems | (() => ActionDropdownMenuItems);
+interface MenuItemsHostProps {
+  close: () => void;
+  decorate: (items: ActionDropdownMenuItems) => ActionDropdownMenuItems;
+  useItems: (ctx: { close: () => void }) => ActionDropdownMenuItems;
+}
+
+/**
+ * Rendered inside the popup, which Base UI only mounts while the menu is open —
+ * so `useItems` and everything it subscribes to stays off the trigger's mount path.
+ */
+const MenuItemsHost = memo<MenuItemsHostProps>(({ close, decorate, useItems }) => {
+  const items = useItems({ close });
+
+  return <>{renderDropdownMenuItems(decorate(items ?? []))}</>;
+});
+
+MenuItemsHost.displayName = 'ActionDropdownMenuItemsHost';
+
+type ActionDropdownMenu = {
+  className?: string;
+  onClick?: (info: MenuInfo) => void;
+  style?: CSSProperties;
+  items?: ActionDropdownMenuItems | (() => ActionDropdownMenuItems);
+  /**
+   * Hook form of `items`, invoked from inside the popup so it only runs while the
+   * menu is open. Use this when building the items needs hooks (store subscriptions,
+   * SWR, local state) that would otherwise run on every mount of the trigger.
+   */
+  useItems?: (ctx: { close: () => void }) => ActionDropdownMenuItems;
 };
 
 export interface ActionDropdownProps extends Omit<DropdownMenuProps, 'items'> {
@@ -101,6 +233,14 @@ const ActionDropdown = memo<ActionDropdownProps>(
 
     const handleOpenChange = useCallback(
       (nextOpen: boolean, details: Parameters<NonNullable<typeof onOpenChange>>[1]) => {
+        if (
+          !nextOpen &&
+          ((details as MenuOpenChangeDetails)?.reason === 'sibling-open' ||
+            shouldVetoMenuClose(details as MenuOpenChangeDetails))
+        ) {
+          (details as MenuOpenChangeDetails)?.cancel?.();
+          return;
+        }
         onOpenChange?.(nextOpen, details);
         if (open === undefined) setUncontrolledOpen(nextOpen);
       },
@@ -123,9 +263,8 @@ const ActionDropdown = memo<ActionDropdownProps>(
       return trigger === 'hover';
     }, [trigger]);
     const resolvedTriggerProps = useMemo(() => {
-      if (openOnHover === undefined) return { nativeButton: false, ...triggerProps };
+      if (openOnHover === undefined) return { ...triggerProps };
       return {
-        nativeButton: false,
         ...triggerProps,
         openOnHover,
       };
@@ -144,25 +283,50 @@ const ActionDropdown = memo<ActionDropdownProps>(
               children: item.children ? decorateMenuItems(item.children) : item.children,
             };
           }
+          // Switch / checkbox items are self-contained: they toggle via `onCheckedChange`,
+          // and Base UI already wires up "click the row or the control" for them. Pass them
+          // through untouched instead of wrapping their click handler.
+          if ('type' in item && (item.type === 'switch' || item.type === 'checkbox')) {
+            return item;
+          }
 
-          if ('children' in item && item.children) {
+          // Any item carrying a `children` key is a submenu (children may be optional);
+          // route them all here so plain items never inherit a submenu's click signature.
+          if ('children' in item) {
+            const itemOnOpenChange = (
+              item as { onOpenChange?: (open: boolean, details?: MenuOpenChangeDetails) => void }
+            ).onOpenChange;
             return {
               ...item,
-              children: decorateMenuItems(item.children),
-            };
+              children: item.children ? decorateMenuItems(item.children) : item.children,
+              onOpenChange: (open: boolean, details?: MenuOpenChangeDetails) => {
+                if (!open && shouldVetoMenuClose(details)) {
+                  details?.cancel?.();
+                  return;
+                }
+                itemOnOpenChange?.(open, details);
+              },
+              type: 'submenu',
+              // `children` is re-widened to the full item union; cast back to satisfy
+              // the mixed rc-menu / Base UI submenu types in `BaseMenuItemType`.
+            } as BaseMenuItemType;
           }
-          const itemOnClick = 'onClick' in item ? item.onClick : undefined;
-          const closeOnClick = 'closeOnClick' in item ? item.closeOnClick : undefined;
+          // Submenus are handled above; everything else is a plain menu item. Base UI's
+          // types keep optional-`children` submenu members in scope here, so narrow to the
+          // plain-item type before wrapping the click handler.
+          const menuItem = item as ActionDropdownMenuItem;
+          const itemOnClick = menuItem.onClick;
+          const closeOnClick = menuItem.closeOnClick;
           const keepOpenOnClick = closeOnClick === false;
-          const itemLabel = 'label' in item ? item.label : undefined;
+          const itemLabel = menuItem.label;
           const shouldKeepOpen = isValidElement(itemLabel);
 
           const resolvedCloseOnClick = closeOnClick ?? (shouldKeepOpen ? false : undefined);
 
           return {
-            ...item,
+            ...menuItem,
             ...(resolvedCloseOnClick !== undefined ? { closeOnClick: resolvedCloseOnClick } : null),
-            onClick: (info) => {
+            onClick: (info: MenuInfo) => {
               if (keepOpenOnClick) {
                 info.domEvent.stopPropagation();
                 menu.onClick?.(info);
@@ -180,7 +344,13 @@ const ActionDropdown = memo<ActionDropdownProps>(
       [menu],
     );
 
+    const closePopup = useCallback(() => {
+      onOpenChange?.(false, { reason: 'item-press' } as never);
+      if (open === undefined) setUncontrolledOpen(false);
+    }, [onOpenChange, open]);
+
     const renderedItems = useMemo(() => {
+      if (menu.useItems) return null;
       if (!prefetch && !isOpen) return menuItemsRef.current;
       const sourceItems = typeof menu.items === 'function' ? menu.items() : menu.items;
       const nextItems = renderDropdownMenuItems(decorateMenuItems(sourceItems ?? []));
@@ -188,12 +358,19 @@ const ActionDropdown = memo<ActionDropdownProps>(
       menuItemsRef.current = nextItems;
 
       return nextItems;
-    }, [decorateMenuItems, isOpen, menu.items, prefetch]);
+    }, [decorateMenuItems, isOpen, menu, prefetch]);
 
     const menuContent = useMemo(() => {
-      if (!popupRender) return renderedItems;
-      return popupRender(renderedItems ?? null);
-    }, [popupRender, renderedItems]);
+      const body = menu.useItems ? (
+        <MenuItemsHost close={closePopup} decorate={decorateMenuItems} useItems={menu.useItems} />
+      ) : (
+        renderedItems
+      );
+
+      if (!popupRender) return body;
+
+      return popupRender(body ?? null);
+    }, [closePopup, decorateMenuItems, menu.useItems, popupRender, renderedItems]);
 
     const resolvedPopupClassName = useMemo<DropdownMenuPopupProps['className']>(() => {
       const popupClassName = popupProps?.className;
@@ -263,30 +440,33 @@ const ActionDropdown = memo<ActionDropdownProps>(
     }, [portalContainer]);
 
     return (
-      <DropdownMenuRoot
-        {...rest}
-        defaultOpen={defaultOpen}
-        open={open}
-        onOpenChange={handleOpenChange}
-        onOpenChangeComplete={handleOpenChangeComplete}
-      >
-        <DropdownMenuTrigger className={styles.trigger} {...resolvedTriggerProps}>
-          {children}
-        </DropdownMenuTrigger>
-        <DropdownMenuPortal container={resolvedPortalContainer} {...restPortalProps}>
-          <DropdownMenuPositioner
-            {...positionerProps}
-            hoverTrigger={Boolean(resolvedTriggerProps?.openOnHover)}
-            placement={isMobile ? 'top' : placement}
-          >
-            <DropdownMenuPopup {...resolvedPopupProps}>
-              <Suspense fallback={<DebugNode trace="ActionDropdown > popup" />}>
-                {menuContent}
-              </Suspense>
-            </DropdownMenuPopup>
-          </DropdownMenuPositioner>
-        </DropdownMenuPortal>
-      </DropdownMenuRoot>
+      <>
+        <SubmenuScrollStyle />
+        <DropdownMenuRoot
+          {...rest}
+          defaultOpen={defaultOpen}
+          open={open}
+          onOpenChange={handleOpenChange}
+          onOpenChangeComplete={handleOpenChangeComplete}
+        >
+          <DropdownMenuTrigger className={styles.trigger} {...resolvedTriggerProps}>
+            {children}
+          </DropdownMenuTrigger>
+          <DropdownMenuPortal container={resolvedPortalContainer} {...restPortalProps}>
+            <DropdownMenuPositioner
+              {...positionerProps}
+              hoverTrigger={Boolean(resolvedTriggerProps?.openOnHover)}
+              placement={isMobile ? 'top' : placement}
+            >
+              <DropdownMenuPopup {...resolvedPopupProps}>
+                <Suspense fallback={<DebugNode trace="ActionDropdown > popup" />}>
+                  {menuContent}
+                </Suspense>
+              </DropdownMenuPopup>
+            </DropdownMenuPositioner>
+          </DropdownMenuPortal>
+        </DropdownMenuRoot>
+      </>
     );
   },
 );

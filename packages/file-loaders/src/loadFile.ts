@@ -1,5 +1,5 @@
 import { stat } from 'node:fs/promises';
-import * as path from 'node:path';
+import path from 'node:path';
 
 import debug from 'debug';
 
@@ -8,6 +8,16 @@ import type { DocumentPage, FileDocument, FileMetadata, SupportedFileType } from
 import { isTextReadableFile } from './utils/isTextReadableFile';
 
 const log = debug('file-loaders:loadFile');
+
+export class UnsupportedFileTypeError extends Error {
+  fileType: string;
+
+  constructor(fileType: string, filename: string) {
+    super(`Unsupported file type '${fileType || 'unknown'}' for file '${filename}'.`);
+    this.name = 'UnsupportedFileTypeError';
+    this.fileType = fileType;
+  }
+}
 
 /**
  * Determines the file type based on the filename extension.
@@ -32,6 +42,10 @@ const getFileType = (filePath: string): SupportedFileType | undefined => {
   // Handle specific non-text or complex types
   log(`Checking specific types for extension: '${extension}'`);
   switch (extension) {
+    case 'ipynb': {
+      log('File type identified as ipynb');
+      return 'ipynb';
+    }
     case 'pdf': {
       log('File type identified as pdf');
       return 'pdf';
@@ -112,21 +126,22 @@ export const loadFile = async (
   const parserType = getFileType(filePath);
   log('Parser type determined as:', parserType);
 
-  // Use lazy loading to get the loader class - this prevents heavy dependencies
-  // like pdfjs-dist from being loaded until they're actually needed
-  const loaderType = parserType ?? 'txt';
-  const LoaderClass = await getFileLoader(loaderType);
-  log('Selected loader class:', LoaderClass.name);
-
-  if (!parserType) {
+  if (!parserType && !fsError) {
     console.warn(
-      `No specific loader found for file type '${fileType}'. Using default loader (TextLoader) as fallback.`,
+      `No specific loader found for file type '${fileType}'. Rejecting unsupported file type.`,
     );
+    throw new UnsupportedFileTypeError(fileType, filename);
   }
 
-  let pages: DocumentPage[] = [];
+  // Use lazy loading to get the loader class - this prevents heavy dependencies
+  // like pdfjs-dist from being loaded until they're actually needed
+  const LoaderClass = await getFileLoader(parserType ?? 'txt');
+  log('Selected loader class:', LoaderClass.name);
+
+  let pages: DocumentPage[];
   let aggregatedContent = '';
   let loaderError: string | undefined;
+  let pageError: string | undefined;
   let aggregationError: string | undefined;
   let metadataError: string | undefined;
   let loaderSpecificMetadata: any | undefined;
@@ -143,6 +158,14 @@ export const loadFile = async (
       log('Loading pages with loader:', LoaderClass.name, 'for file:', filePath);
       pages = await loaderInstance.loadPages(filePath);
       log('Pages loaded successfully, count:', pages.length);
+
+      // Loaders report a whole-file failure as error pages instead of throwing.
+      // Surface it at the document level, where callers look, so a failed load
+      // is not mistaken for an empty file. A mix of good and failed pages (a
+      // PDF with one broken page) still counts as a successful load.
+      if (pages.length > 0 && pages.every((page) => page.metadata?.error)) {
+        pageError = [...new Set(pages.map((page) => page.metadata.error))].join('; ');
+      }
 
       try {
         // 2. Aggregate content using the instance
@@ -217,7 +240,8 @@ export const loadFile = async (
 
   // Combine all potential errors
   const combinedError =
-    [fsError, loaderError, aggregationError, metadataError].filter(Boolean).join('; ') || undefined;
+    [fsError, loaderError, pageError, aggregationError, metadataError].filter(Boolean).join('; ') ||
+    undefined;
   if (combinedError) log('Combined errors:', combinedError);
 
   // Construct the final FileDocument

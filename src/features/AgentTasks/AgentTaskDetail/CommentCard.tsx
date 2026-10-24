@@ -1,27 +1,40 @@
 import type { TaskDetailActivity } from '@lobechat/types';
-import { Editor, useEditor } from '@lobehub/editor/react';
-import {
-  ActionIcon,
-  Avatar,
-  Block,
-  Button,
-  type DropdownItem,
-  DropdownMenu,
-  Flexbox,
-  Icon,
-  Markdown,
-  Text,
-} from '@lobehub/ui';
-import { App } from 'antd';
-import { cssVar } from 'antd-style';
+import { useEditor } from '@lobehub/editor/react';
+import { LexicalRenderer } from '@lobehub/editor/renderer';
+import { Block, type DropdownItem, DropdownMenu, Flexbox, Icon, Markdown } from '@lobehub/ui';
+import { ActionIcon, Avatar, Button, confirmModal, cssVar, Text } from '@lobehub/ui';
 import { MessageCircle, MoreHorizontal, Pencil, Trash } from 'lucide-react';
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { AttachmentUploadButton } from '@/features/AttachmentInput';
+import { mentionPlainClassName } from '@/features/ChatInput/InputEditor/mentionStyle';
+import { richTextImageRenderers } from '@/features/Conversation/Messages/User/components/richTextImageRenderers';
+import { EditorCanvas } from '@/features/EditorCanvas';
+import { seedAttachments } from '@/features/EditorCanvas/attachmentRegistry';
+import {
+  getAttachmentFileIdsFromEditor,
+  insertFilesIntoEditor,
+} from '@/features/EditorCanvas/editorAttachments';
+import { LinearFileCard } from '@/features/EditorCanvas/LinearFilePlugin';
+import { useWorkspaceCommentMentionOption } from '@/features/Portal/TopicComments/useWorkspaceCommentMentionOption';
 import { useActivityTime } from '@/hooks/useActivityTime';
 import { useTaskStore } from '@/store/task';
+import { isOptimisticActivityId } from '@/store/task/slices/detail/optimisticActivity';
 
 import { styles } from '../shared/style';
+
+// Keep saved comments visually consistent with the editor: render FileNodes
+// as the Linear-style card on its own row instead of the default inline pill.
+const FILE_WRAPPER_STYLE = { marginBlock: 8 };
+const rendererOverrides = {
+  ...richTextImageRenderers,
+  file: (node: Record<string, any>) => (
+    <div style={FILE_WRAPPER_STYLE}>
+      <LinearFileCard node={node as Parameters<typeof LinearFileCard>[0]['node']} />
+    </div>
+  ),
+};
 
 interface CommentCardProps {
   activity: TaskDetailActivity;
@@ -29,17 +42,33 @@ interface CommentCardProps {
 
 const CommentCard = memo<CommentCardProps>(({ activity }) => {
   const { t } = useTranslation('chat');
-  const { modal } = App.useApp();
   const deleteComment = useTaskStore((s) => s.deleteComment);
   const updateComment = useTaskStore((s) => s.updateComment);
 
   const [isEditing, setIsEditing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const editor = useEditor();
+  const mentionOption = useWorkspaceCommentMentionOption();
 
   const { text: relTime, title: relTimeTitle } = useActivityTime(activity.time);
   const content = activity.content || t('taskDetail.activities.fallback.comment');
   const commentId = activity.id;
+
+  const editorData = useMemo(
+    () => ({
+      content: activity.content ?? '',
+      editorData: activity.editorData,
+    }),
+    [activity.content, activity.editorData],
+  );
+
+  useEffect(() => {
+    if (activity.files && activity.files.length > 0) {
+      seedAttachments(
+        activity.files.map((f) => ({ downloadUrl: f.downloadUrl, id: f.id, url: f.url })),
+      );
+    }
+  }, [activity.files]);
 
   const handleEdit = useCallback(() => {
     setIsEditing(true);
@@ -49,13 +78,22 @@ const CommentCard = memo<CommentCardProps>(({ activity }) => {
     setIsEditing(false);
   }, []);
 
+  const handleAttach = useCallback(
+    (files: File[]) => {
+      insertFilesIntoEditor(editor, files);
+    },
+    [editor],
+  );
+
   const handleSave = useCallback(async () => {
-    if (!commentId) return;
+    if (!commentId || submitting) return;
     const next = String(editor?.getDocument?.('markdown') ?? '').trim();
-    if (!next || submitting) return;
+    const json = editor?.getDocument?.('json') as unknown;
+    const hasFiles = getAttachmentFileIdsFromEditor(editor).length > 0;
+    if (!next && !hasFiles) return;
     setSubmitting(true);
     try {
-      await updateComment(commentId, next);
+      await updateComment(commentId, next, { editorData: json });
       setIsEditing(false);
     } finally {
       setSubmitting(false);
@@ -64,16 +102,14 @@ const CommentCard = memo<CommentCardProps>(({ activity }) => {
 
   const handleDelete = useCallback(() => {
     if (!commentId) return;
-    modal.confirm({
-      centered: true,
+    confirmModal({
       content: t('taskDetail.comment.deleteConfirm.content'),
       okButtonProps: { danger: true },
       okText: t('taskDetail.comment.deleteConfirm.ok'),
       onOk: () => deleteComment(commentId),
       title: t('taskDetail.comment.deleteConfirm.title'),
-      type: 'error',
     });
-  }, [commentId, deleteComment, modal, t]);
+  }, [commentId, deleteComment, t]);
 
   const menuItems = useMemo<DropdownItem[]>(
     () => [
@@ -121,32 +157,46 @@ const CommentCard = memo<CommentCardProps>(({ activity }) => {
         )}
       </Flexbox>
 
-      {isEditing ? (
+      {isEditing && (
         <>
-          <Editor
-            content={content}
-            editor={editor}
-            enablePasteMarkdown={false}
-            markdownOption={false}
-            type={'text'}
-            variant={'chat'}
-          />
-          <Flexbox horizontal gap={8} justify={'flex-end'}>
-            <Button disabled={submitting} size={'small'} onClick={handleCancel}>
-              {t('taskDetail.comment.cancel')}
-            </Button>
-            <Button loading={submitting} size={'small'} type={'primary'} onClick={handleSave}>
-              {t('taskDetail.comment.save')}
-            </Button>
+          <div className={mentionPlainClassName}>
+            <EditorCanvas
+              editor={editor}
+              editorData={editorData}
+              entityId={commentId}
+              floatingToolbar={false}
+              mentionOption={mentionOption}
+              style={{ paddingBottom: 4 }}
+            />
+          </div>
+          <Flexbox horizontal align={'center'} gap={8} justify={'space-between'}>
+            <AttachmentUploadButton onFiles={handleAttach} />
+            <Flexbox horizontal gap={8}>
+              <Button disabled={submitting} size={'small'} onClick={handleCancel}>
+                {t('taskDetail.comment.cancel')}
+              </Button>
+              <Button loading={submitting} size={'small'} type={'primary'} onClick={handleSave}>
+                {t('taskDetail.comment.save')}
+              </Button>
+            </Flexbox>
           </Flexbox>
         </>
-      ) : (
+      )}
+      {!isEditing && Boolean(activity.editorData) && (
+        <LexicalRenderer
+          className={mentionPlainClassName}
+          overrides={rendererOverrides}
+          value={activity.editorData as Parameters<typeof LexicalRenderer>[0]['value']}
+          variant={'chat'}
+        />
+      )}
+      {!isEditing && !activity.editorData && (
         <Markdown fontSize={14} variant={'chat'}>
           {content}
         </Markdown>
       )}
 
-      {!isEditing && commentId && (
+      {!isEditing && commentId && !isOptimisticActivityId(commentId) && (
         <div className={`${styles.commentActions} comment-actions`}>
           <DropdownMenu items={menuItems}>
             <ActionIcon icon={MoreHorizontal} size={'small'} />

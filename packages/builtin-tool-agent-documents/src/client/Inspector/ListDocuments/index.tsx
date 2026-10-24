@@ -1,7 +1,7 @@
 'use client';
 
 import type { BuiltinInspectorProps } from '@lobechat/types';
-import { cx } from 'antd-style';
+import { cx } from '@lobehub/ui';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -15,24 +15,22 @@ export const ListDocumentsInspector = memo<
 >(({ args, partialArgs, pluginState, isArgumentsStreaming, isLoading }) => {
   const { t } = useTranslation('plugin');
 
-  const target = args?.target || partialArgs?.target;
-  const count = pluginState?.documents?.length;
+  const scope = args?.scope || partialArgs?.scope;
+  // The read path projects the row list away and pins its size as
+  // `documentCount`; the array is only here for a payload that predates that.
+  const count = pluginState?.documentCount ?? pluginState?.documents?.length;
   const styles = inspectorChipStyles;
 
   return (
-    <div
-      style={{ flexWrap: 'wrap', gap: 4 }}
-      className={cx(
-        inspectorTextStyles.root,
-        (isArgumentsStreaming || isLoading) && shinyTextStyles.shinyText,
-      )}
-    >
-      <span>{t('builtins.lobe-agent-documents.apiName.listDocuments')}</span>
-      {target && (
+    <div className={inspectorTextStyles.root} style={{ flexWrap: 'wrap', gap: 4 }}>
+      <span className={cx((isArgumentsStreaming || isLoading) && shinyTextStyles.shinyText)}>
+        {t('builtins.lobe-agent-documents.apiName.listDocuments')}
+      </span>
+      {scope && (
         <>
           <span className={styles.separator}>·</span>
           <span className={styles.subdued}>
-            {t(`builtins.lobe-agent-documents.inspector.target.${target}` as const)}
+            {t(`builtins.lobe-agent-documents.inspector.scope.${scope}` as const)}
           </span>
         </>
       )}

@@ -1,6 +1,6 @@
 ---
 name: debug-package
-description: "Guide for the `debug` npm package and LobeHub log namespaces (lobe-server:*, lobe-desktop:*, lobe-client:*, lobe-*-router:*). Use whenever adding a `debug(...)` logger, picking a namespace for new server/desktop/client/router code, troubleshooting why DEBUG=lobe-* logs don't show up, or when the user asks to 'add logging', 'add a logger', 'instrument this', 'trace this call', 'why isn't my log printing', or mentions `debug(`, `DEBUG=`, `localStorage.debug`, or log format specifiers like %O / %o / %s / %d in a LobeHub codebase."
+description: 'Use for debug() logging, lobe-* namespaces, DEBUG/localStorage.debug configuration and log formatting.'
 user-invocable: false
 ---
 
@@ -44,7 +44,7 @@ localStorage.debug = 'lobe-*';
 ### Node.js
 
 ```bash
-DEBUG=lobe-* npm run dev
+DEBUG=lobe-* bun run dev
 DEBUG=lobe-* pnpm dev
 ```
 
@@ -57,10 +57,10 @@ process.env.DEBUG = 'lobe-*';
 ## Example
 
 ```typescript
-// src/server/routers/edge/market/index.ts
+// apps/server/src/routers/lambda/agentEval.ts
 import debug from 'debug';
 
-const log = debug('lobe-edge-router:market');
+const log = debug('lobe-lambda-router:agent-eval');
 
 log('getAgent input: %O', input);
 ```

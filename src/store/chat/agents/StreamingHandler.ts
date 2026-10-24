@@ -159,6 +159,26 @@ export class StreamingHandler {
     return this.output;
   }
 
+  getContentParts(): MessageContentPart[] {
+    return [...this.contentParts];
+  }
+
+  getReasoningParts(): MessageContentPart[] {
+    return [...this.reasoningParts];
+  }
+
+  getThinkingContent(): string {
+    return this.thinkingContent;
+  }
+
+  hasContentImages(): boolean {
+    return this.contentParts.some((part) => part.type === 'image');
+  }
+
+  hasReasoningImages(): boolean {
+    return this.reasoningParts.some((part) => part.type === 'image');
+  }
+
   /**
    * Get reasoning duration
    */
@@ -469,7 +489,7 @@ export class StreamingHandler {
     // Silent-drop guard: the model emitted tool_calls but every name failed to
     // resolve (e.g. missing `____` prefix the resolver couldn't recover from).
     // Without this log the operation would finish as "completed without tool
-    // calls" even though the user's intent was lost. See LOBE-8696.
+    // calls" even though the user's intent was lost. See .
     if (resolved.length < processedToolCalls.length) {
       const resolvedKeys = new Set(resolved.map((t) => t.id));
       const unresolved = processedToolCalls
@@ -502,6 +522,8 @@ export class StreamingHandler {
 
     // Get signature from finishData.reasoning (provided by backend in onFinish)
     const reasoningSignature = finishData.reasoning?.signature;
+    // Hidden Responses reasoning items stay replayable without any visible content
+    const hasResponseItems = !!finishData.reasoning?.responseItems?.length;
 
     let finalReasoning: ReasoningState | undefined;
     if (hasReasoningImages) {
@@ -513,11 +535,11 @@ export class StreamingHandler {
       };
     } else if (this.thinkingContent) {
       finalReasoning = {
+        ...finishData.reasoning,
         content: this.thinkingContent,
         duration: finalDuration,
-        signature: reasoningSignature,
       };
-    } else if (finishData.reasoning?.content) {
+    } else if (finishData.reasoning?.content || reasoningSignature || hasResponseItems) {
       finalReasoning = {
         ...finishData.reasoning,
         duration: finalDuration,

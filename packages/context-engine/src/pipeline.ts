@@ -25,8 +25,6 @@ export class ContextEngine {
     this.processors = [...pipeline];
     this.options = {
       debug: false,
-      // eslint-disable-next-line no-console
-      logger: console.log,
       ...options,
     };
   }
@@ -112,10 +110,17 @@ export class ContextEngine {
           processorDurations[processor.name] = duration;
 
           log('Processor', processor.name, 'execution failed:', error);
+          const cause = error instanceof Error ? error : new Error(String(error));
+
+          // Build a diagnostic message that includes the immediate cause so
+          // dashboard viewers can triage without raw stack access.
+          const causeSummary =
+            cause.message.length > 300 ? cause.message.slice(0, 300) + '…' : cause.message;
+
           throw new PipelineError(
-            `Processor [${processor.name}] execution failed`,
+            `Processor [${processor.name}] execution failed: ${causeSummary}`,
             processor.name,
-            error instanceof Error ? error : new Error(String(error)),
+            cause,
           );
         }
       }

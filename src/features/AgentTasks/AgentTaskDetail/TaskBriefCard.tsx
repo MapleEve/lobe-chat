@@ -1,14 +1,5 @@
-import {
-  ActionIcon,
-  Block,
-  type DropdownItem,
-  DropdownMenu,
-  Flexbox,
-  Icon,
-  Text,
-} from '@lobehub/ui';
-import { App } from 'antd';
-import { cssVar } from 'antd-style';
+import { Block, type DropdownItem, DropdownMenu, Flexbox, Icon } from '@lobehub/ui';
+import { ActionIcon, confirmModal, cssVar, Text, toast } from '@lobehub/ui';
 import { Check, ChevronDownIcon, ChevronUpIcon, MoreHorizontal, Trash } from 'lucide-react';
 import { memo, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -19,7 +10,7 @@ import BriefCardSummary from '@/features/DailyBrief/BriefCardSummary';
 import BriefIcon from '@/features/DailyBrief/BriefIcon';
 import { styles as briefStyles } from '@/features/DailyBrief/style';
 import type { BriefItem } from '@/features/DailyBrief/types';
-import Time from '@/routes/(main)/home/features/components/Time';
+import Time from '@/features/Home/components/Time';
 import { useBriefStore } from '@/store/brief';
 
 interface TaskBriefCardProps {
@@ -32,26 +23,38 @@ interface TaskBriefCardProps {
 const TaskBriefCard = memo<TaskBriefCardProps>(
   ({ brief, onAfterResolve, onAfterAddComment, onAfterDelete }) => {
     const { t } = useTranslation('home');
-    const { modal } = App.useApp();
     const deleteBrief = useBriefStore((s) => s.deleteBrief);
     const isResolved = Boolean(brief.resolvedAction);
     const [expanded, setExpanded] = useState(false);
     const showFull = !isResolved || expanded;
 
     const handleDelete = useCallback(() => {
-      modal.confirm({
-        centered: true,
+      confirmModal({
         content: t('brief.deleteConfirm.content'),
         okButtonProps: { danger: true },
         okText: t('brief.deleteConfirm.ok'),
         onOk: async () => {
-          await deleteBrief(brief.id);
-          await onAfterDelete?.();
+          try {
+            await deleteBrief(brief.id);
+          } catch (error) {
+            // Same class as every other brief mutation: the tRPC client only
+            // console.errors non-401 failures, so without this the modal just
+            // closes and the row stays put with no explanation.
+            toast.error((error as Error)?.message || t('brief.actionFailed'));
+            return;
+          }
+
+          // The refresh runs after the delete has already landed — a rejection
+          // here leaves the view stale, it does not mean the delete failed.
+          try {
+            await onAfterDelete?.();
+          } catch (error) {
+            console.error('[TaskBriefCard] post-delete refresh failed', error);
+          }
         },
         title: t('brief.deleteConfirm.title'),
-        type: 'error',
       });
-    }, [brief.id, deleteBrief, modal, onAfterDelete, t]);
+    }, [brief.id, deleteBrief, onAfterDelete, t]);
 
     const menuItems = useMemo<DropdownItem[]>(
       () => [
@@ -105,6 +108,7 @@ const TaskBriefCard = memo<TaskBriefCardProps>(
             <BriefCardArtifacts artifacts={brief.artifacts} />
             <BriefCardActions
               actions={brief.actions}
+              agentId={brief.agentId ?? brief.agent?.id}
               briefId={brief.id}
               briefType={brief.type}
               resolvedAction={brief.resolvedAction}

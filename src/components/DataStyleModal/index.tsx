@@ -1,9 +1,9 @@
-import { Flexbox, Icon, Modal } from '@lobehub/ui';
-import { createStaticStyles } from 'antd-style';
+import { createStaticStyles, Flexbox, Icon } from '@lobehub/ui';
 import { type LucideIcon } from 'lucide-react';
 import { type ReactNode } from 'react';
 import { memo } from 'react';
 
+import ImperativeModal from '@/components/ImperativeModal';
 import { useIsDark } from '@/hooks/useIsDark';
 
 const prefixCls = 'ant';
@@ -58,7 +58,7 @@ const DataStyleModal = memo<DataStyleModalProps>(
     const isDarkMode = useIsDark();
 
     return (
-      <Modal
+      <ImperativeModal
         centered
         afterOpenChange={onOpenChange}
         closable={false}
@@ -77,7 +77,7 @@ const DataStyleModal = memo<DataStyleModalProps>(
         }
       >
         {children}
-      </Modal>
+      </ImperativeModal>
     );
   },
 );

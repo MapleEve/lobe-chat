@@ -2,10 +2,14 @@
 
 import { Button, Icon } from '@lobehub/ui';
 import { BriefcaseIcon, LinkIcon, Trash2Icon } from 'lucide-react';
-import { memo, useState } from 'react';
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import LinkModal from '../LinkModal';
+import AsyncError from '@/components/AsyncError';
+import { usePermission } from '@/hooks/usePermission';
+
+import { createMessengerLinkModal } from '../LinkModal';
+import { MessengerPushSection } from './MessengerPush';
 import {
   ConnectionRow,
   DetailLayout,
@@ -26,7 +30,8 @@ interface SlackDetailProps {
 
 const SlackDetail = memo<SlackDetailProps>(({ appId, botUsername, name, onBack }) => {
   const { t } = useTranslation('messenger');
-  const [linkOpen, setLinkOpen] = useState(false);
+  const { allowed: canCreate } = usePermission('create_content');
+  const { allowed: canEdit } = usePermission('edit_own_content');
 
   const data = useMessengerData('slack');
   const { handleSetActive, handleUnlink } = useLinkActions({
@@ -44,6 +49,7 @@ const SlackDetail = memo<SlackDetailProps>(({ appId, botUsername, name, onBack }
   // dispatch is token-gated, so removing the install effectively kills the
   // workspace integration even though the bot user remains in Slack.
   const handleDisconnectInstallation = (id: string) =>
+    canEdit &&
     disconnectInstallation(id, {
       confirm: t('messenger.slack.connections.disconnectConfirm'),
       failedKey: 'messenger.slack.connections.disconnectFailed',
@@ -51,17 +57,27 @@ const SlackDetail = memo<SlackDetailProps>(({ appId, botUsername, name, onBack }
       title: t('messenger.slack.connections.disconnectTitle'),
     });
 
+  if (data.error && data.isInitialLoading)
+    return <AsyncError error={data.error} variant={'block'} onRetry={data.mutate} />;
   if (data.isInitialLoading) return <IntegrationDetailSkeleton />;
 
   const { installations, links, tenantNameByTenantId } = data;
   const hasInstallations = installations.length > 0;
   const hasLinks = links.length > 0;
+  const pushTargets = links.map((link) => ({
+    label: tenantNameByTenantId.get(link.tenantId) || link.tenantId,
+    tenantId: link.tenantId,
+  }));
+
+  const handleOpenLink = () =>
+    createMessengerLinkModal({ appId, botUsername, name, platform: 'slack' });
 
   const headerAction = (
     <Button
+      disabled={!canCreate || !canEdit}
       icon={<Icon icon={LinkIcon} />}
       type={hasInstallations ? 'default' : 'primary'}
-      onClick={() => setLinkOpen(true)}
+      onClick={handleOpenLink}
     >
       {hasInstallations ? t('messenger.detail.addWorkspace') : t('messenger.linkCta')}
     </Button>
@@ -75,60 +91,54 @@ const SlackDetail = memo<SlackDetailProps>(({ appId, botUsername, name, onBack }
     hasInstallations && installations.every((install) => !linkByTenantId.has(install.tenantId));
 
   return (
-    <>
-      <DetailLayout
-        hasConnections={hasInstallations || hasLinks}
-        headerAction={headerAction}
-        name={name}
-        platform="slack"
-        onBack={onBack}
-      >
-        {installations.map((install) => (
-          <ConnectionRow
-            icon={<Icon icon={BriefcaseIcon} size="small" />}
-            key={install.id}
-            label={t('messenger.detail.connections.workspaceLabel')}
-            name={install.tenantName || install.tenantId}
-            status="connected"
-            action={
-              <Button
-                danger
-                icon={<Icon icon={Trash2Icon} />}
-                size="small"
-                onClick={() => handleDisconnectInstallation(install.id)}
-              >
-                {t('messenger.detail.disconnect')}
-              </Button>
-            }
+    <DetailLayout
+      hasConnections={hasInstallations || hasLinks}
+      headerAction={headerAction}
+      name={name}
+      platform="slack"
+      extraSections={
+        hasLinks ? (
+          <MessengerPushSection name={name} platform="slack" targets={pushTargets} />
+        ) : undefined
+      }
+      onBack={onBack}
+    >
+      {installations.map((install) => (
+        <ConnectionRow
+          icon={<Icon icon={BriefcaseIcon} size="small" />}
+          key={install.id}
+          label={t('messenger.detail.connections.workspaceLabel')}
+          name={install.tenantName || install.tenantId}
+          status="connected"
+          action={
+            <Button
+              danger
+              disabled={!canEdit}
+              icon={<Icon icon={Trash2Icon} />}
+              size="small"
+              onClick={() => handleDisconnectInstallation(install.id)}
+            >
+              {t('messenger.detail.disconnect')}
+            </Button>
+          }
+        />
+      ))}
+      {links.map((link) => {
+        const workspace = tenantNameByTenantId.get(link.tenantId) || link.tenantId;
+        return (
+          <UserAgentConnection
+            extraLabel={workspace}
+            key={link.id}
+            link={link}
+            onSetActive={(agentId) => handleSetActive(link.tenantId, agentId)}
+            onUnlink={() => handleUnlink(link.tenantId)}
           />
-        ))}
-        {links.map((link) => {
-          const workspace = tenantNameByTenantId.get(link.tenantId) || link.tenantId;
-          return (
-            <UserAgentConnection
-              extraLabel={workspace}
-              key={link.id}
-              link={link}
-              onSetActive={(agentId) => handleSetActive(link.tenantId, agentId)}
-              onUnlink={() => handleUnlink(link.tenantId)}
-            />
-          );
-        })}
-        {/* Installs without any user link yet — gentle nudge to /start in Slack. */}
-        {allInstallsUnlinked && !hasLinks && (
-          <div className={styles.emptyRow}>{t('messenger.detail.connections.linkHint')}</div>
-        )}
-      </DetailLayout>
-
-      <LinkModal
-        appId={appId}
-        botUsername={botUsername}
-        name={name}
-        open={linkOpen}
-        platform="slack"
-        onClose={() => setLinkOpen(false)}
-      />
-    </>
+        );
+      })}
+      {allInstallsUnlinked && !hasLinks && (
+        <div className={styles.emptyRow}>{t('messenger.detail.connections.linkHint')}</div>
+      )}
+    </DetailLayout>
   );
 });
 

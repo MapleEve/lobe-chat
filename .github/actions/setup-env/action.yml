@@ -10,17 +10,23 @@ inputs:
     description: Pass-through to actions/setup-node package-manager-cache
     required: false
     default: 'false'
+  bun-version:
+    description: Bun version
+    required: false
+    default: 'canary'
 
 runs:
   using: composite
   steps:
     - name: Install pnpm
-      uses: pnpm/action-setup@v4
+      uses: pnpm/action-setup@v6
       with:
         run_install: false
 
     - name: Install bun
       uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: ${{ inputs.bun-version }}
 
     - name: Setup Node.js
       uses: actions/setup-node@v6

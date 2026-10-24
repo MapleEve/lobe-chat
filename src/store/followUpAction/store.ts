@@ -3,6 +3,8 @@ import { shallow } from 'zustand/shallow';
 import { createWithEqualityFn } from 'zustand/traditional';
 import { type StateCreator } from 'zustand/vanilla';
 
+import { createReplicaState } from '@/libs/replica';
+
 import { createDevtools } from '../middleware/createDevtools';
 import { expose } from '../middleware/expose';
 import { type StoreSetter } from '../types';
@@ -28,22 +30,13 @@ class FollowUpActionStoreResetAction implements ResetableStore {
   }
 
   reset = () => {
-    // Cancel any in-flight LLM call before wiping state, otherwise the AbortController is leaked.
     const current = this.#api.getState();
-    current.abortController?.abort();
-    // Explicitly include undefined fields so zustand's merge-mode setState clears them.
-    this.#set(
-      {
-        abortController: undefined,
-        chips: [],
-        messageId: undefined,
-        pendingTopicId: undefined,
-        status: 'idle',
-        topicId: undefined,
-      },
-      false,
-      'resetFollowUpActionStore',
-    );
+    for (const slot of Object.values(current.slots)) {
+      slot.abortController?.abort();
+    }
+    // Reset the view and the replica bookkeeping together: `slots` is the
+    // replica's view, so clearing only the view would leave stale entries.
+    this.#set({ slots: {}, slotsReplica: createReplicaState() }, false, 'resetFollowUpActionStore');
   };
 }
 

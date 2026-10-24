@@ -1,9 +1,11 @@
+import { isDesktop } from '@lobechat/const';
 import { type DataSyncConfig } from '@lobechat/electron-client-ipc';
 import isEqual from 'fast-deep-equal';
 import { type SWRResponse } from 'swr';
 import useSWR from 'swr';
 
 import { mutate } from '@/libs/swr';
+import { electronKeys } from '@/libs/swr/keys';
 import { remoteServerService } from '@/services/electron/remoteServer';
 import { type StoreSetter } from '@/store/types';
 import { useUserStore } from '@/store/user';
@@ -13,8 +15,6 @@ import { type ElectronStore } from '../store';
 /**
  * Remote server actions
  */
-
-const REMOTE_SERVER_CONFIG_KEY = 'electron:getRemoteServerConfig';
 
 type Setter = StoreSetter<ElectronStore>;
 export const remoteSyncSlice = (set: Setter, get: () => ElectronStore, _api?: unknown) =>
@@ -91,7 +91,7 @@ export class ElectronRemoteServerActionImpl {
   };
 
   refreshServerConfig = async (): Promise<void> => {
-    await mutate(REMOTE_SERVER_CONFIG_KEY);
+    await mutate(electronKeys.remoteServerConfig());
   };
 
   refreshUserData = async (): Promise<void> => {
@@ -111,7 +111,8 @@ export class ElectronRemoteServerActionImpl {
 
   useDataSyncConfig = (): SWRResponse => {
     return useSWR<DataSyncConfig>(
-      REMOTE_SERVER_CONFIG_KEY,
+      // Desktop-only IPC: on web there is no electronAPI, so never fetch off-desktop.
+      isDesktop ? electronKeys.remoteServerConfig() : null,
       async () => {
         try {
           return await remoteServerService.getRemoteServerConfig();
@@ -138,7 +139,6 @@ export class ElectronRemoteServerActionImpl {
 
           this.#set({ dataSyncConfig: data, isInitRemoteServerConfig: true });
         },
-        suspense: false,
       },
     );
   };

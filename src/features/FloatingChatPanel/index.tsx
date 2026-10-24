@@ -1,58 +1,73 @@
 'use client';
 
-import { type UIChatMessage } from '@lobechat/types';
-import { FloatingSheet, type FloatingSheetProps } from '@lobehub/ui/base-ui';
-import { createStaticStyles } from 'antd-style';
+import {
+  ActionIcon,
+  createStaticStyles,
+  FloatingSheet,
+  type FloatingSheetProps,
+} from '@lobehub/ui';
+import { ChevronDown } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { memo, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 import {
   type ActionsBarConfig,
   type ConversationHooks,
   ConversationProvider,
 } from '@/features/Conversation';
+import { useChatFollowUp } from '@/features/Conversation/hooks/useChatFollowUp';
 import { type ConversationContext } from '@/features/Conversation/types';
+import { mergeConversationHooks } from '@/features/Conversation/utils/mergeConversationHooks';
+import CopilotToolbar from '@/features/PageEditor/Copilot/Toolbar';
+import { PageAgentPanelOverrideProvider } from '@/features/PageEditor/RightPanel/OverrideContext';
 import { useOperationState } from '@/hooks/useOperationState';
 import { useActionsBarConfig } from '@/routes/(main)/agent/features/Conversation/useActionsBarConfig';
-import { useChatStore } from '@/store/chat';
+import { useAgentStore } from '@/store/agent';
+import { chatConfigByIdSelectors } from '@/store/agent/selectors';
 import { messageMapKey } from '@/store/chat/utils/messageMapKey';
 
 import ChatBody from './ChatBody';
 import { useSingleInstanceGuard } from './guard';
+import InputRow from './InputRow';
 
-const SNAP_POINTS = [180, 320, 520, 800] as const;
+const SNAP_POINTS = [320, 800] as const;
+const MID_SNAP_POINT = SNAP_POINTS[0];
 const MAX_SNAP_POINT = SNAP_POINTS.at(-1)!;
-const REST_SNAP_POINT = SNAP_POINTS[0];
 
-const styles = createStaticStyles(({ css }) => ({
-  sheet: css`
-    overflow: hidden;
+const styles = createStaticStyles(({ css, cssVar }) => ({
+  panel: css`
     display: flex;
-    flex: 1;
     flex-direction: column;
-
-    min-height: 0;
-  `,
-  header: css`
-    display: flex;
     flex-shrink: 0;
-    gap: 8px;
-    align-items: center;
-    justify-content: space-between;
-  `,
-  title: css`
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  `,
-  body: css`
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
+    align-self: stretch;
 
     width: 100%;
-    height: 100%;
+    border-block-start: 1px solid ${cssVar.colorBorderSecondary};
+
+    background: ${cssVar.colorBgContainer};
+
+    transition:
+      border-block-start-color 240ms cubic-bezier(0.32, 0.72, 0, 1),
+      background 240ms cubic-bezier(0.32, 0.72, 0, 1);
+
+    &[data-collapsed='true'] {
+      border-block-start-color: transparent;
+      background: transparent;
+    }
+  `,
+  panelEmbedded: css`
+    flex: 1;
     min-height: 0;
+    border-block-start: none;
+  `,
+  sheetSeamless: css`
+    border: none;
+    border-radius: 0;
+    box-shadow: none;
+  `,
+  titleSpacer: css`
+    flex: 1;
   `,
 }));
 
@@ -63,11 +78,24 @@ export interface FloatingChatPanelProps {
    */
   actionsBar?: ActionsBarConfig;
   activeSnapPoint?: number;
-  /** Agent identifier. */
+  /**
+   * Agent document row id (`agent_documents.id`) for the document the user is
+   * viewing. When supplied, the active document is injected with
+   * `agent_document_id` so LLM tool calls (`readDocument` / `modifyNodes`) can
+   * use it directly without a `listDocuments` reverse lookup.
+   */
+  agentDocumentId?: string;
   agentId: string;
   className?: string;
+  /** Whether the panel starts expanded. Defaults to collapsed for floating usages. */
+  defaultOpen?: boolean;
   dismissible?: boolean;
-  /** Current document identifier for page-scoped conversations. */
+  /**
+   * Active document id for the conversation context. Passed through so the
+   * `ActiveTopicDocumentContextInjector` can tell the LLM which agent document
+   * the user is currently viewing (e.g. when opened from a document preview
+   * portal). Omit when no document is in focus.
+   */
   documentId?: string;
   headerActions?: ReactNode;
   /**
@@ -82,14 +110,15 @@ export interface FloatingChatPanelProps {
   onOpenChange?: (open: boolean) => void;
   onSnapPointChange?: (point: number) => void;
   open?: boolean;
-  /** Optional conversation scope override for non-thread contexts. */
-  scope?: 'main' | 'page';
   snapPoints?: number[];
-  /** Optional thread identifier. When provided, scope becomes `'thread'`. */
-  threadId?: string | null;
   title?: ReactNode;
-  /** Topic identifier. `null` means a new / unpersisted conversation. */
-  topicId: string | null;
+  /**
+   * Topic identifier. Must be the doc-anchored topic resolved through
+   * `useDocumentChatTopic` so the panel renders the conversation tied to the
+   * `(documentId, agentId)` pair instead of whatever topic happens to be
+   * active. Callers should gate on a non-null value before rendering.
+   */
+  topicId: string;
   variant?: 'elevated' | 'embedded';
   width?: number | string;
 }
@@ -97,30 +126,22 @@ export interface FloatingChatPanelProps {
 /**
  * FloatingChatPanel
  *
- * A reusable floating conversation panel. Composes ChatList + MainChatInput inside
- * a container shell. Consumers provide conversation coordinates via flat
- * `agentId`/`topicId` props; the component builds its own `ConversationContext`
- * internally.
+ * Reusable floating conversation panel — composes `ChatList` + `ChatInput`
+ * inside a `FloatingSheet`. The conversation is always main-scope on the
+ * supplied `topicId`; `ConversationProvider` owns message loading.
  *
- * @FIXME ⚠️ Single instance per page. Mounting a second FloatingChatPanel while one is
- * already mounted will throw. See `./guard.ts` for the rationale.
- *
- * @FIXME ⚠️ Must not coexist with the main-page ConversationArea (both use MainChatInput,
- * which writes to the global `useChatStore.mainInputEditor` slot). This is NOT
- * enforced at runtime — consumer responsibility.
+ * Single instance per page (see `./guard.ts`).
  */
 const FloatingChatPanel = memo<FloatingChatPanelProps>(
   ({
     agentId,
     topicId,
-    threadId = null,
     documentId,
-    scope,
+    agentDocumentId,
     actionsBar,
     hooks,
-
-    minHeight: _minHeight = 240,
-    maxHeight: _maxHeight = 0.9,
+    defaultOpen = false,
+    mode = 'overlay',
 
     width = '100%',
 
@@ -128,87 +149,142 @@ const FloatingChatPanel = memo<FloatingChatPanelProps>(
     headerActions,
   }) => {
     useSingleInstanceGuard();
+    const { t } = useTranslation('chat');
+    const isEmbedded = mode === 'embedded';
+    const [embeddedTopicId, setEmbeddedTopicId] = useState<string | null>(topicId);
+    const activeTopicId = isEmbedded ? embeddedTopicId : topicId;
 
     const context = useMemo<ConversationContext>(
       () => ({
         agentId,
-        documentId,
-        scope: threadId ? 'thread' : (scope ?? 'main'),
-        threadId,
-        topicId,
+        ...(agentDocumentId ? { agentDocumentId } : {}),
+        ...(documentId ? { documentId } : {}),
+        ...(isEmbedded ? { isolatedTopic: true } : {}),
+        scope: 'main',
+        threadId: null,
+        topicId: activeTopicId,
       }),
-      [agentId, documentId, scope, topicId, threadId],
+      [activeTopicId, agentDocumentId, agentId, documentId, isEmbedded],
     );
 
     const chatKey = useMemo(() => messageMapKey(context), [context]);
-    const messages = useChatStore((s) => s.dbMessagesMap[chatKey]);
-    const replaceMessages = useChatStore((s) => s.replaceMessages);
 
     const operationState = useOperationState(context);
     const defaultActionsBar = useActionsBarConfig();
     const resolvedActionsBar = actionsBar ?? defaultActionsBar;
+    const [isCollapsed, setIsCollapsed] = useState(!defaultOpen);
+    const [activeSnapPoint, setActiveSnapPoint] = useState<number>(MID_SNAP_POINT);
 
-    const handleMessagesChange = useMemo(
-      () => (next: UIChatMessage[], ctx: ConversationContext) => {
-        replaceMessages(next, { context: ctx });
+    const expand = useCallback(() => {
+      setActiveSnapPoint(MID_SNAP_POINT);
+      setIsCollapsed(false);
+    }, []);
+
+    const collapse = useCallback(() => {
+      setIsCollapsed(true);
+      setActiveSnapPoint(MID_SNAP_POINT);
+    }, []);
+
+    const handleOpenChange = useCallback(
+      (open: boolean) => {
+        if (!open) collapse();
       },
-      [replaceMessages],
+      [collapse],
     );
 
-    const [open, setOpen] = useState(true);
-    const [activeSnapPoint, setActiveSnapPoint] = useState<number>(REST_SNAP_POINT);
+    const agentChatConfig = useAgentStore(chatConfigByIdSelectors.getChatConfigById(agentId));
+    const chatFollowUpHooks = useChatFollowUp({
+      agentChatConfig,
+      conversationKey: chatKey,
+      topicId,
+    });
 
     const mergedHooks = useMemo<ConversationHooks>(
-      () => ({
-        ...hooks,
-        // Expand the sheet the moment the user presses Send, so the chat grows
-        // into view before the AI response streams in — not after it finishes.
-        onBeforeSendMessage: async (params) => {
-          setActiveSnapPoint(MAX_SNAP_POINT);
-          return hooks?.onBeforeSendMessage?.(params);
-        },
-      }),
-      [hooks],
+      () =>
+        mergeConversationHooks(
+          hooks,
+          {
+            onBeforeSendMessage: async () => {
+              expand();
+            },
+            onTopicCreated: (createdTopicId) => {
+              if (isEmbedded) setEmbeddedTopicId(createdTopicId);
+            },
+          },
+          chatFollowUpHooks,
+        ),
+      [chatFollowUpHooks, expand, hooks, isEmbedded],
+    );
+
+    const collapseAction = (
+      <ActionIcon
+        data-testid="floating-chat-panel-collapse-button"
+        icon={ChevronDown}
+        size="small"
+        title={t('floatingChatPanel.collapse', { defaultValue: 'Collapse' })}
+        onClick={collapse}
+      />
     );
 
     const sheetProps: FloatingSheetProps = {
       activeSnapPoint,
-      className: 'floating-sheet-demo-inline',
-      closeThreshold: 0.3,
-      defaultOpen: true,
-      dismissible: false,
-      headerActions,
-
+      className: styles.sheetSeamless,
+      closeThreshold: 0.5,
+      defaultOpen: false,
+      dismissible: true,
+      headerActions: (
+        <>
+          {headerActions}
+          {collapseAction}
+        </>
+      ),
       maxHeight: MAX_SNAP_POINT,
-      minHeight: SNAP_POINTS[1],
+      minHeight: MID_SNAP_POINT,
       mode: 'inline',
-      onOpenChange: setOpen,
+      onOpenChange: handleOpenChange,
       onSnapPointChange: setActiveSnapPoint,
-      open,
-      restingHeight: REST_SNAP_POINT,
+      open: !isCollapsed,
+      restingHeight: MID_SNAP_POINT,
       snapPoints: [...SNAP_POINTS],
-      title,
-
-      variant: 'embedded',
+      // Always render a title slot — `space-between` on the header pulls the
+      // single child (headerActions) to the start otherwise, putting the
+      // collapse button on the left.
+      title: title ?? <span className={styles.titleSpacer} />,
+      variant: 'elevated',
       width,
     };
 
     return (
-      <FloatingSheet {...sheetProps}>
-        <div className={styles.body}>
-          <ConversationProvider
-            actionsBar={resolvedActionsBar}
-            context={context}
-            hasInitMessages={!!messages}
-            hooks={mergedHooks}
-            messages={messages}
-            operationState={operationState}
-            onMessagesChange={handleMessagesChange}
-          >
-            <ChatBody />
-          </ConversationProvider>
+      <ConversationProvider
+        actionsBar={resolvedActionsBar}
+        context={context}
+        hooks={mergedHooks}
+        operationState={operationState}
+      >
+        <div
+          className={`${styles.panel} ${isEmbedded ? styles.panelEmbedded : ''}`}
+          data-collapsed={isEmbedded ? false : isCollapsed}
+          data-mode={mode}
+          data-testid="floating-chat-panel"
+        >
+          {isEmbedded ? (
+            <>
+              <PageAgentPanelOverrideProvider defaultExpand>
+                <CopilotToolbar topicId={activeTopicId} onTopicChange={setEmbeddedTopicId} />
+              </PageAgentPanelOverrideProvider>
+              <ChatBody />
+              <InputRow isCollapsed={false} showExpandBar={false} onExpand={expand} />
+            </>
+          ) : (
+            <>
+              <FloatingSheet {...sheetProps}>
+                <ChatBody />
+              </FloatingSheet>
+              <InputRow isCollapsed={isCollapsed} onExpand={expand} />
+            </>
+          )}
         </div>
-      </FloatingSheet>
+      </ConversationProvider>
     );
   },
 );

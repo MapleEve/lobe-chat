@@ -1,11 +1,11 @@
 'use client';
 
-import { SESSION_CHAT_URL } from '@lobechat/const';
+import { AGENT_CHAT_URL } from '@lobechat/const';
 import { useWatchBroadcast } from '@lobechat/electron-client-ipc';
 import { useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
 
-import { useCreateMenuItems } from '@/routes/(main)/home/_layout/hooks/useCreateMenuItems';
+import { useCreateMenuItems } from '@/features/HomeSidebar/hooks/useCreateMenuItems';
+import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
 import { useAgentStore } from '@/store/agent';
 import { builtinAgentSelectors } from '@/store/agent/selectors';
 import { useChatStore } from '@/store/chat';
@@ -16,7 +16,7 @@ import { useChatStore } from '@/store/chat';
  */
 const DesktopFileMenuBridge = () => {
   const { createAgent, createEmptyGroup, createPage } = useCreateMenuItems();
-  const navigate = useNavigate();
+  const navigate = useWorkspaceAwareNavigate();
   const inboxAgentId = useAgentStore(builtinAgentSelectors.inboxAgentId);
   const activeAgentId = useAgentStore((s) => s.activeAgentId);
 
@@ -30,7 +30,7 @@ const DesktopFileMenuBridge = () => {
       useChatStore.getState().switchTopic(null);
       return;
     }
-    navigate(SESSION_CHAT_URL(inboxAgentId, false));
+    navigate(AGENT_CHAT_URL(inboxAgentId, false));
   }, [activeAgentId, inboxAgentId, navigate]);
 
   // Handle create new agent from File menu

@@ -4,13 +4,16 @@ import type { PipelineContext } from '../../types';
 import { PlaceholderVariablesProcessor } from '../PlaceholderVariables';
 
 /**
- * Regression for LOBE-6882 placeholder approach.
+ * Regression for placeholder approach.
  *
  * Confirms that PlaceholderVariablesProcessor does substitute `{{...}}` tokens
- * inside `role: 'tool'` messages. If this test ever fails, it means the
- * processor is silently skipping tool messages and the lobehub skill identity
- * placeholders won't be filled in after the model calls
+ * inside the `role: 'tool'` results of the *activation* tools. If this test ever
+ * fails, it means the processor is silently skipping them and the lobehub skill
+ * identity placeholders won't be filled in after the model calls
  * `lobe-activator.activateSkill('lobehub')`.
+ *
+ * The complementary half of the contract — every other tool result is passed
+ * through verbatim — lives in `PlaceholderVariables.toolResultPassthrough.test.ts`.
  */
 describe('PlaceholderVariablesProcessor — tool message substitution', () => {
   const buildContext = (messages: any[]): PipelineContext => ({
@@ -72,11 +75,47 @@ describe('PlaceholderVariablesProcessor — tool message substitution', () => {
     });
 
     const ctx = buildContext([
-      { role: 'tool', tool_call_id: 't1', name: 'foo', content: 'agent={{agent_id}}' },
+      {
+        role: 'tool',
+        tool_call_id: 't1',
+        name: 'lobe-skills____activateSkill',
+        content: 'agent={{agent_id}}',
+      },
     ]);
 
     const result = await processor.process(ctx);
     expect(result.messages[0].content).toBe('agent={{agent_id}}');
+  });
+
+  // Regression for a tool error result (e.g. budget-exceeded) can
+  // arrive with `content: undefined`. The content-preview logging step used to
+  // call `JSON.stringify(undefined).slice(...)` — which throws because
+  // `JSON.stringify(undefined)` returns `undefined`, not a string — crashing
+  // the whole processor before any message was processed.
+  it('does not crash on a tool message with undefined content', async () => {
+    const processor = new PlaceholderVariablesProcessor({
+      variableGenerators: {
+        agent_id: () => 'agt_xyz',
+      },
+    });
+
+    const ctx = buildContext([
+      { role: 'user', content: 'hi {{agent_id}}' },
+      {
+        role: 'tool',
+        tool_call_id: 'toolu_err',
+        name: 'lobe-agent',
+        content: undefined,
+        error: { errorType: 'InsufficientBudgetForModel' },
+      },
+    ]);
+
+    const result = await processor.process(ctx);
+
+    // The user message after the crashing tool message must still be processed.
+    expect(result.messages[0].content).toBe('hi agt_xyz');
+    // The tool message is preserved untouched.
+    expect(result.messages[1].content).toBeUndefined();
   });
 
   it('substitutes generator returning empty string to empty (NOT raw)', async () => {
@@ -87,7 +126,12 @@ describe('PlaceholderVariablesProcessor — tool message substitution', () => {
     });
 
     const ctx = buildContext([
-      { role: 'tool', tool_call_id: 't1', name: 'foo', content: 'agent=[{{agent_id}}]' },
+      {
+        role: 'tool',
+        tool_call_id: 't1',
+        name: 'lobe-skills____activateSkill',
+        content: 'agent=[{{agent_id}}]',
+      },
     ]);
 
     const result = await processor.process(ctx);

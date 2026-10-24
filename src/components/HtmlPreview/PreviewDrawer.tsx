@@ -1,8 +1,16 @@
 import { TITLE_BAR_HEIGHT } from '@lobechat/desktop-bridge';
+import { extractHtmlTitle } from '@lobechat/html-artifact';
 import { exportFile } from '@lobechat/utils/client';
-import { Block, Button, Flexbox, Highlighter, Segmented } from '@lobehub/ui';
-import { Drawer } from 'antd';
-import { createStaticStyles } from 'antd-style';
+import {
+  Block,
+  Button,
+  createStaticStyles,
+  Drawer,
+  Flexbox,
+  Highlighter,
+  HtmlPreview,
+  Tabs,
+} from '@lobehub/ui';
 import { Code2, Download, Eye } from 'lucide-react';
 import { memo, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -13,12 +21,9 @@ const styles = createStaticStyles(({ css }) => ({
   container: css`
     height: 100%;
   `,
-  iframe: css`
-    width: 100%;
-    height: 100%;
-    border: none;
-  `,
 }));
+
+const hideHtmlPreviewActions = () => null;
 
 interface HtmlPreviewDrawerProps {
   content: string;
@@ -30,13 +35,6 @@ const HtmlPreviewDrawer = memo<HtmlPreviewDrawerProps>(({ content, open, onClose
   const { t } = useTranslation('components');
   const [mode, setMode] = useState<'preview' | 'code'>('preview');
 
-  const htmlContent = content;
-
-  const extractTitle = useCallback(() => {
-    const m = htmlContent.match(/<title>([\S\s]*?)<\/title>/i);
-    return m ? m[1].trim() : undefined;
-  }, [htmlContent]);
-
   const sanitizeFileName = useCallback((name: string) => {
     return name
       .replaceAll(/["*/:<>?\\|]/g, '-')
@@ -46,44 +44,38 @@ const HtmlPreviewDrawer = memo<HtmlPreviewDrawerProps>(({ content, open, onClose
   }, []);
 
   const onDownload = useCallback(() => {
-    const title = extractTitle();
+    const title = extractHtmlTitle(content);
     const base = title ? sanitizeFileName(title) : `chat-html-preview-${Date.now()}`;
     exportFile(content, `${base}.html`);
-  }, [content, extractTitle, sanitizeFileName]);
+  }, [content, sanitizeFileName]);
 
-  const Title = (
-    <Flexbox horizontal align={'center'} justify={'space-between'} style={{ width: '100%' }}>
-      {t('HtmlPreview.title')}
-      <Segmented
-        value={mode}
-        options={[
+  const extra = (
+    <Flexbox horizontal align={'center'} gap={8}>
+      <Tabs
+        activeKey={mode}
+        items={[
           {
+            key: 'preview',
             label: (
               <Flexbox horizontal align={'center'} gap={6}>
                 <Eye size={16} />
                 {t('HtmlPreview.mode.preview')}
               </Flexbox>
             ),
-            value: 'preview',
           },
           {
+            key: 'code',
             label: (
               <Flexbox horizontal align={'center'} gap={6}>
                 <Code2 size={16} />
                 {t('HtmlPreview.mode.code')}
               </Flexbox>
             ),
-            value: 'code',
           },
         ]}
-        onChange={(v) => setMode(v as 'preview' | 'code')}
+        onChange={(key) => setMode(key as 'preview' | 'code')}
       />
-      <Button
-        color={'default'}
-        icon={<Download size={16} />}
-        variant={'filled'}
-        onClick={onDownload}
-      >
+      <Button icon={<Download size={16} />} type={'fill'} onClick={onDownload}>
         {t('HtmlPreview.actions.download')}
       </Button>
     </Flexbox>
@@ -91,25 +83,31 @@ const HtmlPreviewDrawer = memo<HtmlPreviewDrawerProps>(({ content, open, onClose
 
   return (
     <Drawer
-      destroyOnHidden
+      containerMaxWidth={'100%'}
+      extra={extra}
       height={isDesktop ? `calc(100vh - ${TITLE_BAR_HEIGHT}px)` : '100vh'}
       open={open}
       placement="bottom"
-      title={Title}
+      title={t('HtmlPreview.title')}
       styles={{
-        body: { height: '100%', padding: 0 },
+        bodyContent: { height: '100%', padding: 0 },
         header: { paddingBlock: 8, paddingInline: 12 },
       }}
       onClose={onClose}
     >
       {mode === 'preview' ? (
         <Block className={styles.container}>
-          <iframe
-            className={styles.iframe}
-            sandbox="allow-scripts allow-same-origin"
-            srcDoc={content}
+          <HtmlPreview
+            actionsRender={hideHtmlPreviewActions}
+            copyable={false}
+            downloadable={false}
+            style={{ height: '100%' }}
+            styles={{ iframe: { height: '100%' } }}
             title={t('HtmlPreview.iframeTitle')}
-          />
+            variant={'borderless'}
+          >
+            {content}
+          </HtmlPreview>
         </Block>
       ) : (
         <Block className={styles.container}>
@@ -118,7 +116,7 @@ const HtmlPreviewDrawer = memo<HtmlPreviewDrawerProps>(({ content, open, onClose
             showLanguage={false}
             style={{ height: '100%', overflow: 'auto' }}
           >
-            {htmlContent}
+            {content}
           </Highlighter>
         </Block>
       )}

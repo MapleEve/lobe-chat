@@ -11,7 +11,6 @@ import { DEFAULT_MODEL } from './llm';
 
 export const DEFAUTT_AGENT_TTS_CONFIG: LobeAgentTTSConfig = {
   showAllLocaleVoice: false,
-  sttLocale: 'auto',
   ttsService: 'openai',
   voice: {
     openai: 'alloy',
@@ -24,16 +23,20 @@ export const DEFAULT_AGENT_SEARCH_FC_MODEL = {
 };
 
 export const DEFAULT_AGENT_CHAT_CONFIG: LobeAgentChatConfig = {
-  autoCreateTopicThreshold: 2,
-  enableAutoCreateTopic: true,
+  enableAgentMode: true,
   enableCompressHistory: true,
   enableContextCompression: true,
+  enableFollowUpChips: false,
   enableHistoryCount: false,
+  enableStaleToolResultTrim: true,
   enableStreaming: true,
   historyCount: 20,
   reasoningBudgetToken: 1024,
   searchFCModel: DEFAULT_AGENT_SEARCH_FC_MODEL,
   searchMode: 'auto',
+  selfIteration: {
+    enabled: false,
+  },
 };
 
 export const DEFAULT_AGENT_CONFIG: LobeAgentConfig = {

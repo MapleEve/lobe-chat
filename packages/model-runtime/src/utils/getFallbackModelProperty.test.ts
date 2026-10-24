@@ -1,61 +1,124 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { getModelPropertyWithFallback } from './getFallbackModelProperty';
 
-// Mock LOBE_DEFAULT_MODEL_LIST for testing
-vi.mock('model-bank', () => ({
-  LOBE_DEFAULT_MODEL_LIST: [
+const { loadModelsMock, mockModelList } = vi.hoisted(() => ({
+  loadModelsMock: vi.fn(),
+  mockModelList: [
     {
-      id: 'gpt-4',
-      providerId: 'openai',
-      type: 'chat',
-      displayName: 'GPT-4',
-      contextWindowTokens: 8192,
-      enabled: true,
       abilities: {
         functionCall: true,
         vision: true,
       },
+      contextWindowTokens: 8192,
+      displayName: 'GPT-4',
+      enabled: true,
+      id: 'gpt-4',
       parameters: {
-        temperature: 0.7,
         maxTokens: 4096,
+        temperature: 0.7,
       },
+      providerId: 'openai',
+      type: 'chat',
     },
     {
-      id: 'gpt-4',
-      providerId: 'azure',
-      type: 'chat',
-      displayName: 'GPT-4 Azure',
-      contextWindowTokens: 8192,
-      enabled: true,
       abilities: {
         functionCall: true,
       },
+      contextWindowTokens: 8192,
+      displayName: 'GPT-4 Azure',
+      enabled: true,
+      id: 'gpt-4',
+      providerId: 'azure',
+      type: 'chat',
     },
     {
+      contextWindowTokens: 200000,
+      displayName: 'Claude 3',
+      enabled: false,
       id: 'claude-3',
       providerId: 'anthropic',
       type: 'chat',
-      displayName: 'Claude 3',
-      contextWindowTokens: 200000,
-      enabled: false,
     },
     {
-      id: 'dall-e-3',
-      providerId: 'openai',
-      type: 'image',
       displayName: 'DALL-E 3',
       enabled: true,
+      id: 'dall-e-3',
       parameters: {
-        size: '1024x1024',
         quality: 'standard',
+        size: '1024x1024',
       },
+      providerId: 'openai',
+      type: 'image',
     },
   ],
 }));
 
+vi.mock('@lobechat/business-model-bank/model-config', () => ({
+  loadModels: loadModelsMock,
+}));
+
 describe('getModelPropertyWithFallback', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    loadModelsMock.mockResolvedValue([...mockModelList]);
+  });
+
+  it('treats an empty supplied snapshot as authoritative instead of loading another catalog', async () => {
+    expect(await getModelPropertyWithFallback('dall-e-3', 'type', 'openai', [])).toBe('chat');
+    expect(
+      await getModelPropertyWithFallback('gpt-4', 'displayName', 'openai', []),
+    ).toBeUndefined();
+  });
+
   describe('when providerId is specified', () => {
+    it('should use injected LobeHub model config before static fallback', async () => {
+      loadModelsMock.mockResolvedValue([
+        ...mockModelList,
+        {
+          providerId: 'lobehub',
+          source: 'builtin',
+          enabled: true,
+          id: 'injected-model',
+          type: 'chat',
+          displayName: 'Injected LobeHub Model',
+        },
+      ]);
+
+      const result = await getModelPropertyWithFallback('injected-model', 'displayName', 'lobehub');
+
+      expect(loadModelsMock).toHaveBeenCalledTimes(1);
+      expect(result).toBe('Injected LobeHub Model');
+    });
+
+    it('should propagate loadModels errors instead of falling back to static defaults', async () => {
+      loadModelsMock.mockRejectedValue(new Error('model config missing'));
+
+      await expect(
+        getModelPropertyWithFallback('injected-model', 'displayName', 'lobehub'),
+      ).rejects.toThrow('model config missing');
+    });
+
+    it('should prefer the injected LobeHub model over another provider with the same id', async () => {
+      loadModelsMock.mockResolvedValue([
+        {
+          displayName: 'Static Same ID',
+          id: 'same-model',
+          providerId: 'openai',
+          type: 'chat',
+        },
+        {
+          displayName: 'Injected LobeHub Model',
+          id: 'same-model',
+          providerId: 'lobehub',
+          type: 'chat',
+        },
+      ]);
+
+      const result = await getModelPropertyWithFallback('same-model', 'displayName', 'lobehub');
+      expect(result).toBe('Injected LobeHub Model');
+    });
+
     it('should return exact match value when model exists with specified provider', async () => {
       const result = await getModelPropertyWithFallback('gpt-4', 'displayName', 'openai');
       expect(result).toBe('GPT-4');
@@ -125,6 +188,16 @@ describe('getModelPropertyWithFallback', () => {
       expect(result).toBe('chat');
     });
 
+    it('should infer embedding type for unknown embedding-like model IDs', async () => {
+      const result = await getModelPropertyWithFallback('bge-m3', 'type', 'newapi');
+      expect(result).toBe('embedding');
+    });
+
+    it('should infer embedding type case-insensitively for custom model IDs', async () => {
+      const result = await getModelPropertyWithFallback('TEXT-EMBEDDING-3-SMALL', 'type');
+      expect(result).toBe('embedding');
+    });
+
     it('should return undefined for non-type properties when model not found', async () => {
       const result = await getModelPropertyWithFallback('non-existent-model', 'displayName');
       expect(result).toBeUndefined();
@@ -135,11 +208,6 @@ describe('getModelPropertyWithFallback', () => {
         'non-existent-model',
         'contextWindowTokens',
       );
-      expect(result).toBeUndefined();
-    });
-
-    it('should return undefined for enabled property when model not found', async () => {
-      const result = await getModelPropertyWithFallback('non-existent-model', 'enabled');
       expect(result).toBeUndefined();
     });
   });

@@ -1,21 +1,24 @@
 'use client';
 
-import { ActionIcon, Flexbox } from '@lobehub/ui';
-import { App } from 'antd';
-import { cssVar } from 'antd-style';
+import { ActionIcon, confirmModal, cssVar, Flexbox, toast } from '@lobehub/ui';
 import { BookMinusIcon, FileBoxIcon, Trash2Icon } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { useActiveWorkspaceId } from '@/business/client/hooks/useActiveWorkspaceId';
+import { useFileBatchTransferActions } from '@/business/client/hooks/useFileBatchTransferActions';
 import NavHeader from '@/features/NavHeader';
-import { useResourceManagerStore } from '@/routes/(main)/resource/features/store';
-import { getExplorerSelectedCount } from '@/routes/(main)/resource/features/store/selectors';
+import { useResourceManagerStore } from '@/features/ResourceManager/store';
+import { getExplorerSelectedCount } from '@/features/ResourceManager/store/selectors';
+import { openWorkspaceDeleteAllModal } from '@/features/WorkspaceDeleteAllModal';
+import { usePermission } from '@/hooks/usePermission';
 import { useFileStore } from '@/store/file';
 import { FilesTabs } from '@/types/files';
 
 import AddButton from '../../Header/AddButton';
 import BatchActionsDropdown from '../ToolBar/BatchActionsDropdown';
 import SortDropdown from '../ToolBar/SortDropdown';
+import SourceFilter from '../ToolBar/SourceFilter';
 import ViewSwitcher from '../ToolBar/ViewSwitcher';
 import Breadcrumb from './Breadcrumb';
 import SearchInput from './SearchInput';
@@ -25,75 +28,136 @@ import SearchInput from './SearchInput';
  */
 const Header = memo(() => {
   const { t } = useTranslation(['components', 'common', 'file', 'knowledgeBase']);
-  const { modal, message } = App.useApp();
+
+  const activeWorkspaceId = useActiveWorkspaceId();
 
   // Get state and actions from store
-  const [libraryId, category, onActionClick, selectAllState, selectFileIds] =
-    useResourceManagerStore((s) => [
-      s.libraryId,
-      s.category,
-      s.onActionClick,
-      s.selectAllState,
-      s.selectedFileIds,
-    ]);
+  const [
+    libraryId,
+    category,
+    onActionClick,
+    selectAllState,
+    selectFileIds,
+    selectionTotal,
+    viewMode,
+  ] = useResourceManagerStore((s) => [
+    s.libraryId,
+    s.category,
+    s.onActionClick,
+    s.selectAllState,
+    s.selectedFileIds,
+    s.selectionTotal,
+    s.viewMode,
+  ]);
+  const { allowed: canEditResources, reason } = usePermission('edit_own_content');
   const total = useFileStore((s) => s.total);
   const selectCount = getExplorerSelectedCount({
     selectAllState,
     selectedIds: selectFileIds,
-    total,
+    total: selectionTotal ?? total,
   });
   const hasSelected = selectAllState === 'all' || selectCount > 0;
+  const isWorkspaceDeleteAll = !!activeWorkspaceId && selectAllState === 'all';
+  const batchTransferActions = useFileBatchTransferActions(selectCount);
 
   // If no libraryId, show category name or "Resource" for All
   const leftContent = hasSelected ? (
     <Flexbox horizontal align={'center'} gap={8} style={{ marginLeft: 0 }}>
       {libraryId ? (
         <ActionIcon
+          disabled={!canEditResources}
           icon={BookMinusIcon}
-          title={t('FileManager.actions.removeFromLibrary')}
+          title={canEditResources ? t('FileManager.actions.removeFromLibrary') : reason}
           onClick={() => {
-            modal.confirm({
+            if (!canEditResources) return;
+            confirmModal({
+              cancelText: t('cancel', { ns: 'common' }),
+              content: t('FileManager.actions.confirmRemoveFromLibrary', {
+                count: selectCount,
+              }),
               okButtonProps: {
                 danger: true,
               },
+              okText: t('FileManager.actions.removeFromLibrary'),
               onOk: async () => {
                 await onActionClick('removeFromKnowledgeBase');
-                message.success(t('FileManager.actions.removeFromLibrarySuccess'));
+                toast.success(t('FileManager.actions.removeFromLibrarySuccess'));
               },
-              title: t('FileManager.actions.confirmRemoveFromLibrary', {
-                count: selectCount,
-              }),
+              title: t('FileManager.actions.removeFromLibrary'),
             });
           }}
         />
       ) : null}
 
       <ActionIcon
+        disabled={!canEditResources}
         icon={FileBoxIcon}
-        title={t('FileManager.actions.batchChunking')}
+        title={canEditResources ? t('FileManager.actions.batchChunking') : reason}
         onClick={async () => {
+          if (!canEditResources) return;
           await onActionClick('batchChunking');
         }}
       />
 
+      {batchTransferActions?.map((action) => (
+        <ActionIcon
+          disabled={!canEditResources}
+          icon={action.icon}
+          key={action.key}
+          title={canEditResources ? action.label : reason}
+          onClick={() => {
+            if (!canEditResources) return;
+            action.onClick();
+          }}
+        />
+      ))}
+
       <ActionIcon
+        disabled={!canEditResources}
         icon={Trash2Icon}
-        title={t('delete', { ns: 'common' })}
+        title={
+          canEditResources
+            ? t(isWorkspaceDeleteAll ? 'FileManager.actions.deleteAll' : 'delete', {
+                ns: isWorkspaceDeleteAll ? 'components' : 'common',
+              })
+            : reason
+        }
         onClick={() => {
-          modal.confirm({
-            okButtonProps: {
-              danger: true,
-            },
-            onOk: async () => {
-              await onActionClick('delete');
-              message.success(t('FileManager.actions.deleteSuccess'));
-            },
-            title: t(
+          if (!canEditResources) return;
+
+          const handleDelete = async () => {
+            await onActionClick('delete');
+            toast.success(t('FileManager.actions.deleteSuccess'));
+          };
+
+          if (isWorkspaceDeleteAll) {
+            openWorkspaceDeleteAllModal({
+              acknowledgeText: t('FileManager.actions.confirmDeleteAllWorkspaceAcknowledge'),
+              cancelText: t('cancel', { ns: 'common' }),
+              confirmText: t('FileManager.actions.deleteAll'),
+              description: t('FileManager.actions.confirmDeleteAllWorkspaceFiles'),
+              onConfirm: handleDelete,
+              title: t('FileManager.actions.deleteAll'),
+            });
+            return;
+          }
+
+          confirmModal({
+            cancelText: t('cancel', { ns: 'common' }),
+            content: t(
               selectAllState === 'all'
                 ? 'FileManager.actions.confirmDeleteAllFiles'
                 : 'FileManager.actions.confirmDeleteMultiFiles',
               { count: selectCount },
             ),
+            okButtonProps: {
+              danger: true,
+            },
+            okText: t('delete', { ns: 'common' }),
+            onOk: async () => {
+              await handleDelete();
+            },
+            title: t('delete', { ns: 'common' }),
           });
         }}
       />
@@ -101,11 +165,11 @@ const Header = memo(() => {
   ) : !libraryId ? (
     <Flexbox style={{ marginLeft: 8 }}>
       {category === FilesTabs.All
-        ? t('resource', { defaultValue: 'Resource' })
+        ? t('resource', { ns: 'file' })
         : t(`tab.${category as FilesTabs}` as any, { ns: 'file' })}
     </Flexbox>
   ) : (
-    <Flexbox style={{ marginLeft: 8 }}>
+    <Flexbox horizontal align={'center'} gap={4} style={{ marginLeft: 8 }}>
       <Breadcrumb category={category} knowledgeBaseId={libraryId} />
     </Flexbox>
   );
@@ -115,6 +179,14 @@ const Header = memo(() => {
       left={leftContent}
       right={
         <>
+          {/*
+            Grid view carries the source chips on its item-count row (where the
+            count and the pool it counts belong together). The list view has no
+            such row — its header is a horizontally scrolling column strip — so
+            the chips live here instead, and a standing filter stays visible in
+            both views.
+          */}
+          {viewMode === 'list' && <SourceFilter />}
           <SearchInput />
           <SortDropdown />
           <BatchActionsDropdown selectCount={selectCount} onActionClick={onActionClick} />

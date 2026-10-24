@@ -1,3 +1,4 @@
+import { RequestTrigger } from '@lobechat/types';
 import { act, renderHook } from '@testing-library/react';
 import { type Mock } from 'vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -11,7 +12,6 @@ import { useChatStore } from '../../store';
 // Mock messageService and chatService
 vi.mock('@/services/message', () => ({
   messageService: {
-    updateMessageTTS: vi.fn(),
     updateMessageTranslate: vi.fn(),
     updateMessage: vi.fn(),
   },
@@ -23,6 +23,13 @@ vi.mock('@/services/chat', () => ({
   },
 }));
 
+// Message writes go through the transcript replica, which reads the cache scope.
+vi.mock('@/libs/swr/useCacheScope', () => ({
+  getCacheScope: () => 'test-scope',
+  isScopeTrusted: () => false,
+  useCacheScope: () => 'test-scope',
+}));
+
 vi.mock('@/store/user', () => ({
   useUserStore: {
     getState: vi.fn(() => ({})),
@@ -31,7 +38,12 @@ vi.mock('@/store/user', () => ({
 
 vi.mock('@/store/user/selectors', () => ({
   systemAgentSelectors: {
-    translation: vi.fn(() => ({})),
+    translation: vi.fn(() => ({
+      customPrompt: 'Translate literally',
+      enabled: true,
+      model: 'qwen3:1.7b',
+      provider: 'ollama',
+    })),
   },
 }));
 
@@ -89,6 +101,14 @@ describe('ChatEnhanceAction', () => {
 
       expect(messageService.updateMessageTranslate).toHaveBeenCalled();
       expect(chatService.fetchPresetTaskResult).toHaveBeenCalledTimes(2);
+      for (const [params] of (chatService.fetchPresetTaskResult as Mock).mock.calls) {
+        expect(params.trigger).toBe(RequestTrigger.Translate);
+        // The system agent's own settings are not model parameters: the
+        // request carries the model only, whatever provider it is relayed to.
+        expect(params.params).toMatchObject({ model: 'qwen3:1.7b', provider: 'ollama' });
+        expect(params.params).not.toHaveProperty('enabled');
+        expect(params.params).not.toHaveProperty('customPrompt');
+      }
     });
   });
 

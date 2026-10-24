@@ -1,31 +1,39 @@
 'use client';
 
 import { builtinTools } from '@lobechat/builtin-tools';
+import { DEFAULT_INBOX_AVATAR } from '@lobechat/const';
 import type { BuiltinToolManifest, LobeChatPluginApi } from '@lobechat/types';
 
 import type { ToolRenderFixture } from '../lifecycleMode';
 import { buildSchemaSample, humanize, single, type ToolsetFixtureModule } from './_helpers';
 import claudeCode from './claude-code';
 import codex from './codex';
+import devin from './devin';
 import github from './github';
+import kimiCode from './kimi-code';
+import linear from './linear';
 import lobeActivator from './lobe-activator';
 import lobeAgent from './lobe-agent';
 import lobeAgentBuilder from './lobe-agent-builder';
 import lobeAgentDocuments from './lobe-agent-documents';
 import lobeAgentManagement from './lobe-agent-management';
+import lobeBrowser from './lobe-browser';
 import lobeCloudSandbox from './lobe-cloud-sandbox';
 import lobeGroupAgentBuilder from './lobe-group-agent-builder';
 import lobeGroupManagement from './lobe-group-management';
+import lobeImageGeneration from './lobe-image-generation';
 import lobeKnowledgeBase from './lobe-knowledge-base';
 import lobeLocalSystem from './lobe-local-system';
 import lobeNotebook from './lobe-notebook';
 import lobePageAgent from './lobe-page-agent';
 import lobeSkillStore from './lobe-skill-store';
 import lobeSkills from './lobe-skills';
+import lobeTask from './lobe-task';
 import lobeUserInteraction from './lobe-user-interaction';
 import lobeUserMemory from './lobe-user-memory';
 import lobeWebBrowsing from './lobe-web-browsing';
 import lobeWebOnboarding from './lobe-web-onboarding';
+import { lobeAuv } from './lobeAuv';
 
 export type { ToolRenderFixture, ToolRenderFixtureVariant } from '../lifecycleMode';
 
@@ -39,6 +47,19 @@ export interface ToolRenderMeta {
 }
 
 export const DEVTOOLS_GROUP_ID = 'devtools-preview-group';
+
+/**
+ * Identity for the seeded Aggregate-preview conversation. The fixture messages
+ * resolve their avatar/name through this agentId, so seeding `agentMap` with
+ * this meta makes the preview turn read as "Lobe AI" instead of the
+ * unresolved-agent fallback ("Unnamed Assistant").
+ */
+export const DEVTOOLS_AGENT_ID = 'devtools-render-gallery';
+
+export const DEVTOOLS_AGENT_META = {
+  avatar: DEFAULT_INBOX_AVATAR,
+  title: 'Lobe AI',
+};
 
 export const DEVTOOLS_GROUP_DETAIL = {
   agents: [
@@ -65,21 +86,28 @@ export const DEVTOOLS_GROUP_DETAIL = {
 const toolsetModules: ToolsetFixtureModule[] = [
   claudeCode,
   codex,
+  devin,
   github,
+  kimiCode,
+  linear,
   lobeActivator,
   lobeAgent,
   lobeAgentBuilder,
   lobeAgentDocuments,
   lobeAgentManagement,
+  lobeAuv,
+  lobeBrowser,
   lobeCloudSandbox,
   lobeGroupAgentBuilder,
   lobeGroupManagement,
+  lobeImageGeneration,
   lobeKnowledgeBase,
   lobeLocalSystem,
   lobeNotebook,
   lobePageAgent,
   lobeSkillStore,
   lobeSkills,
+  lobeTask,
   lobeUserInteraction,
   lobeUserMemory,
   lobeWebBrowsing,

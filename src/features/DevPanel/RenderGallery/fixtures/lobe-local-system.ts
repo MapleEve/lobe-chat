@@ -5,23 +5,25 @@ import { defineFixtures, single, variants } from './_helpers';
 export default defineFixtures({
   identifier: 'lobe-local-system',
   fixtures: {
-    editLocalFile: single({
+    editFile: single({
       args: { path: '/workspace/src/spa/router/desktopRouter.config.tsx' },
       pluginState: {
         diffText:
           "--- a/workspace/src/spa/router/desktopRouter.config.tsx\n+++ b/workspace/src/spa/router/desktopRouter.config.tsx\n@@ -1,3 +1,7 @@\n export const desktopRoutes = [\n+  {\n+    path: 'devtools',\n+  },\n ];\n",
       },
     }),
-    listLocalFiles: single({
+    listFiles: single({
+      args: { path: '/workspace' },
       pluginState: {
         files: [
-          { isDirectory: true, name: 'src' },
-          { isDirectory: false, name: 'package.json', size: 1320 },
-          { isDirectory: false, name: 'README.md', size: 4096 },
+          { isDirectory: true, name: 'src', path: '/workspace/src' },
+          { isDirectory: false, name: 'package.json', path: '/workspace/package.json', size: 1320 },
+          { isDirectory: false, name: 'README.md', path: '/workspace/README.md', size: 4096 },
         ],
+        totalCount: 3,
       },
     }),
-    moveLocalFiles: single({
+    moveFiles: single({
       args: {
         items: [
           {
@@ -31,18 +33,26 @@ export default defineFixtures({
         ],
       },
     }),
-    readLocalFile: single({
-      args: { path: '/workspace/src/routes/(main)/devtools/index.tsx' },
-      pluginState: {
-        content:
-          'export default function DevtoolsPage() {\n  return <div>Render preview</div>;\n}\n',
-        endLine: 3,
-        fullPath: '/workspace/src/routes/(main)/devtools/index.tsx',
-        path: 'src/routes/(main)/devtools/index.tsx',
-        startLine: 1,
-        totalLines: 3,
+    readFile: variants([
+      {
+        args: { path: '/tmp/capture.png' },
+        label: 'View screenshot image',
+        partialArgs: { path: '/tmp/capture.png' },
       },
-    }),
+      {
+        args: { path: '/workspace/src/routes/(main)/devtools/index.tsx' },
+        label: 'Read source file',
+        pluginState: {
+          content:
+            'export default function DevtoolsPage() {\n  return <div>Render preview</div>;\n}\n',
+          endLine: 3,
+          fullPath: '/workspace/src/routes/(main)/devtools/index.tsx',
+          path: 'src/routes/(main)/devtools/index.tsx',
+          startLine: 1,
+          totalLines: 3,
+        },
+      },
+    ]),
     runCommand: single({
       args: { command: 'bun run type-check' },
       content: 'Checked 1247 files in 2.3s\nNo type errors found.',
@@ -54,7 +64,7 @@ export default defineFixtures({
         success: true,
       },
     }),
-    searchLocalFiles: variants([
+    searchFiles: variants([
       {
         args: { keywords: 'quarterly report sample' },
         label: 'Multiple matches',
@@ -97,7 +107,7 @@ export default defineFixtures({
         },
       },
     ]),
-    writeLocalFile: single({
+    writeFile: single({
       args: {
         content: 'export const devtoolsEnabled = process.env.NODE_ENV === "development";\n',
         path: '/workspace/src/routes/(main)/devtools/flags.ts',

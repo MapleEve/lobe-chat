@@ -12,6 +12,7 @@ export interface FileSearchResult {
 
 export interface DocumentSearchResult {
   documentId: string;
+  fileId?: string;
   knowledgeBaseId: string;
   relevance: number;
   snippet: string;
@@ -42,12 +43,13 @@ ${chunks.join('\n')}
 };
 
 /**
- * Formats a single document search result (BM25 hit on custom/document) with XML tags.
+ * Formats a single document search result (BM25 hit on a KB document) with XML tags.
  * Documents return only a snippet — agent should call readKnowledge with the docs_* id
- * to fetch the full content.
+ * (or file_* id when present, for parsed-file documents) to fetch the full content.
  */
 const formatDocument = (doc: DocumentSearchResult): string => {
-  return `<document id="${doc.documentId}" title="${doc.title}" relevance="${doc.relevance}" knowledgeBaseId="${doc.knowledgeBaseId}">
+  const fileIdAttr = doc.fileId ? ` fileId="${doc.fileId}"` : '';
+  return `<document id="${doc.documentId}"${fileIdAttr} title="${doc.title}" relevance="${doc.relevance}" knowledgeBaseId="${doc.knowledgeBaseId}">
 <snippet>${doc.snippet}</snippet>
 </document>`;
 };
@@ -107,7 +109,7 @@ ${docsXml}
       : fileResults.length > 0
         ? 'Source type: <files> (vector search, chunk-level). '
         : 'Source type: <documents> (full-text search, document-level). '
-  }Use the readKnowledge tool with the returned IDs (file_* or docs_*) to fetch complete content.${errorNote}`;
+  }Use the readKnowledge tool with the returned IDs (file_* or docs_*) to read the relevant content; it returns bounded windows, so page with offset when a result is truncated.${errorNote}`;
 
   return `<knowledge_base_search_results query="${query}" totalCount="${totalCount}">
 <instruction>${instruction}</instruction>

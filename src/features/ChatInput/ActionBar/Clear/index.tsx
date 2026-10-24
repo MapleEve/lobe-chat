@@ -1,16 +1,14 @@
-import { HotkeyEnum } from '@lobechat/const/hotkeys';
-import { Popconfirm } from 'antd';
+import { confirmModal } from '@lobehub/ui';
 import { Eraser } from 'lucide-react';
-import { memo, useCallback, useState } from 'react';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useIsMobile } from '@/hooks/useIsMobile';
+import { usePermission } from '@/hooks/usePermission';
 import { useChatStore } from '@/store/chat';
 import { useFileStore } from '@/store/file';
-import { useUserStore } from '@/store/user';
-import { settingsSelectors } from '@/store/user/selectors';
 
-import Action from '../components/Action';
+import { useChatInputResourceAccess } from '../../hooks/useChatInputResourceAccess';
+import { ChatInputAction } from '../components/ChatInputAction';
 
 export const useClearCurrentMessages = () => {
   const clearMessage = useChatStore((s) => s.clearMessage);
@@ -24,42 +22,40 @@ export const useClearCurrentMessages = () => {
 
 const Clear = memo(() => {
   const { t } = useTranslation('setting');
-  const hotkey = useUserStore(settingsSelectors.getHotkeyById(HotkeyEnum.ClearCurrentMessages));
 
   const clearCurrentMessages = useClearCurrentMessages();
-  const [confirmOpened, updateConfirmOpened] = useState(false);
-  const mobile = useIsMobile();
-
-  const actionTitle: any = confirmOpened ? void 0 : t('clearCurrentMessages', { ns: 'chat' });
-
-  const popconfirmPlacement = mobile ? 'top' : 'topRight';
+  const { allowed: canCreateContent } = usePermission('create_content');
+  // Clearing deletes shared conversation messages — view-only members don't
+  // get the confirm at all (the trigger Action is already disabled too).
+  const { canUseResource } = useChatInputResourceAccess();
+  const canCreate = canCreateContent && canUseResource;
 
   return (
-    <Popconfirm
-      arrow={false}
-      okButtonProps={{ danger: true, type: 'primary' }}
-      open={confirmOpened}
-      placement={popconfirmPlacement}
-      title={
-        <div style={{ marginBottom: '8px', whiteSpace: 'pre-line', wordBreak: 'break-word' }}>
-          {t('confirmClearCurrentMessages', { ns: 'chat' })}
-        </div>
-      }
-      onConfirm={clearCurrentMessages}
-      onOpenChange={updateConfirmOpened}
-    >
-      <Action
-        icon={Eraser}
-        title={actionTitle}
-        tooltipProps={{
-          hotkey,
-          placement: 'bottom',
-          styles: {
-            root: { maxWidth: 'none' },
-          },
-        }}
-      />
-    </Popconfirm>
+    <ChatInputAction
+      icon={Eraser}
+      title={t('clearCurrentMessages', { ns: 'chat' })}
+      tooltipProps={{
+        placement: 'bottom',
+        styles: {
+          root: { maxWidth: 'none' },
+        },
+      }}
+      onClick={() => {
+        if (!canCreate) return;
+        confirmModal({
+          cancelText: t('cancel', { ns: 'common' }),
+          content: (
+            <div style={{ whiteSpace: 'pre-line', wordBreak: 'break-word' }}>
+              {t('confirmClearCurrentMessages', { ns: 'chat' })}
+            </div>
+          ),
+          okButtonProps: { danger: true },
+          okText: t('ok', { ns: 'common' }),
+          onOk: clearCurrentMessages,
+          title: t('clearCurrentMessages', { ns: 'chat' }),
+        });
+      }}
+    />
   );
 });
 

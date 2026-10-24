@@ -1,12 +1,11 @@
 'use client';
 
-import { ModelIcon } from '@lobehub/icons';
-import { Flexbox, Icon, Text } from '@lobehub/ui';
-import { createStaticStyles, cssVar, useResponsive } from 'antd-style';
+import { createStaticStyles, cssVar, Flexbox, Icon, Text, useResponsive } from '@lobehub/ui';
 import { DotIcon } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { ModelIcon } from '@/components/LobeIcons';
 import { ModelInfoTags } from '@/components/ModelSelect';
 import PublishedTime from '@/components/PublishedTime';
 import ModelTypeIcon from '@/routes/(main)/community/(list)/model/features/List/ModelTypeIcon';
@@ -30,7 +29,7 @@ const styles = createStaticStyles(({ css, cssVar }) => {
 });
 
 const Header = memo<{ mobile?: boolean }>(({ mobile: isMobile }) => {
-  const { identifier, releasedAt, displayName, type, abilities, contextWindowTokens } =
+  const { description, identifier, releasedAt, displayName, type, abilities, contextWindowTokens } =
     useDetailContext();
   const { mobile = isMobile } = useResponsive();
   const { t } = useTranslation('models');
@@ -97,7 +96,7 @@ const Header = memo<{ mobile?: boolean }>(({ mobile: isMobile }) => {
           color: cssVar.colorTextSecondary,
         }}
       >
-        {t(`${identifier}.description`)}
+        {t(`${identifier}.description`, { defaultValue: description })}
       </div>
     </Flexbox>
   );

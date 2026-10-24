@@ -1,11 +1,10 @@
 'use client';
 
-import { Flexbox, Tag } from '@lobehub/ui';
-import { createStaticStyles } from 'antd-style';
+import { createStaticStyles, Flexbox, Tag } from '@lobehub/ui';
 import qs from 'query-string';
 import { memo } from 'react';
-import { Link } from 'react-router-dom';
 
+import WorkspaceLink from '@/features/Workspace/WorkspaceLink';
 import { useQuery } from '@/hooks/useQuery';
 import { type AssistantMarketSource } from '@/types/discover';
 
@@ -30,7 +29,7 @@ const TagList = memo<{ tags: string[] }>(({ tags }) => {
     showTags && (
       <Flexbox horizontal gap={8} wrap={'wrap'}>
         {tags.map((tag) => (
-          <Link
+          <WorkspaceLink
             key={tag}
             to={qs.stringifyUrl(
               {
@@ -44,7 +43,7 @@ const TagList = memo<{ tags: string[] }>(({ tags }) => {
             )}
           >
             <Tag className={styles.tag}>{tag}</Tag>
-          </Link>
+          </WorkspaceLink>
         ))}
       </Flexbox>
     )

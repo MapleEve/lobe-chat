@@ -1,8 +1,29 @@
-import { and, asc, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
+import { AGENT_DOCUMENT_FILE_TYPE, AGENT_DOCUMENT_SOURCE_TYPE } from '@lobechat/const';
+import type { DocumentAccessScope } from '@lobechat/types';
+import { ordinaryDocumentAccessScope, stripAgentShareDocumentProvenance } from '@lobechat/types';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  like,
+  ne,
+  notExists,
+  or,
+  sql,
+} from 'drizzle-orm';
 
 import type { DocumentItem, NewAgentDocument, NewDocument } from '../../schemas';
-import { agentDocuments, documents } from '../../schemas';
+import { AGENT_SKILL_TEMPLATE_ID, agentDocuments, documents } from '../../schemas';
 import type { LobeChatDatabase, Transaction } from '../../type';
+import { documentMatchesAccessScope } from '../../utils/documentVisibility';
+import { buildWorkspaceWhere } from '../../utils/workspace';
+import { buildCopyParams } from './copyDocument';
+import { deriveAgentDocumentFields } from './deriveFields';
 import { buildDocumentFilename } from './filename';
 import {
   composeToolPolicyUpdate,
@@ -14,6 +35,9 @@ import {
 } from './policy';
 import type {
   AgentDocument,
+  AgentDocumentContextRow,
+  AgentDocumentListItem,
+  AgentDocumentListSourceType,
   AgentDocumentPolicy,
   AgentDocumentSourceType,
   AgentDocumentWithRules,
@@ -40,6 +64,7 @@ interface AgentDocumentQueryOptions {
 interface AgentDocumentCreateParams {
   createdAt?: Date;
   editorData?: Record<string, any>;
+  fileId?: string;
   fileType?: string;
   loadPosition?: DocumentLoadPosition;
   loadRules?: DocumentLoadRules;
@@ -66,13 +91,121 @@ interface ConvertAgentDocumentToSkillIndexParams {
   title: string;
 }
 
+/** Columns of one document-tree row (agent binding joined to its document). */
+const listItemColumns = {
+  createdAt: documents.createdAt,
+  description: documents.description,
+  documentId: agentDocuments.documentId,
+  documentUpdatedAt: documents.updatedAt,
+  fileId: documents.fileId,
+  fileType: documents.fileType,
+  filename: documents.filename,
+  id: agentDocuments.id,
+  parentId: documents.parentId,
+  policy: agentDocuments.policy,
+  sourceType: documents.sourceType,
+  templateId: agentDocuments.templateId,
+  title: documents.title,
+  updatedAt: agentDocuments.updatedAt,
+};
+
+interface AgentDocumentListQueryRow {
+  createdAt: Date;
+  description: string | null;
+  documentId: string;
+  documentUpdatedAt: Date;
+  fileId: string | null;
+  filename: string | null;
+  fileType: string;
+  id: string;
+  parentId: string | null;
+  policy: unknown;
+  sourceType: AgentDocumentSourceType;
+  templateId: string | null;
+  title: string | null;
+  updatedAt: Date;
+}
+
+/**
+ * Map the list API's source filter onto `documents.source_type`.
+ *
+ * The list contract has two buckets: `web` (crawled pages) and `file` (everything
+ * authored or uploaded as an agent document). Authored docs are stored as
+ * `agent` / `agent-signal` / `api`, so `file` means "not web" rather than the
+ * literal `file` source type, which only covers uploaded originals.
+ */
+const listSourceTypeFilter = (sourceType?: AgentDocumentListSourceType) => {
+  if (sourceType === 'web') return [eq(documents.sourceType, 'web')];
+  if (sourceType === 'file') return [ne(documents.sourceType, 'web')];
+  return [];
+};
+
 export class AgentDocumentModel {
   private userId: string;
+  private workspaceId?: string;
   private db: LobeChatDatabase;
+  private documentAccessScope: DocumentAccessScope;
 
-  constructor(db: LobeChatDatabase, userId: string) {
+  constructor(
+    db: LobeChatDatabase,
+    userId: string,
+    workspaceId?: string,
+    documentAccessScope: DocumentAccessScope = ordinaryDocumentAccessScope,
+  ) {
     this.userId = userId;
+    this.workspaceId = workspaceId;
     this.db = db;
+    this.documentAccessScope = documentAccessScope;
+  }
+
+  /**
+   * Workspace-aware ownership predicate for the `agent_documents` binding table.
+   * Personal mode → `user_id = ? AND workspace_id IS NULL`; workspace mode → `workspace_id = ?`.
+   */
+  private agentDocOwnership() {
+    // NOTICE:
+    // For now, we expect a caller authorized to access an agent to access all resources
+    // bound under its agent documents, including backing files, without a separate
+    // Resources publish step. Tool reads and UI previews need the same access contract.
+    // Agent documents and backing files use separate visibility checks; uploads without
+    // the agent-document source can expose a document in tools/the tree while its
+    // original-file preview returns 404. Dedicated uploads now default to public.
+    // Context: AgentDocumentsService.importFile and FileDocumentPreview; this predicate
+    // scopes bindings but does not itself authorize access to the agent.
+    // Replace this interim assumption when a consistent workspace authorization model
+    // covers agent documents, backing files, tool execution, and resource publishing.
+
+    // REVIEW: A private upload must not silently become readable merely because someone
+    // can access its agent. Restricting preview or even one read tool is insufficient:
+    // if an agent can read private content through another path or its existing context,
+    // a user can prompt it to copy or summarize that content into a shared knowledge base
+    // and leak it. The current assumption does not provide per-resource confidentiality.
+
+    // TODO: Revisit this coarse model before extending workspace permission controls.
+    // Define how sharing is authorized and how reads, execution context, and writes to
+    // broader audiences are constrained; enforce the resulting rules across all paths.
+    return and(
+      buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, agentDocuments),
+      exists(
+        this.db
+          .select({ id: documents.id })
+          .from(documents)
+          .where(
+            and(
+              eq(documents.id, agentDocuments.documentId),
+              documentMatchesAccessScope(documents.metadata, this.documentAccessScope),
+            ),
+          ),
+      ),
+    );
+  }
+
+  /** Workspace-aware ownership predicate for the backing `documents` rows. */
+  private documentOwnership() {
+    return and(
+      buildWorkspaceWhere({ userId: this.userId, workspaceId: this.workspaceId }, documents),
+      documentMatchesAccessScope(documents.metadata, this.documentAccessScope),
+    );
   }
 
   private getDocumentStats(content: string) {
@@ -97,6 +230,20 @@ export class AgentDocumentModel {
 
     const description = (frontmatter as Record<string, unknown>).description;
     return typeof description === 'string' ? description : undefined;
+  }
+
+  private scopeMetadata(metadata?: Record<string, any>): Record<string, any> | undefined {
+    const sanitizedMetadata = stripAgentShareDocumentProvenance(metadata);
+    if (this.documentAccessScope.type !== 'agentShare') return sanitizedMetadata;
+
+    return {
+      ...sanitizedMetadata,
+      agentShare: {
+        shareId: this.documentAccessScope.shareId,
+        topicId: this.documentAccessScope.topicId,
+        visitorUserId: this.documentAccessScope.visitorUserId,
+      },
+    };
   }
 
   private toAgentDocument(
@@ -142,6 +289,32 @@ export class AgentDocumentModel {
     };
   }
 
+  private toAgentDocumentListItem(row: AgentDocumentListQueryRow): AgentDocumentListItem {
+    const filename = row.filename ?? '';
+    const policy = (row.policy as AgentDocumentPolicy | null) ?? null;
+    const item = {
+      createdAt: row.createdAt,
+      description: row.description ?? null,
+      documentId: row.documentId,
+      documentUpdatedAt: row.documentUpdatedAt,
+      fileId: row.fileId,
+      fileType: row.fileType,
+      filename,
+      id: row.id,
+      loadPosition: policy?.context?.position,
+      parentId: row.parentId ?? null,
+      sourceType: row.sourceType,
+      templateId: row.templateId ?? null,
+      title: row.title ?? filename,
+      updatedAt: row.updatedAt,
+    };
+
+    return {
+      ...item,
+      ...deriveAgentDocumentFields(item),
+    };
+  }
+
   private buildDeletedAtFilters(options?: AgentDocumentQueryOptions) {
     if (options?.deletedOnly) return [isNotNull(agentDocuments.deletedAt)];
     if (options?.includeDeleted) return [];
@@ -172,7 +345,7 @@ export class AgentDocumentModel {
       .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
       .where(
         and(
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           eq(agentDocuments.agentId, agentId),
           inArray(documents.parentId, parentIds),
           ...this.buildDeletedAtFilters(options),
@@ -181,6 +354,37 @@ export class AgentDocumentModel {
       .orderBy(asc(agentDocuments.createdAt), asc(agentDocuments.id));
 
     return results.map(({ settings, doc }) => this.toAgentDocument(settings, doc));
+  }
+
+  /**
+   * Counts live children per parent `documentId`, for listings that show which
+   * entries (folders or documents) have something nested under them. Omit
+   * `parentIds` to count every parent of the agent in one grouped query.
+   * Parents without children are absent from the map.
+   */
+  async countChildrenByParentIds(
+    agentId: string,
+    parentIds?: string[],
+  ): Promise<Map<string, number>> {
+    if (parentIds?.length === 0) return new Map();
+
+    const rows = await this.db
+      .select({ count: sql<number>`count(*)::int`, parentId: documents.parentId })
+      .from(agentDocuments)
+      .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
+      .where(
+        and(
+          this.agentDocOwnership(),
+          eq(agentDocuments.agentId, agentId),
+          parentIds ? inArray(documents.parentId, parentIds) : isNotNull(documents.parentId),
+          isNull(agentDocuments.deletedAt),
+        ),
+      )
+      .groupBy(documents.parentId);
+
+    return new Map(
+      rows.flatMap((row) => (row.parentId ? [[row.parentId, Number(row.count)] as const] : [])),
+    );
   }
 
   /**
@@ -195,7 +399,8 @@ export class AgentDocumentModel {
    * - Duplicate filenames are allowed; path-style callers resolve visible duplicates separately.
    *
    * Returns:
-   * - The inserted agent document binding id, or an empty id when the source document is missing.
+   * - The inserted or existing agent document binding id.
+   * - An empty id only when the source document is missing.
    *
    */
   async associate(params: {
@@ -209,7 +414,7 @@ export class AgentDocumentModel {
       const [doc] = await trx
         .select()
         .from(documents)
-        .where(and(eq(documents.id, documentId), eq(documents.userId, this.userId)))
+        .where(and(eq(documents.id, documentId), this.documentOwnership()))
         .limit(1);
 
       if (!doc) return { id: '' };
@@ -232,11 +437,29 @@ export class AgentDocumentModel {
           policyLoadPosition: DocumentLoadPosition.BEFORE_FIRST_USER,
           policyLoadRule: DocumentLoadRule.ALWAYS,
           userId: this.userId,
+          workspaceId: this.workspaceId ?? null,
         })
         .onConflictDoNothing()
         .returning({ id: agentDocuments.id });
 
-      return { id: result?.id };
+      if (result) return result;
+
+      // A concurrent caller (or an earlier run) may already own this unique
+      // agent/document binding. The conflict loser must resolve that row instead
+      // of leaking `undefined` to callers that need the binding id.
+      const [existing] = await trx
+        .select({ id: agentDocuments.id })
+        .from(agentDocuments)
+        .where(
+          and(
+            this.agentDocOwnership(),
+            eq(agentDocuments.agentId, agentId),
+            eq(agentDocuments.documentId, documentId),
+          ),
+        )
+        .limit(1);
+
+      return { id: existing?.id ?? '' };
     });
   }
 
@@ -288,7 +511,8 @@ export class AgentDocumentModel {
     const {
       createdAt,
       editorData,
-      fileType = 'agent/document',
+      fileId,
+      fileType = AGENT_DOCUMENT_FILE_TYPE,
       loadPosition,
       loadRules,
       metadata,
@@ -296,7 +520,7 @@ export class AgentDocumentModel {
       policy,
       policyLoad,
       source,
-      sourceType = 'agent',
+      sourceType = AGENT_DOCUMENT_SOURCE_TYPE,
       templateId,
       title: providedTitle,
       updatedAt,
@@ -305,11 +529,12 @@ export class AgentDocumentModel {
     const title = providedTitle?.trim() || filename.replace(/\.[^.]+$/, '');
     const stats = this.getDocumentStats(content);
     const normalizedPolicy = normalizePolicy(loadPosition, loadRules, policy);
+    const scopedMetadata = this.scopeMetadata(metadata);
 
     const documentPayload: NewDocument = {
       content,
       createdAt,
-      description: this.getMetadataDescription(metadata),
+      description: this.getMetadataDescription(scopedMetadata),
       // NOTICE:
       // Agent documents often carry Markdown `content`, but editor history and restore UI
       // depend on this serialized editor snapshot. Service callers that derive content from
@@ -321,7 +546,8 @@ export class AgentDocumentModel {
       fileType,
       filename,
       parentId,
-      metadata,
+      metadata: scopedMetadata,
+      ...(fileId ? { fileId } : {}),
       source: source ?? `agent-document://${agentId}/${encodeURIComponent(filename)}`,
       sourceType,
       title,
@@ -329,6 +555,9 @@ export class AgentDocumentModel {
       totalLineCount: stats.totalLineCount,
       updatedAt: updatedAt ?? createdAt,
       userId: this.userId,
+      // Keep newly created agent resources shared within their existing workspace scope.
+      visibility: 'public',
+      workspaceId: this.workspaceId ?? null,
     };
 
     const [insertedDocument] = await trx.insert(documents).values(documentPayload).returning();
@@ -358,6 +587,7 @@ export class AgentDocumentModel {
       templateId,
       updatedAt: updatedAt ?? createdAt,
       userId: this.userId,
+      workspaceId: this.workspaceId ?? null,
     };
 
     const [settings] = await trx.insert(agentDocuments).values(newDoc).returning();
@@ -411,7 +641,7 @@ export class AgentDocumentModel {
       .where(
         and(
           eq(agentDocuments.id, params.agentDocumentId),
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           isNull(agentDocuments.deletedAt),
         ),
       )
@@ -424,25 +654,25 @@ export class AgentDocumentModel {
 
     const stats = this.getDocumentStats(params.content);
     const updatedAt = new Date();
+    const scopedMetadata = this.scopeMetadata(params.metadata);
 
     await trx
       .update(documents)
       .set({
         content: params.content,
-        description: this.getMetadataDescription(params.metadata),
+        description: this.getMetadataDescription(scopedMetadata),
         ...(params.editorData !== undefined && { editorData: params.editorData }),
         filename: params.filename,
         fileType: 'skills/index',
-        metadata: params.metadata,
+        metadata: scopedMetadata,
         parentId: params.parentId,
         source: params.source,
         sourceType: params.sourceType,
         title: params.title,
         totalCharCount: stats.totalCharCount,
         totalLineCount: stats.totalLineCount,
-        updatedAt,
       })
-      .where(and(eq(documents.id, existing.documentId), eq(documents.userId, this.userId)));
+      .where(and(eq(documents.id, existing.documentId), this.documentOwnership()));
 
     await trx
       .update(agentDocuments)
@@ -454,7 +684,7 @@ export class AgentDocumentModel {
       .where(
         and(
           eq(agentDocuments.id, params.agentDocumentId),
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           isNull(agentDocuments.deletedAt),
         ),
       );
@@ -466,7 +696,7 @@ export class AgentDocumentModel {
       .where(
         and(
           eq(agentDocuments.id, params.agentDocumentId),
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           isNull(agentDocuments.deletedAt),
         ),
       )
@@ -477,11 +707,62 @@ export class AgentDocumentModel {
       : undefined;
   }
 
+  /**
+   * Writes a repaired editor snapshot only if the backing document still holds
+   * the version the repair was computed from.
+   *
+   * Use when:
+   * - A read path rebuilds `editorData` from Markdown and must persist it so the
+   *   node ids it exposes stay addressable, without clobbering a concurrent save.
+   *
+   * Expects:
+   * - `expected` is the `content` / `editorData` pair the caller read.
+   *
+   * Returns:
+   * - `true` when the snapshot was written; `false` when the document changed
+   *   (or is gone) since it was read, in which case nothing is written.
+   */
+  async updateEditorSnapshotIfUnchanged(
+    documentId: string,
+    expected: { content: string; editorData: Record<string, any> | null },
+    next: { content: string; editorData: Record<string, any> },
+  ): Promise<boolean> {
+    const existing = await this.findById(documentId);
+    if (!existing) return false;
+
+    const stats = this.getDocumentStats(next.content);
+    const expectedEditorData =
+      expected.editorData === null || expected.editorData === undefined
+        ? null
+        : JSON.stringify(expected.editorData);
+
+    const updated = await this.db
+      .update(documents)
+      .set({
+        content: next.content,
+        editorData: next.editorData,
+        totalCharCount: stats.totalCharCount,
+        totalLineCount: stats.totalLineCount,
+      })
+      .where(
+        and(
+          eq(documents.id, existing.documentId),
+          this.documentOwnership(),
+          sql`coalesce(${documents.content}, '') = ${expected.content}`,
+          sql`${documents.editorData} IS NOT DISTINCT FROM ${expectedEditorData}::jsonb`,
+        ),
+      )
+      .returning({ id: documents.id });
+
+    return updated.length > 0;
+  }
+
   async update(
     documentId: string,
     params?: {
       content?: string;
-      editorData?: Record<string, any>;
+      editorData?: Record<string, any> | null;
+      fileType?: string;
       loadPosition?: DocumentLoadPosition;
       loadRules?: Partial<DocumentLoadRules>;
       metadata?: Record<string, any>;
@@ -489,7 +770,7 @@ export class AgentDocumentModel {
       policyLoad?: PolicyLoad;
     },
   ): Promise<void> {
-    const { content, editorData, loadPosition, loadRules, metadata, policy, policyLoad } =
+    const { content, editorData, fileType, loadPosition, loadRules, metadata, policy, policyLoad } =
       params ?? {};
 
     const existing = await this.findById(documentId);
@@ -526,7 +807,12 @@ export class AgentDocumentModel {
     };
 
     await this.db.transaction(async (trx) => {
-      if (content !== undefined || editorData !== undefined || metadata !== undefined) {
+      if (
+        content !== undefined ||
+        editorData !== undefined ||
+        fileType !== undefined ||
+        metadata !== undefined
+      ) {
         const documentUpdate: Partial<NewDocument> = {};
 
         if (content !== undefined) {
@@ -548,21 +834,26 @@ export class AgentDocumentModel {
           documentUpdate.editorData = editorData;
         }
 
+        if (fileType !== undefined) {
+          documentUpdate.fileType = fileType;
+        }
+
         if (metadata !== undefined) {
-          documentUpdate.metadata = metadata;
-          documentUpdate.description = this.getMetadataDescription(metadata);
+          const scopedMetadata = this.scopeMetadata(metadata);
+          documentUpdate.metadata = scopedMetadata;
+          documentUpdate.description = this.getMetadataDescription(scopedMetadata);
         }
 
         await trx
           .update(documents)
           .set(documentUpdate)
-          .where(and(eq(documents.id, existing.documentId), eq(documents.userId, this.userId)));
+          .where(and(eq(documents.id, existing.documentId), this.documentOwnership()));
       }
 
       await trx
         .update(agentDocuments)
         .set(settingsUpdate)
-        .where(and(eq(agentDocuments.id, documentId), eq(agentDocuments.userId, this.userId)));
+        .where(and(eq(agentDocuments.id, documentId), this.agentDocOwnership()));
     });
   }
 
@@ -607,13 +898,13 @@ export class AgentDocumentModel {
       .set({
         ...(params.filename !== undefined && { filename: params.filename }),
         ...(params.metadata !== undefined && {
-          description: this.getMetadataDescription(params.metadata),
-          metadata: params.metadata,
+          description: this.getMetadataDescription(this.scopeMetadata(params.metadata)),
+          metadata: this.scopeMetadata(params.metadata),
         }),
         ...(params.parentId !== undefined && { parentId: params.parentId }),
         ...(params.title !== undefined && { title: params.title }),
       })
-      .where(and(eq(documents.id, existing.documentId), eq(documents.userId, this.userId)));
+      .where(and(eq(documents.id, existing.documentId), this.documentOwnership()));
 
     return this.findById(agentDocumentId);
   }
@@ -633,14 +924,18 @@ export class AgentDocumentModel {
    * - The renamed agent document, or `undefined` when the binding is not visible.
    *
    */
-  async rename(documentId: string, newTitle: string): Promise<AgentDocument | undefined> {
+  async rename(
+    documentId: string,
+    newTitle: string,
+    options?: { filename?: string },
+  ): Promise<AgentDocument | undefined> {
     const existing = await this.findById(documentId);
     if (!existing) return undefined;
 
     const title = newTitle.trim();
     if (!title) return existing;
 
-    const filename = buildDocumentFilename(title);
+    const filename = options?.filename?.trim() || buildDocumentFilename(title);
     const source = `agent-document://${existing.agentId}/${encodeURIComponent(filename)}`;
 
     await this.db.transaction(async (trx) => {
@@ -651,7 +946,7 @@ export class AgentDocumentModel {
           source,
           title,
         })
-        .where(and(eq(documents.id, existing.documentId), eq(documents.userId, this.userId)));
+        .where(and(eq(documents.id, existing.documentId), this.documentOwnership()));
     });
 
     return this.findById(documentId);
@@ -668,6 +963,8 @@ export class AgentDocumentModel {
    * - `filename` is already validated as a single VFS path segment
    * - `parentId` points to a document row owned by the same user, or `null` for root
    * - Duplicate filenames are allowed; path-style callers resolve visible duplicates separately
+   * - `title` defaults to `filename` (path-style rename); id-based moves pass the current title
+   *   so relocating a document never rewrites what the user sees
    *
    * Returns:
    * - The same agent document binding after the backing document row is moved
@@ -675,7 +972,7 @@ export class AgentDocumentModel {
    */
   async movePath(
     documentId: string,
-    params: { filename: string; parentId: string | null },
+    params: { filename: string; parentId: string | null; title?: string },
   ): Promise<AgentDocument | undefined> {
     const existing = await this.findById(documentId);
     if (!existing) return undefined;
@@ -692,9 +989,9 @@ export class AgentDocumentModel {
           filename,
           parentId: params.parentId,
           source,
-          title: filename,
+          title: params.title ?? filename,
         })
-        .where(and(eq(documents.id, existing.documentId), eq(documents.userId, this.userId)));
+        .where(and(eq(documents.id, existing.documentId), this.documentOwnership()));
     });
 
     return this.findById(documentId);
@@ -709,18 +1006,15 @@ export class AgentDocumentModel {
       ? buildDocumentFilename(title)
       : `copy-${Date.now()}-${existing.filename}`;
 
-    return this.create(existing.agentId, filename, existing.content, {
-      editorData: existing.editorData || undefined,
-      title,
-      loadPosition:
-        (existing.policy?.context?.position as DocumentLoadPosition | undefined) ||
-        DocumentLoadPosition.BEFORE_FIRST_USER,
-      loadRules: parseLoadRules(existing),
-      metadata: existing.metadata || undefined,
-      policy: existing.policy || undefined,
-      policyLoad: existing.policyLoad as PolicyLoad | undefined,
-      templateId: existing.templateId || undefined,
-    });
+    // Empty-parse shells must not be duplicated as another shell (the clone
+    // reads as Lexical error #38 and blocks cleanup); see `copyDocument.ts`
+    // for the shell detection and raw-text downgrade.
+    return this.create(
+      existing.agentId,
+      filename,
+      existing.content,
+      buildCopyParams(existing, title),
+    );
   }
 
   async updateToolLoadRule(
@@ -742,7 +1036,7 @@ export class AgentDocumentModel {
       .where(
         and(
           eq(agentDocuments.id, documentId),
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           isNull(agentDocuments.deletedAt),
         ),
       );
@@ -768,7 +1062,7 @@ export class AgentDocumentModel {
       .where(
         and(
           eq(agentDocuments.id, documentId),
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           ...this.buildDeletedAtFilters(options),
         ),
       )
@@ -864,7 +1158,7 @@ export class AgentDocumentModel {
       .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
       .where(
         and(
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           eq(agentDocuments.agentId, agentId),
           isNull(agentDocuments.deletedAt),
         ),
@@ -875,6 +1169,148 @@ export class AgentDocumentModel {
       const item = this.toAgentDocument(settings, doc);
       return {
         ...item,
+        ...deriveAgentDocumentFields(item),
+        loadRules: parseLoadRules(item),
+      };
+    });
+  }
+
+  async listByAgent(
+    agentId: string,
+    options?: { excludeWeb?: boolean; parentId?: string; sourceType?: AgentDocumentListSourceType },
+  ): Promise<AgentDocumentListItem[]> {
+    const sourceType = options?.sourceType;
+    const parentId = options?.parentId;
+    const excludeWeb = options?.excludeWeb;
+    const results = await this.db
+      .select(listItemColumns)
+      .from(agentDocuments)
+      .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
+      .where(
+        and(
+          this.agentDocOwnership(),
+          eq(agentDocuments.agentId, agentId),
+          isNull(agentDocuments.deletedAt),
+          ...listSourceTypeFilter(sourceType),
+          ...(excludeWeb ? [ne(documents.sourceType, 'web')] : []),
+          ...(parentId ? [eq(documents.parentId, parentId)] : []),
+        ),
+      )
+      .orderBy(desc(agentDocuments.updatedAt));
+
+    return results.map((row) => this.toAgentDocumentListItem(row));
+  }
+
+  async findSkillDocsByAgent(agentId: string): Promise<AgentDocumentWithRules[]> {
+    const results = await this.db
+      .select({ doc: documents, settings: agentDocuments })
+      .from(agentDocuments)
+      .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
+      .where(
+        and(
+          this.agentDocOwnership(),
+          eq(agentDocuments.agentId, agentId),
+          isNull(agentDocuments.deletedAt),
+          or(
+            eq(agentDocuments.templateId, AGENT_SKILL_TEMPLATE_ID),
+            like(documents.fileType, 'skills/%'),
+          ),
+        ),
+      )
+      .orderBy(desc(agentDocuments.updatedAt));
+
+    return results.map(({ settings, doc }) => {
+      const item = this.toAgentDocument(settings, doc);
+      return {
+        ...item,
+        ...deriveAgentDocumentFields(item),
+        loadRules: parseLoadRules(item),
+      };
+    });
+  }
+
+  async findContextByAgent(agentId: string): Promise<AgentDocumentContextRow[]> {
+    const results = await this.db
+      .select({
+        doc: {
+          content: sql<string>`
+            CASE
+              WHEN ${agentDocuments.policyLoad} = ${PolicyLoad.ALWAYS}
+                THEN COALESCE(${documents.content}, '')
+              ELSE ''
+            END
+          `.as('content'),
+          description: documents.description,
+          editorData: sql<Record<string, any> | null>`
+            CASE
+              WHEN ${agentDocuments.policyLoad} = ${PolicyLoad.ALWAYS} THEN ${documents.editorData}
+              ELSE NULL
+            END
+          `.as('editor_data'),
+          filename: documents.filename,
+          fileType: documents.fileType,
+          parentId: documents.parentId,
+          sourceType: documents.sourceType,
+          title: documents.title,
+          totalCharCount: documents.totalCharCount,
+        },
+        settings: {
+          agentId: agentDocuments.agentId,
+          createdAt: agentDocuments.createdAt,
+          documentId: agentDocuments.documentId,
+          id: agentDocuments.id,
+          policy: agentDocuments.policy,
+          policyLoad: agentDocuments.policyLoad,
+          policyLoadFormat: agentDocuments.policyLoadFormat,
+          policyLoadPosition: agentDocuments.policyLoadPosition,
+          policyLoadRule: agentDocuments.policyLoadRule,
+          templateId: agentDocuments.templateId,
+          updatedAt: agentDocuments.updatedAt,
+        },
+      })
+      .from(agentDocuments)
+      .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
+      .where(
+        and(
+          this.agentDocOwnership(),
+          eq(agentDocuments.agentId, agentId),
+          isNull(agentDocuments.deletedAt),
+        ),
+      )
+      .orderBy(desc(agentDocuments.updatedAt));
+
+    return results.map(({ settings, doc }) => {
+      const policy = (settings.policy as AgentDocumentPolicy | null) ?? null;
+      const item: Omit<
+        AgentDocumentContextRow,
+        'category' | 'isFolder' | 'isSkillBundle' | 'isSkillIndex' | 'loadRules'
+      > = {
+        content: doc.content,
+        contentCharCount: doc.totalCharCount,
+        createdAt: settings.createdAt,
+        description: doc.description ?? null,
+        documentId: settings.documentId,
+        editorData: doc.editorData ?? null,
+        filename: doc.filename ?? '',
+        fileType: doc.fileType,
+        id: settings.id,
+        parentId: doc.parentId ?? null,
+        policy,
+        policyLoad: settings.policyLoad as PolicyLoad,
+        policyLoadFormat:
+          (settings.policyLoadFormat as DocumentLoadFormat | null) ??
+          policy?.context?.policyLoadFormat ??
+          DocumentLoadFormat.RAW,
+        policyLoadPosition: settings.policyLoadPosition,
+        policyLoadRule: settings.policyLoadRule,
+        sourceType: doc.sourceType,
+        templateId: settings.templateId ?? null,
+        title: doc.title ?? doc.filename ?? '',
+        updatedAt: settings.updatedAt,
+      };
+      return {
+        ...item,
+        ...deriveAgentDocumentFields(item),
         loadRules: parseLoadRules(item),
       };
     });
@@ -892,7 +1328,7 @@ export class AgentDocumentModel {
       .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
       .where(
         and(
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           eq(agentDocuments.agentId, agentId),
           inArray(agentDocuments.documentId, documentIds),
           isNull(agentDocuments.deletedAt),
@@ -904,9 +1340,36 @@ export class AgentDocumentModel {
       const item = this.toAgentDocument(settings, doc);
       return {
         ...item,
+        ...deriveAgentDocumentFields(item),
         loadRules: parseLoadRules(item),
       };
     });
+  }
+
+  async listByDocumentIds(
+    agentId: string,
+    documentIds: string[],
+    options?: { sourceType?: AgentDocumentListSourceType },
+  ): Promise<AgentDocumentListItem[]> {
+    if (documentIds.length === 0) return [];
+
+    const sourceType = options?.sourceType;
+    const results = await this.db
+      .select(listItemColumns)
+      .from(agentDocuments)
+      .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
+      .where(
+        and(
+          this.agentDocOwnership(),
+          eq(agentDocuments.agentId, agentId),
+          inArray(agentDocuments.documentId, documentIds),
+          isNull(agentDocuments.deletedAt),
+          ...listSourceTypeFilter(sourceType),
+        ),
+      )
+      .orderBy(desc(agentDocuments.updatedAt));
+
+    return results.map((row) => this.toAgentDocumentListItem(row));
   }
 
   async hasByAgent(agentId: string): Promise<boolean> {
@@ -915,7 +1378,7 @@ export class AgentDocumentModel {
       .from(agentDocuments)
       .where(
         and(
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           eq(agentDocuments.agentId, agentId),
           isNull(agentDocuments.deletedAt),
         ),
@@ -932,7 +1395,7 @@ export class AgentDocumentModel {
       .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
       .where(
         and(
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           eq(agentDocuments.agentId, agentId),
           eq(agentDocuments.templateId, templateId),
           isNull(agentDocuments.deletedAt),
@@ -944,6 +1407,7 @@ export class AgentDocumentModel {
       const item = this.toAgentDocument(settings, doc);
       return {
         ...item,
+        ...deriveAgentDocumentFields(item),
         loadRules: parseLoadRules(item),
       };
     });
@@ -960,7 +1424,7 @@ export class AgentDocumentModel {
       .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
       .where(
         and(
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           eq(agentDocuments.agentId, agentId),
           eq(documents.filename, filename),
           ...this.buildDeletedAtFilters(options),
@@ -986,7 +1450,7 @@ export class AgentDocumentModel {
       .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
       .where(
         and(
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           eq(agentDocuments.agentId, agentId),
           eq(documents.filename, filename),
           parentId ? eq(documents.parentId, parentId) : isNull(documents.parentId),
@@ -1026,7 +1490,7 @@ export class AgentDocumentModel {
       .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
       .where(
         and(
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           eq(agentDocuments.agentId, agentId),
           eq(documents.filename, filename),
           parentId ? eq(documents.parentId, parentId) : isNull(documents.parentId),
@@ -1051,7 +1515,7 @@ export class AgentDocumentModel {
       .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
       .where(
         and(
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           eq(agentDocuments.agentId, agentId),
           eq(agentDocuments.documentId, documentId),
           ...this.buildDeletedAtFilters(options),
@@ -1076,7 +1540,7 @@ export class AgentDocumentModel {
       .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
       .where(
         and(
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           eq(agentDocuments.agentId, agentId),
           parentId ? eq(documents.parentId, parentId) : isNull(documents.parentId),
           ...this.buildDeletedAtFilters(options),
@@ -1096,9 +1560,9 @@ export class AgentDocumentModel {
       .innerJoin(documents, eq(agentDocuments.documentId, documents.id))
       .where(
         and(
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           eq(agentDocuments.agentId, agentId),
-          eq(documents.userId, this.userId),
+          this.documentOwnership(),
           isNotNull(agentDocuments.deletedAt),
         ),
       )
@@ -1147,7 +1611,7 @@ export class AgentDocumentModel {
       .where(
         and(
           eq(agentDocuments.id, documentId),
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           isNull(agentDocuments.deletedAt),
         ),
       );
@@ -1173,7 +1637,7 @@ export class AgentDocumentModel {
       })
       .where(
         and(
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           inArray(
             agentDocuments.id,
             subtree.map((item) => item.id),
@@ -1213,7 +1677,7 @@ export class AgentDocumentModel {
           deletedByUserId: null,
           policyLoad: PolicyLoad.PROGRESSIVE,
         })
-        .where(and(eq(agentDocuments.id, documentId), eq(agentDocuments.userId, this.userId)));
+        .where(and(eq(agentDocuments.id, documentId), this.agentDocOwnership()));
     });
   }
 
@@ -1235,7 +1699,7 @@ export class AgentDocumentModel {
       })
       .where(
         and(
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           inArray(
             agentDocuments.id,
             subtree.map((item) => item.id),
@@ -1244,46 +1708,89 @@ export class AgentDocumentModel {
       );
   }
 
-  async permanentlyDelete(documentId: string): Promise<void> {
+  /**
+   * Removes a binding and its document when no other agent still owns that document.
+   *
+   * Use when:
+   * - Permanently deleting an agent trash entry.
+   * Expects:
+   * - The binding belongs to the current scope.
+   * Returns:
+   * - Backing file IDs for reference-safe cleanup by the storage service after commit.
+   */
+  async permanentlyDelete(documentId: string): Promise<string[]> {
     const existing = await this.findByIdWithOptions(documentId, { includeDeleted: true });
 
-    if (!existing) return;
+    if (!existing) return [];
 
-    await this.db.transaction(async (trx) => {
+    return this.db.transaction(async (trx) => {
       await trx
         .delete(agentDocuments)
-        .where(and(eq(agentDocuments.id, documentId), eq(agentDocuments.userId, this.userId)));
+        .where(and(eq(agentDocuments.id, documentId), this.agentDocOwnership()));
 
-      await trx
-        .delete(documents)
-        .where(and(eq(documents.id, existing.documentId), eq(documents.userId, this.userId)));
+      return this.deleteUnboundDocuments(trx, [existing.documentId]);
     });
   }
 
+  /**
+   * Permanently removes a subtree's bindings and documents without deleting shared documents.
+   *
+   * Use when:
+   * - Erasing a complete document subtree in one transaction.
+   * Expects:
+   * - The root belongs to the requested agent and current scope.
+   * Returns:
+   * - Backing file IDs requiring reference-safe storage cleanup after commit.
+   */
   async permanentlyDeleteSubtreeByDocumentId(
     agentId: string,
     rootDocumentId: string,
-  ): Promise<void> {
+  ): Promise<string[]> {
     const subtree = await this.listSubtreeByDocumentId(agentId, rootDocumentId, {
       includeDeleted: true,
     });
 
-    if (subtree.length === 0) return;
+    if (subtree.length === 0) return [];
 
     const agentDocumentIds = subtree.map((item) => item.id);
     const documentIds = subtree.map((item) => item.documentId);
 
-    await this.db.transaction(async (trx) => {
+    return this.db.transaction(async (trx) => {
       await trx
         .delete(agentDocuments)
-        .where(
-          and(eq(agentDocuments.userId, this.userId), inArray(agentDocuments.id, agentDocumentIds)),
-        );
+        .where(and(this.agentDocOwnership(), inArray(agentDocuments.id, agentDocumentIds)));
 
-      await trx
-        .delete(documents)
-        .where(and(eq(documents.userId, this.userId), inArray(documents.id, documentIds)));
+      return this.deleteUnboundDocuments(trx, documentIds);
     });
+  }
+
+  /** Removes only documents with no surviving agent binding and returns their backing files. */
+  private async deleteUnboundDocuments(trx: Transaction, documentIds: string[]): Promise<string[]> {
+    // Serialize deletion with concurrent binding FK inserts before inspecting surviving owners.
+    await trx
+      .select({ id: documents.id })
+      .from(documents)
+      .where(and(this.documentOwnership(), inArray(documents.id, documentIds)))
+      .orderBy(documents.id)
+      .for('update');
+    // Removing one agent's binding must not cascade through another agent's shared document.
+    const removed = await trx
+      .delete(documents)
+      .where(
+        and(
+          this.documentOwnership(),
+          inArray(documents.id, documentIds),
+          notExists(
+            trx
+              .select({ id: agentDocuments.id })
+              .from(agentDocuments)
+              .where(eq(agentDocuments.documentId, documents.id)),
+          ),
+        ),
+      )
+      .returning({ fileId: documents.fileId });
+
+    return [...new Set(removed.flatMap(({ fileId }) => (fileId ? [fileId] : [])))];
   }
 
   async deleteByAgent(agentId: string, deleteReason?: string): Promise<void> {
@@ -1300,7 +1807,7 @@ export class AgentDocumentModel {
       .where(
         and(
           eq(agentDocuments.agentId, agentId),
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           isNull(agentDocuments.deletedAt),
         ),
       );
@@ -1324,7 +1831,7 @@ export class AgentDocumentModel {
         and(
           eq(agentDocuments.agentId, agentId),
           eq(agentDocuments.templateId, templateId),
-          eq(agentDocuments.userId, this.userId),
+          this.agentDocOwnership(),
           isNull(agentDocuments.deletedAt),
         ),
       );

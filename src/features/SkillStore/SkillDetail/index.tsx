@@ -2,11 +2,10 @@
 
 import { createModal } from '@lobehub/ui';
 import { t } from 'i18next';
-import { type Klavis } from 'klavis';
 
 import { BuiltinAgentSkillDetailContent } from './BuiltinAgentSkillDetailContent';
 import { BuiltinSkillDetailContent } from './BuiltinSkillDetailContent';
-import { KlavisSkillDetailContent } from './KlavisSkillDetailContent';
+import { ComposioSkillDetailContent } from './ComposioSkillDetailContent';
 import { LobehubSkillDetailContent } from './LobehubSkillDetailContent';
 
 export interface CreateBuiltinAgentSkillDetailModalOptions {
@@ -17,8 +16,7 @@ export const createBuiltinAgentSkillDetailModal = ({
   identifier,
 }: CreateBuiltinAgentSkillDetailModalOptions) =>
   createModal({
-    children: <BuiltinAgentSkillDetailContent identifier={identifier} />,
-    destroyOnHidden: true,
+    content: <BuiltinAgentSkillDetailContent identifier={identifier} />,
     footer: null,
     title: t('dev.title.skillDetails', { ns: 'plugin' }),
     width: 800,
@@ -32,25 +30,23 @@ export const createBuiltinSkillDetailModal = ({
   identifier,
 }: CreateBuiltinSkillDetailModalOptions) =>
   createModal({
-    children: <BuiltinSkillDetailContent identifier={identifier} />,
-    destroyOnHidden: true,
+    content: <BuiltinSkillDetailContent identifier={identifier} />,
     footer: null,
     title: t('dev.title.skillDetails', { ns: 'plugin' }),
     width: 800,
   });
 
-export interface CreateKlavisSkillDetailModalOptions {
+export interface CreateComposioSkillDetailModalOptions {
   identifier: string;
-  serverName: Klavis.McpServerName;
+  serverName: string;
 }
 
-export const createKlavisSkillDetailModal = ({
+export const createComposioSkillDetailModal = ({
   identifier,
   serverName,
-}: CreateKlavisSkillDetailModalOptions) =>
+}: CreateComposioSkillDetailModalOptions) =>
   createModal({
-    children: <KlavisSkillDetailContent identifier={identifier} serverName={serverName} />,
-    destroyOnHidden: true,
+    content: <ComposioSkillDetailContent identifier={identifier} serverName={serverName} />,
     footer: null,
     title: t('dev.title.skillDetails', { ns: 'plugin' }),
     width: 800,
@@ -64,8 +60,7 @@ export const createLobehubSkillDetailModal = ({
   identifier,
 }: CreateLobehubSkillDetailModalOptions) =>
   createModal({
-    children: <LobehubSkillDetailContent identifier={identifier} />,
-    destroyOnHidden: true,
+    content: <LobehubSkillDetailContent identifier={identifier} />,
     footer: null,
     title: t('dev.title.skillDetails', { ns: 'plugin' }),
     width: 800,

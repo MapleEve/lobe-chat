@@ -4,6 +4,7 @@ export enum ModelProvider {
   Ai360 = 'ai360',
   AiHubMix = 'aihubmix',
   AkashChat = 'akashchat',
+  AntGroup = 'antgroup',
   Anthropic = 'anthropic',
   Azure = 'azure',
   AzureAI = 'azureai',
@@ -12,6 +13,7 @@ export enum ModelProvider {
   Bedrock = 'bedrock',
   Bfl = 'bfl',
   Cerebras = 'cerebras',
+  ChatGPT = 'chatgpt',
   Cloudflare = 'cloudflare',
   Cohere = 'cohere',
   CometAPI = 'cometapi',
@@ -35,6 +37,7 @@ export enum ModelProvider {
   LMStudio = 'lmstudio',
   LobeHub = 'lobehub',
   LongCat = 'longcat',
+  Meta = 'meta',
   Minimax = 'minimax',
   MinimaxCodingPlan = 'minimaxcodingplan',
   Mistral = 'mistral',
@@ -63,9 +66,11 @@ export enum ModelProvider {
   Stepfun = 'stepfun',
   Straico = 'straico',
   StreamLake = 'streamlake',
+  SuperGrok = 'supergrok',
   Taichu = 'taichu',
   TencentCloud = 'tencentcloud',
   TogetherAI = 'togetherai',
+  Unsloth = 'unsloth',
   Upstage = 'upstage',
   V0 = 'v0',
   VercelAIGateway = 'vercelaigateway',
@@ -81,3 +86,6 @@ export enum ModelProvider {
   ZeroOne = 'zeroone',
   ZhiPu = 'zhipu',
 }
+
+/** lowercase key union of the ModelProvider enum, e.g. 'openai' | 'anthropic' | … */
+export type ModelProviderKey = Lowercase<keyof typeof ModelProvider>;

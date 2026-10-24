@@ -1,10 +1,11 @@
 import { boolean, index, integer, jsonb, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
 
 import { idGenerator } from '../utils/idGenerator';
-import { timestamps } from './_helpers';
+import { softDeleteColumns, timestamps } from './_helpers';
 import { agents } from './agent';
 import { chatGroups } from './chatGroup';
 import { users } from './user';
+import { workspaces } from './workspace';
 
 interface ExecutionConditions {
   activeDays?: number[];
@@ -12,7 +13,20 @@ interface ExecutionConditions {
   maxExecutionsPerDay?: number;
 }
 
-// Agent cron jobs table - supports multiple cron jobs per agent
+/**
+ * @deprecated Legacy per-agent schedule rows. Superseded by scheduling on the
+ * task itself — `tasks.automation_mode = 'schedule'` with `schedule_pattern` /
+ * `schedule_timezone` — which keeps the schedule next to the work it triggers
+ * instead of in a parallel table. Kept for rows that pre-date that move and for
+ * `briefs.cron_job_id`, which still points here. New code schedules through
+ * `tasks`; do not add writers.
+ *
+ * It carries the recycle-bin columns because it is still read through the
+ * shared ownership funnel (`buildWorkspaceWhere`), which filters every
+ * trash-aware table uniformly — a deprecated table still must not surface rows
+ * belonging to a trashed agent. It gets no `TrashService` handler of its own:
+ * the agent is the restorable unit, and these rows follow it.
+ */
 export const agentCronJobs = pgTable(
   'agent_cron_jobs',
   {
@@ -29,6 +43,7 @@ export const agentCronJobs = pgTable(
     userId: text('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
 
     // Task identification
     name: text('name'), // Optional task name like "Daily Report", "Data Monitoring"
@@ -54,6 +69,8 @@ export const agentCronJobs = pgTable(
     lastExecutedAt: timestamp('last_executed_at'),
     totalExecutions: integer('total_executions').default(0),
 
+    /** Recycle bin — see `schemas/trash.ts`. */
+    ...softDeleteColumns(),
     ...timestamps,
   },
   (t) => [
@@ -61,6 +78,7 @@ export const agentCronJobs = pgTable(
     index('agent_cron_jobs_agent_id_idx').on(t.agentId),
     index('agent_cron_jobs_group_id_idx').on(t.groupId),
     index('agent_cron_jobs_user_id_idx').on(t.userId),
+    index('agent_cron_jobs_workspace_id_idx').on(t.workspaceId),
     index('agent_cron_jobs_enabled_idx').on(t.enabled),
     index('agent_cron_jobs_remaining_executions_idx').on(t.remainingExecutions),
     index('agent_cron_jobs_last_executed_at_idx').on(t.lastExecutedAt),

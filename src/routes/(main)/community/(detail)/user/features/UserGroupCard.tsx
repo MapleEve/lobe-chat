@@ -3,6 +3,8 @@
 import {
   Avatar,
   Block,
+  createStaticStyles,
+  cx,
   DropdownMenu,
   Flexbox,
   Icon,
@@ -13,13 +15,10 @@ import {
   Tooltip,
   TooltipGroup,
 } from '@lobehub/ui';
-import { createStaticStyles, cx } from 'antd-style';
 import {
   AlertTriangle,
   ClockIcon,
   DownloadIcon,
-  Eye,
-  EyeOff,
   GitForkIcon,
   MoreVerticalIcon,
   Pencil,
@@ -28,10 +27,11 @@ import {
 import qs from 'query-string';
 import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate } from 'react-router-dom';
 import urlJoin from 'url-join';
 
 import PublishedTime from '@/components/PublishedTime';
+import { useWorkspaceAwareNavigate } from '@/features/Workspace/useWorkspaceAwareNavigate';
+import WorkspaceLink from '@/features/Workspace/WorkspaceLink';
 import { type DiscoverGroupAgentItem, type GroupAgentStatus } from '@/types/discover';
 import { formatIntergerNumber } from '@/utils/format';
 
@@ -126,7 +126,7 @@ const UserGroupCard = memo<UserGroupCardProps>(
     isValidated,
   }) => {
     const { t } = useTranslation(['discover', 'setting']);
-    const navigate = useNavigate();
+    const navigate = useWorkspaceAwareNavigate();
     const { isOwner, onStatusChange } = useUserDetailContext();
 
     const link = qs.stringifyUrl(
@@ -137,7 +137,8 @@ const UserGroupCard = memo<UserGroupCardProps>(
       { skipNull: true },
     );
 
-    const isPublished = status === 'published';
+    // Under-review groups stay view-only until the group has been validated.
+    const isUnderReview = isValidated === false;
 
     const handleCardClick = useCallback(() => {
       navigate(link);
@@ -148,7 +149,7 @@ const UserGroupCard = memo<UserGroupCardProps>(
     }, [identifier, navigate]);
 
     const handleStatusAction = useCallback(
-      (action: 'publish' | 'unpublish' | 'deprecate') => {
+      (action: 'deprecate') => {
         onStatusChange?.(identifier, action, 'group');
       },
       [identifier, onStatusChange],
@@ -164,14 +165,6 @@ const UserGroupCard = memo<UserGroupCardProps>(
           },
           {
             type: 'divider' as const,
-          },
-          {
-            icon: <Icon icon={isPublished ? EyeOff : Eye} />,
-            key: 'togglePublish',
-            label: isPublished
-              ? t('setting:myAgents.actions.unpublish')
-              : t('setting:myAgents.actions.publish'),
-            onClick: () => handleStatusAction(isPublished ? 'unpublish' : 'publish'),
           },
           {
             danger: true,
@@ -197,7 +190,7 @@ const UserGroupCard = memo<UserGroupCardProps>(
         }}
         onClick={handleCardClick}
       >
-        {isOwner && (
+        {isOwner && !isUnderReview && (
           <div onClick={stopPropagation}>
             <DropdownMenu items={menuItems as any}>
               <div className={cx('more-button', styles.moreButton)}>
@@ -230,7 +223,7 @@ const UserGroupCard = memo<UserGroupCardProps>(
               }}
             >
               <Flexbox horizontal align={'center'} gap={8}>
-                <Link
+                <WorkspaceLink
                   style={{ color: 'inherit', flex: 1, overflow: 'hidden' }}
                   to={link}
                   onClick={stopPropagation}
@@ -238,7 +231,7 @@ const UserGroupCard = memo<UserGroupCardProps>(
                   <Text ellipsis as={'h3'} className={styles.title} style={{ flex: 1 }}>
                     {title}
                   </Text>
-                </Link>
+                </WorkspaceLink>
                 {isValidated === false ? (
                   <AntTag color="orange" style={{ flexShrink: 0, margin: 0 }}>
                     {t('groupAgents.underReview', { defaultValue: 'Under Review' })}

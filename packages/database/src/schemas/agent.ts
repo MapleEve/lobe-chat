@@ -1,9 +1,11 @@
 import type {
+  AgentProfile,
   LobeAgentAgencyConfig,
   LobeAgentChatConfig,
   LobeAgentTTSConfig,
 } from '@lobechat/types';
 import { AgentChatConfigSchema } from '@lobechat/types';
+import { isNotNull, isNull } from 'drizzle-orm';
 import {
   boolean,
   index,
@@ -18,14 +20,18 @@ import { createInsertSchema } from 'drizzle-zod';
 import { z } from 'zod';
 
 import { idGenerator, randomSlug } from '../utils/idGenerator';
-import { timestamps } from './_helpers';
+import { softDeleteColumns, timestamps } from './_helpers';
 import { files, knowledgeBases } from './file';
 import { sessionGroups } from './session';
 import { users } from './user';
+import { workspaces } from './workspace';
 
 // Agent table is the main table for storing agents
 // agent is a model that represents the assistant that is created by the user
 // agent can have its own knowledge base and files
+
+/** Agent visibility — shared by column def and insert schema. */
+export const AGENT_VISIBILITY = ['private', 'public'] as const;
 
 export const agents = pgTable(
   'agents',
@@ -36,12 +42,34 @@ export const agents = pgTable(
       .notNull(),
     slug: varchar('slug', { length: 100 }).$defaultFn(() => randomSlug(3)),
     title: varchar('title', { length: 255 }),
+    /**
+     * User-facing display name. Independent of `title` (which is slated to
+     * become an identity/role marker); optional at creation, editable later.
+     */
+    name: varchar('name', { length: 255 }),
     description: varchar('description', { length: 1000 }),
     tags: jsonb('tags').$type<string[]>().default([]),
     editorData: jsonb('editor_data'),
     avatar: text('avatar'),
     backgroundColor: text('background_color'),
     marketIdentifier: text('market_identifier'),
+    /**
+     * Default extension bag: anything an agent needs to carry that has no
+     * column and no home in `profile`. Untyped on purpose — give a value a
+     * typed home the moment more than one place reads it.
+     */
+    metadata: jsonb('metadata').$type<Record<string, unknown>>(),
+    /**
+     * The agent's character sheet — traits and artwork. One bag instead of a
+     * column per trait; nothing in it is ever queried. See `AgentProfile`.
+     */
+    profile: jsonb('profile').$type<AgentProfile>(),
+    /**
+     * Owning society (agent org). Left without a foreign key until the
+     * societies table exists; a plain column because agents are listed and
+     * filtered by it — index it together with the first query that does.
+     */
+    societyId: text('society_id'),
 
     plugins: jsonb('plugins').$type<string[]>(),
 
@@ -50,6 +78,7 @@ export const agents = pgTable(
     userId: text('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
 
     agencyConfig: jsonb('agency_config').$type<LobeAgentAgencyConfig>(),
     chatConfig: jsonb('chat_config').$type<LobeAgentChatConfig>(),
@@ -71,23 +100,43 @@ export const agents = pgTable(
       onDelete: 'set null',
     }),
 
+    /**
+     * Visibility within the owning workspace. `public` (default) means every
+     * workspace member can see and use the agent; `private` constrains it to
+     * the creator (`user_id`). Ignored in personal mode where the row is
+     * implicitly private to its owner.
+     */
+    visibility: text('visibility', { enum: AGENT_VISIBILITY }).default('public').notNull(),
+
+    /** Recycle bin — see `schemas/trash.ts`. */
+    ...softDeleteColumns(),
     ...timestamps,
   },
   (t) => [
     uniqueIndex('client_id_user_id_unique').on(t.clientId, t.userId),
-    uniqueIndex('agents_slug_user_id_unique').on(t.slug, t.userId),
+    uniqueIndex('agents_slug_user_id_unique').on(t.slug, t.userId).where(isNull(t.workspaceId)),
+    index('agents_created_at_idx').on(t.createdAt),
     index('agents_user_id_idx').on(t.userId),
     index('agents_title_idx').on(t.title),
     index('agents_description_idx').on(t.description),
     index('agents_session_group_id_idx').on(t.sessionGroupId),
+    index('agents_workspace_id_idx').on(t.workspaceId),
+    index('agents_workspace_visibility_idx').on(t.workspaceId, t.visibility, t.userId),
+    uniqueIndex('agents_slug_workspace_id_unique')
+      .on(t.workspaceId, t.slug)
+      .where(isNotNull(t.workspaceId)),
   ],
 );
 
 /** @deprecated Use CreateAgentSchema from @lobechat/types instead */
 export const insertAgentSchema = createInsertSchema(agents, {
-  agencyConfig: z.custom<LobeAgentAgencyConfig>().nullable().optional(),
+  agencyConfig: z.custom<LobeAgentAgencyConfig>().nullish(),
   // Override chatConfig type to use the proper schema
-  chatConfig: AgentChatConfigSchema.nullable().optional(),
+  chatConfig: AgentChatConfigSchema.nullish(),
+  // See insertSessionGroupSchema: Zod 4 + drizzle-zod text-enum inference pollution.
+  // `.optional()` preserves defaulted-column omit semantics at runtime.
+  // Enum values from AGENT_VISIBILITY so column def and schema stay in sync.
+  visibility: z.enum(AGENT_VISIBILITY).optional(),
 });
 
 export type NewAgent = typeof agents.$inferInsert;
@@ -105,6 +154,7 @@ export const agentsKnowledgeBases = pgTable(
     userId: text('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
     enabled: boolean('enabled').default(true),
 
     ...timestamps,
@@ -114,6 +164,7 @@ export const agentsKnowledgeBases = pgTable(
     index('agents_knowledge_bases_agent_id_idx').on(t.agentId),
     index('agents_knowledge_bases_knowledge_base_id_idx').on(t.knowledgeBaseId),
     index('agents_knowledge_bases_user_id_idx').on(t.userId),
+    index('agents_knowledge_bases_workspace_id_idx').on(t.workspaceId),
   ],
 );
 
@@ -130,6 +181,7 @@ export const agentsFiles = pgTable(
     userId: text('user_id')
       .references(() => users.id, { onDelete: 'cascade' })
       .notNull(),
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
 
     ...timestamps,
   },
@@ -138,5 +190,6 @@ export const agentsFiles = pgTable(
     index('agents_files_agent_id_idx').on(t.agentId),
     index('agents_files_file_id_idx').on(t.fileId),
     index('agents_files_user_id_idx').on(t.userId),
+    index('agents_files_workspace_id_idx').on(t.workspaceId),
   ],
 );

@@ -84,7 +84,7 @@ Given('用户打开一个文稿编辑器', async function (this: CustomWorld) {
 
   // Navigate to page module
   await this.page.goto('/page');
-  await this.page.waitForLoadState('networkidle', { timeout: 15_000 });
+  await this.page.waitForLoadState('domcontentloaded', { timeout: 15_000 });
   await waitForPageWorkspaceReady(this);
 
   // Create a new page via UI
@@ -93,7 +93,7 @@ Given('用户打开一个文稿编辑器', async function (this: CustomWorld) {
 
   // Wait for navigation to page editor
   await this.page.waitForURL(/\/page\/.+/, { timeout: WAIT_TIMEOUT });
-  await this.page.waitForLoadState('networkidle');
+  await this.page.waitForLoadState('domcontentloaded');
   await this.page.waitForTimeout(500);
 
   console.log('   ✅ 已打开文稿编辑器');
@@ -104,14 +104,14 @@ Given('用户打开一个带有 Emoji 的文稿', async function (this: CustomWo
 
   // First create and open a page
   await this.page.goto('/page');
-  await this.page.waitForLoadState('networkidle', { timeout: 15_000 });
+  await this.page.waitForLoadState('domcontentloaded', { timeout: 15_000 });
   await waitForPageWorkspaceReady(this);
 
   await clickNewPageButton(this);
   await this.page.waitForTimeout(1500);
 
   await this.page.waitForURL(/\/page\/.+/, { timeout: WAIT_TIMEOUT });
-  await this.page.waitForLoadState('networkidle');
+  await this.page.waitForLoadState('domcontentloaded');
   await this.page.waitForTimeout(500);
 
   // Add emoji by clicking the "Choose Icon" button
@@ -217,57 +217,9 @@ When('用户点击选择图标按钮', async function (this: CustomWorld) {
 When('用户选择一个 Emoji', async function (this: CustomWorld) {
   console.log('   📍 Step: 选择一个 Emoji...');
 
-  // Wait for emoji picker to be visible
-  await this.page.waitForTimeout(800);
-
-  // The emoji picker renders emojis as clickable span elements in a grid
-  // Look for emoji elements in the "Frequently used" or "Smileys & People" section
-  const emojiSelectors = [
-    // Emoji spans in the picker grid (matches emoji characters)
-    'span[style*="cursor: pointer"]',
-    'span[role="img"]',
-    '[data-emoji]',
-    // Emoji-mart style selectors
-    '.emoji-mart-emoji span',
-    'button[aria-label*="emoji"]',
-  ];
-
-  let clicked = false;
-  for (const selector of emojiSelectors) {
-    const emojis = this.page.locator(selector);
-    const count = await emojis.count();
-    console.log(`   📍 Debug: Found ${count} elements with selector "${selector}"`);
-    if (count > 0) {
-      // Click a random emoji (not the first to avoid default)
-      const index = Math.min(5, count - 1);
-      await emojis.nth(index).click();
-      clicked = true;
-      console.log(`   📍 Debug: Clicked emoji at index ${index}`);
-      break;
-    }
-  }
-
-  // Fallback: try to find any clickable element in the emoji popover
-  if (!clicked) {
-    console.log('   📍 Debug: Trying fallback - looking for emoji in popover');
-    const popover = this.page.locator('.ant-popover-inner, [class*="popover"]').first();
-    if ((await popover.count()) > 0) {
-      // Find spans that look like emojis (single character with emoji range)
-      const emojiSpans = popover.locator('span').filter({
-        hasText: /^\p{Emoji}$/u,
-      });
-      const count = await emojiSpans.count();
-      console.log(`   📍 Debug: Found ${count} emoji spans in popover`);
-      if (count > 0) {
-        await emojiSpans.nth(Math.min(5, count - 1)).click();
-        clicked = true;
-      }
-    }
-  }
-
-  if (!clicked) {
-    console.log('   ⚠️ Could not find emoji button, test may fail');
-  }
+  const emojiButton = this.page.locator('em-emoji-picker button[aria-posinset]').nth(5);
+  await emojiButton.waitFor({ state: 'visible', timeout: 10_000 });
+  await emojiButton.click();
 
   await this.page.waitForTimeout(1000);
 

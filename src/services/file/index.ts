@@ -1,3 +1,5 @@
+import { CUSTOM_DOCUMENT_FILE_TYPE, DERIVED_DOCUMENT_SOURCE_TYPE } from '@lobechat/const';
+
 import { lambdaClient } from '@/libs/trpc/client';
 import {
   type CheckFileHashResult,
@@ -13,11 +15,22 @@ interface CreateFileParams extends Omit<UploadFileParams, 'url'> {
   knowledgeBaseId?: string;
   parentId?: string;
   url: string;
+  visibility?: 'private' | 'public';
 }
 
 export class FileService {
+  rehostImage = async (url: string) => lambdaClient.file.rehostImage.mutate({ url });
+
   createFile = async (
-    params: UploadFileParams & { parentId?: string },
+    params: UploadFileParams & {
+      parentId?: string;
+      /**
+       * Workspace visibility for the new file. `undefined` lets the server
+       * apply its default (top-level workspace uploads default to `'private'`,
+       * children inherit their parent document). Personal mode ignores this.
+       */
+      visibility?: 'private' | 'public';
+    },
     knowledgeBaseId?: string,
   ): Promise<{ id: string; url: string }> => {
     return lambdaClient.file.createFile.mutate({ ...params, knowledgeBaseId } as CreateFileParams);
@@ -42,16 +55,22 @@ export class FileService {
     };
   };
 
+  /** Storage URL a canvas can read (no `/f/:id` redirect); see the router for why. */
+  getReadableUrl = async (id: string): Promise<string> => {
+    const { url } = await lambdaClient.file.getReadableUrl.query({ id });
+    return url;
+  };
+
   removeFile = async (id: string): Promise<void> => {
     await lambdaClient.file.removeFile.mutate({ id });
   };
 
-  removeFiles = async (ids: string[]): Promise<void> => {
-    await lambdaClient.file.removeFiles.mutate({ ids });
+  removeUnreferencedFile = async (id: string): Promise<void> => {
+    await lambdaClient.file.removeUnreferencedFile.mutate({ id });
   };
 
-  removeAllFiles = async () => {
-    await lambdaClient.file.removeAllFiles.mutate();
+  removeFiles = async (ids: string[]): Promise<void> => {
+    await lambdaClient.file.removeFiles.mutate({ ids });
   };
 
   // V2.0 Migrate from getFiles to getKnowledgeItems
@@ -67,8 +86,12 @@ export class FileService {
     return lambdaClient.file.resolveKnowledgeItemIds.query(params as QueryFileListSchemaType);
   };
 
-  deleteKnowledgeItemsByQuery = async (params: QueryFileListParams) => {
-    return lambdaClient.file.deleteKnowledgeItemsByQuery.mutate(params as QueryFileListSchemaType);
+  deleteKnowledgeItemsByQuery = async (
+    params: QueryFileListParams & { excludedIds?: string[] },
+  ) => {
+    return lambdaClient.file.deleteKnowledgeItemsByQuery.mutate(
+      params as QueryFileListSchemaType & { excludedIds?: string[] },
+    );
   };
 
   // V2.0 Migrate from getFileItem to getKnowledgeItem
@@ -80,6 +103,10 @@ export class FileService {
       const doc = await lambdaClient.document.getDocumentById.query({ id });
       if (!doc) return null;
 
+      const backingFile = doc.fileId
+        ? await lambdaClient.file.getFileItemById.query({ id: doc.fileId })
+        : undefined;
+
       // Convert document to FileListItem format
       return {
         chunkCount: null,
@@ -90,17 +117,18 @@ export class FileService {
         editorData: doc.editorData,
         embeddingError: null,
         embeddingStatus: null,
-        fileType: doc.fileType || 'custom/document',
+        fileId: doc.fileId,
+        fileType: backingFile?.fileType || doc.fileType || CUSTOM_DOCUMENT_FILE_TYPE,
         finishEmbedding: false,
         id: doc.id,
         metadata: doc.metadata,
-        name: doc.title || doc.filename || 'Untitled',
+        name: backingFile?.name || doc.title || doc.filename || 'Untitled',
         parentId: doc.parentId,
-        size: doc.totalCharCount || 0,
+        size: backingFile?.size || doc.totalCharCount || 0,
         slug: doc.slug,
-        sourceType: 'document',
+        sourceType: DERIVED_DOCUMENT_SOURCE_TYPE,
         updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : new Date(),
-        url: doc.source || '',
+        url: backingFile?.url || doc.source || '',
       } as FileListItem;
     } else {
       // File - use dedicated file endpoint
@@ -131,12 +159,48 @@ export class FileService {
     return lambdaClient.file.updateFile.mutate({ id, ...data });
   };
 
-  getRecentFiles = async (limit?: number) => {
-    return lambdaClient.file.recentFiles.query({ limit });
+  getRecentFiles = async (limit?: number, visibility?: QueryFileListParams['visibility']) => {
+    return lambdaClient.file.recentFiles.query({ limit, visibility });
   };
 
-  getRecentPages = async (limit?: number) => {
-    return lambdaClient.file.recentPages.query({ limit });
+  getRecentPages = async (limit?: number, visibility?: QueryFileListParams['visibility']) => {
+    return lambdaClient.file.recentPages.query({ limit, visibility });
+  };
+
+  transferEntity = async (
+    id: string,
+    entityType: 'document' | 'file' | 'folder',
+    targetWorkspaceId: string | null,
+    targetVisibility?: 'private' | 'public',
+  ) => {
+    return lambdaClient.file.transferEntity.mutate({
+      entityType,
+      id,
+      targetVisibility,
+      targetWorkspaceId,
+    });
+  };
+
+  copyEntityToWorkspace = async (
+    id: string,
+    entityType: 'document' | 'file' | 'folder',
+    targetWorkspaceId: string | null,
+    targetVisibility?: 'private' | 'public',
+  ) => {
+    return lambdaClient.file.copyEntityToWorkspace.mutate({
+      entityType,
+      id,
+      targetVisibility,
+      targetWorkspaceId,
+    });
+  };
+
+  publishFileToWorkspace = async (id: string): Promise<void> => {
+    await lambdaClient.file.publishFileToWorkspace.mutate({ id });
+  };
+
+  setFileVisibility = async (id: string, visibility: 'private' | 'public'): Promise<void> => {
+    await lambdaClient.file.setFileVisibility.mutate({ id, visibility });
   };
 }
 

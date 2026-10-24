@@ -1,3 +1,5 @@
+import type { LayersEnum, TopicCommentItem } from '@lobechat/types';
+
 import { type PortalArtifact } from '@/types/artifact';
 
 export enum ArtifactDisplayMode {
@@ -8,39 +10,145 @@ export enum ArtifactDisplayMode {
 // ============== Portal View Stack Types ==============
 
 export enum PortalViewType {
+  Acceptance = 'acceptance',
+  AcceptanceCheck = 'acceptanceCheck',
+  AgentDetail = 'agentDetail',
   Artifact = 'artifact',
+  DashboardWidget = 'dashboardWidget',
   Document = 'document',
   FilePreview = 'filePreview',
+  Goal = 'goal',
+  GoalMetric = 'goalMetric',
+  GoalNode = 'goalNode',
+  GoalReport = 'goalReport',
+  GoalReportChapter = 'goalReportChapter',
   GroupThread = 'groupThread',
   Home = 'home',
+  LocalFile = 'localFile',
+  MemoryDetail = 'memoryDetail',
   MessageDetail = 'messageDetail',
   Notebook = 'notebook',
+  TaskDetail = 'taskDetail',
+  TaskResult = 'taskResult',
   Thread = 'thread',
   ToolUI = 'toolUI',
+  Topic = 'topic',
+  TopicComments = 'topicComments',
+  TopicCommentThread = 'topicCommentThread',
+  VerifyReport = 'verifyReport',
+  VerifyResult = 'verifyResult',
+}
+
+/**
+ * A file preview the opener has already resolved, for surfaces that cannot read
+ * the file through the owner-scoped file store.
+ */
+export interface PortalFileSource {
+  /** Display name; its extension also selects the renderer. */
+  name: string;
+  /** Publicly readable file URL. */
+  url: string;
 }
 
 export interface PortalFile {
   chunkId?: string;
   chunkText?: string;
   fileId: string;
+  /**
+   * Render from this source instead of fetching the file item. An agent-share
+   * visitor previews files the creator's run produced, which the visitor's
+   * own file store cannot read.
+   */
+  source?: PortalFileSource;
 }
+
+export interface OpenLocalFileParams {
+  allowExternalFilePreview?: boolean;
+  deviceId?: string;
+  filePath: string;
+  /**
+   * Present when the file lives in the topic's cloud sandbox instead of a local
+   * or device filesystem: content is fetched live via the sandbox
+   * `readLocalFile` tool scoped to this topic, read-only, and unavailable once
+   * the sandbox is recycled.
+   */
+  sandboxTopicId?: string;
+  workingDirectory: string;
+}
+
+export interface OpenLocalFileEntry extends OpenLocalFileParams {
+  id: string;
+}
+
+/**
+ * Which header metric of the goal detail page a drill-down inspects. Every
+ * value is derivable from the `goal.graph` snapshot the page already holds —
+ * none of these views require server work.
+ */
+export type GoalMetricKind =
+  'budget' | 'duration' | 'findings' | 'lifecycle' | 'liveness' | 'tasks';
 
 export type PortalViewData =
   | { type: PortalViewType.Home }
+  | { goalId: string; type: PortalViewType.Goal }
+  | { goalId: string; metric: GoalMetricKind; type: PortalViewType.GoalMetric }
+  | { goalId: string; nodeId: string; type: PortalViewType.GoalNode }
+  | { goalId: string; type: PortalViewType.GoalReport }
+  | { chapterIndex: number; goalId: string; type: PortalViewType.GoalReportChapter }
+  | { acceptanceId: string; type: PortalViewType.Acceptance }
+  | { acceptanceId: string; checkId: string; type: PortalViewType.AcceptanceCheck }
+  | { agentId: string; type: PortalViewType.AgentDetail }
   | { artifact: PortalArtifact; type: PortalViewType.Artifact }
-  | { documentId: string; type: PortalViewType.Document }
+  | { runId?: string; type: PortalViewType.DashboardWidget; widgetId: string }
+  | { agentDocumentId?: string; documentId: string; type: PortalViewType.Document }
   | { type: PortalViewType.Notebook }
   | { file: PortalFile; type: PortalViewType.FilePreview }
+  | { type: PortalViewType.LocalFile }
+  /** `id` is the layer-specific row id (e.g. a preference id), not the base memory id. */
+  | { id: string; layer: LayersEnum; type: PortalViewType.MemoryDetail }
   | { messageId: string; type: PortalViewType.MessageDetail }
-  | { identifier: string; messageId: string; type: PortalViewType.ToolUI }
+  | {
+      identifier: string;
+      messageId: string;
+      params?: Record<string, any>;
+      type: PortalViewType.ToolUI;
+    }
   | { startMessageId?: string; threadId?: string; type: PortalViewType.Thread }
-  | { agentId: string; type: PortalViewType.GroupThread };
+  | { topicId: string; type: PortalViewType.Topic }
+  | { agentId: string; type: PortalViewType.GroupThread }
+  | { taskId: string; type: PortalViewType.TaskDetail }
+  | { taskId: string; type: PortalViewType.TaskResult }
+  | {
+      focusCommentId?: string;
+      initialReplyCount?: number;
+      initialRoot?: TopicCommentItem;
+      rootCommentId: string;
+      topicId: string;
+      type: PortalViewType.TopicCommentThread;
+    }
+  | { messageId?: string; topicId: string; type: PortalViewType.TopicComments }
+  | { runId: string; type: PortalViewType.VerifyReport }
+  | { checkItemId: string; operationId: string; type: PortalViewType.VerifyResult };
 
 // ============== Portal State ==============
 
 export interface ChatPortalState {
+  /** Composite id of the currently active local-file tab; undefined when no tabs open. */
+  activeLocalFileId?: string;
+
+  /** Active local-file tab id keyed by project/root working directory. */
+  activeLocalFileIdsByScope: Record<string, string>;
+
+  /** Path of the currently active tab; kept for legacy consumers that only need display/open path. */
+  activeLocalFilePath?: string;
+
+  /** Unsaved edit buffers keyed by file path. Presence implies the file is dirty. */
+  dirtyLocalFileContents: Record<string, string>;
+
   // Legacy fields (kept for backward compatibility during migration)
   // TODO: Remove after Phase 3 migration complete
+  /** Open file tabs in the LocalFile portal. */
+  openLocalFiles: OpenLocalFileEntry[];
   /** @deprecated Use portalStack instead */
   portalArtifact?: PortalArtifact;
   portalArtifactDisplayMode: ArtifactDisplayMode;
@@ -62,6 +170,9 @@ export interface ChatPortalState {
 }
 
 export const initialChatPortalState: ChatPortalState = {
+  activeLocalFileIdsByScope: {},
+  dirtyLocalFileContents: {},
+  openLocalFiles: [],
   portalArtifactDisplayMode: ArtifactDisplayMode.Preview,
   portalStack: [],
   showPortal: false,

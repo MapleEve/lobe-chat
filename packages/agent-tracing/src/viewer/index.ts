@@ -6,6 +6,78 @@ import { reconstructMessages } from '../utils/reconstruct';
 export { analyzeAgentSignal, renderAgentSignal } from './agentSignal';
 
 /**
+ * Resolve the Context Engine snapshot for a step, reconstructing missing `input`/`output`
+ * fields by walking back through previous steps (delta format).
+ * Returns undefined if CE did not run for this step.
+ *
+ * Supports both the new `contextEngine` field format and the legacy `context_engine_result`
+ * event format for backward compatibility with older snapshots.
+ */
+export function resolveCeSnapshot(
+  step: StepSnapshot,
+  allSteps?: StepSnapshot[],
+): Record<string, unknown> | undefined {
+  // New format: contextEngine typed field
+  if (step.contextEngine !== undefined) {
+    let resolvedInput = step.contextEngine.input;
+    let resolvedMetadata = step.contextEngine.metadata;
+    let resolvedOutput = step.contextEngine.output;
+
+    if (
+      allSteps &&
+      (resolvedInput === undefined ||
+        resolvedMetadata === undefined ||
+        resolvedOutput === undefined)
+    ) {
+      for (let i = step.stepIndex - 1; i >= 0; i--) {
+        const prevStep = allSteps.find((s) => s.stepIndex === i);
+        if (!prevStep?.contextEngine) continue;
+        if (resolvedInput === undefined && prevStep.contextEngine.input !== undefined) {
+          resolvedInput = prevStep.contextEngine.input;
+        }
+        if (resolvedMetadata === undefined && prevStep.contextEngine.metadata !== undefined) {
+          resolvedMetadata = prevStep.contextEngine.metadata;
+        }
+        if (resolvedOutput === undefined && prevStep.contextEngine.output !== undefined) {
+          resolvedOutput = prevStep.contextEngine.output;
+        }
+        if (
+          resolvedInput !== undefined &&
+          resolvedMetadata !== undefined &&
+          resolvedOutput !== undefined
+        )
+          break;
+      }
+    }
+
+    return { input: resolvedInput, metadata: resolvedMetadata, output: resolvedOutput };
+  }
+
+  // Legacy format: context_engine_result stored in events array
+  const localCe = step.events?.find((e) => e.type === 'context_engine_result') as any;
+  if (!localCe) return undefined;
+  if (!allSteps || (localCe.input !== undefined && localCe.output !== undefined)) return localCe;
+
+  let resolvedInput = localCe.input;
+  let resolvedOutput = localCe.output;
+
+  for (let i = step.stepIndex - 1; i >= 0; i--) {
+    const prevStep = allSteps.find((s) => s.stepIndex === i);
+    if (!prevStep) continue;
+    const prevCe = prevStep.events?.find((e) => e.type === 'context_engine_result') as any;
+    if (!prevCe) continue;
+    if (resolvedInput === undefined && prevCe.input !== undefined) resolvedInput = prevCe.input;
+    if (resolvedOutput === undefined && prevCe.output !== undefined) resolvedOutput = prevCe.output;
+    if (resolvedInput !== undefined && resolvedOutput !== undefined) break;
+  }
+
+  return { ...localCe, input: resolvedInput, output: resolvedOutput };
+}
+
+/** @deprecated Use resolveCeSnapshot instead. */
+export const resolveCeEvent = resolveCeSnapshot;
+
+/**
  * Resolve messages for a step, supporting both legacy (full) and incremental (delta) formats.
  */
 function resolveStepMessages(
@@ -300,6 +372,26 @@ function renderMessageList(lines: string[], messages: any[], maxContentLen: numb
   }
 }
 
+/**
+ * `total (device Xms + transport Yms)` for a device-dispatched call.
+ *
+ * The split is the whole point of recording both clocks: it says how much of a
+ * device tool call was actual work and how much was getting there and back.
+ * Falls back to the total alone when the device reported nothing.
+ */
+function renderToolTiming(tool: NonNullable<StepSnapshot['toolsResult']>[number]): string {
+  const { deviceExecutionTimeMs, executionTimeMs } = tool;
+  if (executionTimeMs === undefined) return '';
+  if (deviceExecutionTimeMs === undefined) return dim(`  ${formatMs(executionTimeMs)}`);
+
+  const transport = Math.max(0, executionTimeMs - deviceExecutionTimeMs);
+
+  return dim(
+    `  ${formatMs(executionTimeMs)}` +
+      ` (device ${formatMs(deviceExecutionTimeMs)} + transport ${formatMs(transport)})`,
+  );
+}
+
 function renderToolStep(lines: string[], step: StepSnapshot, prefix: string): void {
   if (step.toolsResult) {
     for (let i = 0; i < step.toolsResult.length; i++) {
@@ -308,7 +400,7 @@ function renderToolStep(lines: string[], step: StepSnapshot, prefix: string): vo
       const connector = isLast ? '└─' : '├─';
       const status = tool.isSuccess === false ? red('✗') : green('✓');
       const name = tool.identifier || tool.apiName;
-      lines.push(`${prefix}${dim(connector)} Tool  ${name}  ${status}`);
+      lines.push(`${prefix}${dim(connector)} Tool  ${name}  ${status}${renderToolTiming(tool)}`);
     }
   }
 }
@@ -353,7 +445,7 @@ export function renderMessageDetail(
   source: 'input' | 'output' = 'output',
   allSteps?: StepSnapshot[],
 ): string {
-  const ceEvent = step.events?.find((e) => e.type === 'context_engine_result') as any;
+  const ceEvent = resolveCeSnapshot(step, allSteps) as any;
   let messages: any[] | undefined;
   let label: string;
 
@@ -405,8 +497,8 @@ export function renderMessageDetail(
   return lines.join('\n');
 }
 
-export function renderSystemRole(step: StepSnapshot): string {
-  const ceEvent = step.events?.find((e) => e.type === 'context_engine_result') as any;
+export function renderSystemRole(step: StepSnapshot, allSteps?: StepSnapshot[]): string {
+  const ceEvent = resolveCeSnapshot(step, allSteps) as any;
 
   // Try input.systemRole first (user-configured agent prompt)
   const inputSystemRole = ceEvent?.input?.systemRole;
@@ -437,8 +529,8 @@ export function renderSystemRole(step: StepSnapshot): string {
   return lines.join('\n');
 }
 
-export function renderEnvContext(step: StepSnapshot): string {
-  const ceEvent = step.events?.find((e) => e.type === 'context_engine_result') as any;
+export function renderEnvContext(step: StepSnapshot, allSteps?: StepSnapshot[]): string {
+  const ceEvent = resolveCeSnapshot(step, allSteps) as any;
   const outputMsgs: any[] | undefined = ceEvent?.output;
 
   if (!outputMsgs || outputMsgs.length === 0) {
@@ -463,9 +555,9 @@ export function renderEnvContext(step: StepSnapshot): string {
   return lines.join('\n');
 }
 
-export function renderPayloadTools(step: StepSnapshot): string {
+export function renderPayloadTools(step: StepSnapshot, allSteps?: StepSnapshot[]): string {
   const lines: string[] = [];
-  const ceEvent = step.events?.find((e) => e.type === 'context_engine_result') as any;
+  const ceEvent = resolveCeSnapshot(step, allSteps) as any;
 
   // Section 1: Plugin manifests from context engine input
   const toolsConfig = ceEvent?.input?.toolsConfig;
@@ -519,8 +611,8 @@ export function renderPayloadTools(step: StepSnapshot): string {
   return lines.join('\n');
 }
 
-export function renderPayload(step: StepSnapshot): string {
-  const ceEvent = step.events?.find((e) => e.type === 'context_engine_result') as any;
+export function renderPayload(step: StepSnapshot, allSteps?: StepSnapshot[]): string {
+  const ceEvent = resolveCeSnapshot(step, allSteps) as any;
   if (!ceEvent?.input) {
     return red('No context engine data found in this step.');
   }
@@ -654,8 +746,8 @@ export function renderPayload(step: StepSnapshot): string {
   return lines.join('\n');
 }
 
-export function renderMemory(step: StepSnapshot): string {
-  const ceEvent = step.events?.find((e) => e.type === 'context_engine_result') as any;
+export function renderMemory(step: StepSnapshot, allSteps?: StepSnapshot[]): string {
+  const ceEvent = resolveCeSnapshot(step, allSteps) as any;
   const userMemory = ceEvent?.input?.userMemory;
 
   if (!userMemory) {
@@ -865,7 +957,7 @@ export function renderStepDetail(
 
   if (options?.messages) {
     // Show context engine input/output from events if available
-    const ceEvent = step.events?.find((e) => e.type === 'context_engine_result') as any;
+    const ceEvent = resolveCeSnapshot(step, options?.allSteps) as any;
 
     if (ceEvent) {
       // Context engine input messages (DB messages passed to engine)

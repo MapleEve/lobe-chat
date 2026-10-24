@@ -4,11 +4,11 @@ import { memo } from 'react';
 import { useAgentStore } from '@/store/agent';
 import { agentSelectors } from '@/store/agent/selectors';
 import { ChatSettingsTabs } from '@/store/global/initialState';
+import { useUserStore } from '@/store/user';
+import { labPreferSelectors } from '@/store/user/selectors';
 
-import AgentChat from './AgentChat';
-import AgentDocuments from './AgentDocuments';
-import AgentMeta from './AgentMeta';
-import AgentModal from './AgentModal';
+import AgentConnectors from './AgentConnectors';
+import AgentGraphRuntime from './AgentGraphRuntime';
 import AgentOpening from './AgentOpening';
 
 export interface AgentSettingsContentProps {
@@ -18,16 +18,15 @@ export interface AgentSettingsContentProps {
 
 const AgentSettingsContent = memo<AgentSettingsContentProps>(({ tab, loadingSkeleton }) => {
   const loading = useAgentStore(agentSelectors.isAgentConfigLoading);
+  const enableAgentGraphConfigLab = useUserStore(labPreferSelectors.enableAgentGraphConfig);
 
   if (loading) return loadingSkeleton;
 
   return (
     <>
-      {tab === ChatSettingsTabs.Meta && <AgentMeta />}
-      {tab === ChatSettingsTabs.Documents && <AgentDocuments />}
       {tab === ChatSettingsTabs.Opening && <AgentOpening />}
-      {tab === ChatSettingsTabs.Chat && <AgentChat />}
-      {tab === ChatSettingsTabs.Modal && <AgentModal />}
+      {enableAgentGraphConfigLab && tab === ChatSettingsTabs.Graph && <AgentGraphRuntime />}
+      {tab === ChatSettingsTabs.Connector && <AgentConnectors />}
     </>
   );
 });

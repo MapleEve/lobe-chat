@@ -1,54 +1,52 @@
-import type { GlobFilesParams, GlobFilesResult } from '@lobechat/electron-client-ipc';
-
 import type {
   BaseFileSearch,
   FileResult,
-  SearchOptions} from '@/modules/fileSearch';
-import {
-  createFileSearchModule
-} from '@/modules/fileSearch';
+  GlobFilesParams,
+  GlobFilesResult,
+  SearchOptions,
+} from '@lobechat/local-file-shell/file-search';
 
 import { ServiceModule } from './index';
 
 /**
  * File Search Service
- * Main service class that uses platform-specific implementations internally
+ * Main service class that delegates to platform-specific implementations from
+ * `@lobechat/local-file-shell`.
  */
 export default class FileSearchService extends ServiceModule {
-  private impl: BaseFileSearch = createFileSearchModule();
+  private implPromise?: Promise<BaseFileSearch>;
 
-  /**
-   * Perform file search
-   */
+  private getImpl(): Promise<BaseFileSearch> {
+    this.implPromise ??= import('@lobechat/local-file-shell/file-search').then(
+      ({ createFileSearchModule }) => createFileSearchModule(),
+    );
+    return this.implPromise;
+  }
+
   async search(
     query: string,
     options: Omit<SearchOptions, 'keywords'> = {},
   ): Promise<FileResult[]> {
-    return this.impl.search({ ...options, keywords: query });
+    const impl = await this.getImpl();
+    if (this.app?.binaryManager) {
+      impl.setToolDetector(this.app.binaryManager);
+    }
+    return impl.search({ ...options, keywords: query });
   }
 
-  /**
-   * Check search service status
-   */
   async checkSearchServiceStatus(): Promise<boolean> {
-    return this.impl.checkSearchServiceStatus();
+    return (await this.getImpl()).checkSearchServiceStatus();
   }
 
-  /**
-   * Update search index
-   * @param path Optional specified path
-   * @returns Promise indicating operation success
-   */
   async updateSearchIndex(path?: string): Promise<boolean> {
-    return this.impl.updateSearchIndex(path);
+    return (await this.getImpl()).updateSearchIndex(path);
   }
 
-  /**
-   * Perform glob pattern matching
-   * @param params Glob parameters
-   * @returns Promise of glob result
-   */
   async glob(params: GlobFilesParams): Promise<GlobFilesResult> {
-    return this.impl.glob(params);
+    const impl = await this.getImpl();
+    if (this.app?.binaryManager) {
+      impl.setToolDetector(this.app.binaryManager);
+    }
+    return impl.glob(params);
   }
 }

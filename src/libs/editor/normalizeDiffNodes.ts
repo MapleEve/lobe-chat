@@ -1,33 +1,19 @@
+import { isRecord } from '@lobechat/utils';
+
 type DiffType =
-  | 'add'
-  | 'listItemAdd'
-  | 'listItemModify'
-  | 'listItemRemove'
-  | 'modify'
-  | 'remove'
-  | 'unchanged';
+  'add' | 'listItemAdd' | 'listItemModify' | 'listItemRemove' | 'modify' | 'remove' | 'unchanged';
 
 const REMOVED_NODE = Symbol('removed-diff-origin');
 
 type RemovedNode = typeof REMOVED_NODE;
 type NormalizedNode =
-  | RemovedNode
-  | Record<string, unknown>
-  | unknown[]
-  | boolean
-  | null
-  | number
-  | string
-  | undefined;
+  RemovedNode | Record<string, unknown> | unknown[] | boolean | null | number | string | undefined;
 
 interface SerializedDiffNodeLike extends Record<string, unknown> {
   children?: unknown[];
   diffType?: DiffType;
   type: 'diff';
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const isDiffNode = (value: unknown): value is SerializedDiffNodeLike =>
   isRecord(value) && value.type === 'diff';

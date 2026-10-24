@@ -108,7 +108,7 @@ export type InputItem = z.infer<typeof InputItemSchema>;
 export const FunctionToolSchema = z.object({
   description: z.string().optional(),
   name: z.string(),
-  parameters: z.record(z.any()).optional(),
+  parameters: z.record(z.string(), z.any()).optional(),
   strict: z.boolean().optional(),
   type: z.literal('function'),
 });
@@ -139,11 +139,7 @@ export interface ResponseUsage {
 // ==================== Error Types ====================
 
 export type ResponseErrorCode =
-  | 'server_error'
-  | 'invalid_request_error'
-  | 'not_found'
-  | 'model_error'
-  | 'rate_limit_error';
+  'server_error' | 'invalid_request_error' | 'not_found' | 'model_error' | 'rate_limit_error';
 
 export interface ResponseError {
   code: ResponseErrorCode;
@@ -175,7 +171,7 @@ export const CreateResponseRequestSchema = z
     input: z.union([z.string(), z.array(InputItemSchema)]),
     instructions: z.string().nullish(),
     max_output_tokens: z.number().int().positive().nullish(),
-    metadata: z.record(z.string()).nullish(),
+    metadata: z.record(z.string(), z.string()).nullish(),
     model: z.string(),
     parallel_tool_calls: z.boolean().nullish(),
     previous_response_id: z.string().nullish(),
@@ -251,6 +247,8 @@ export type ResponseStreamEventType =
   // Function call events
   | 'response.function_call_arguments.delta'
   | 'response.function_call_arguments.done'
+  | 'response.custom_tool_call_input.delta'
+  | 'response.custom_tool_call_input.done'
   // Reasoning events
   | 'response.reasoning_summary_text.delta'
   | 'response.reasoning_summary_text.done';

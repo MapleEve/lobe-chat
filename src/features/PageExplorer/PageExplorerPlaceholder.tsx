@@ -1,18 +1,24 @@
-import { FILE_URL } from '@lobechat/business-const';
+import { CUSTOM_DOCUMENT_FILE_TYPE } from '@lobechat/const';
 import { Notion } from '@lobehub/icons';
-import { Center, FileTypeIcon, Flexbox, Icon, Text } from '@lobehub/ui';
-import { Upload } from 'antd';
-import { createStaticStyles, cssVar } from 'antd-style';
+import {
+  Center,
+  createStaticStyles,
+  cssVar,
+  FileTypeIcon,
+  Flexbox,
+  Icon,
+  Text,
+  Upload,
+} from '@lobehub/ui';
 import { ArrowUpIcon, PlusIcon } from 'lucide-react';
 import React, { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import GuideModal from '@/components/GuideModal';
-import GuideVideo from '@/components/GuideVideo';
 import NavHeader from '@/features/NavHeader';
 import useNotionImport from '@/features/ResourceManager/components/Header/hooks/useNotionImport';
+import { usePermission } from '@/hooks/usePermission';
 import { useFileStore } from '@/store/file';
-import { usePageStore } from '@/store/page';
+import { pageActions } from '@/store/page';
 import { DocumentSourceType } from '@/types/document';
 import { standardizeIdentifier } from '@/utils/identifier';
 
@@ -76,22 +82,8 @@ interface PageExplorerPlaceholderProps {
 const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
   ({ hasPages = false, knowledgeBaseId }) => {
     const { t } = useTranslation(['file', 'common']);
+    const { allowed: canCreate } = usePermission('create_content');
     const [isUploading, setIsUploading] = useState(false);
-
-    // Page-specific operations from pageStore
-    const [
-      createNewPage,
-      createOptimisticPage,
-      replaceTempPageWithReal,
-      setSelectedPageId,
-      fetchDocuments,
-    ] = usePageStore((s) => [
-      s.createNewPage,
-      s.createOptimisticPage,
-      s.replaceTempPageWithReal,
-      s.setSelectedPageId,
-      s.fetchDocuments,
-    ]);
 
     // File operations from FileStore (for uploads and notion import)
     const [createDocument] = useFileStore((s) => [s.createDocument]);
@@ -100,7 +92,7 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
       createDocument,
       currentFolderId: null,
       libraryId: knowledgeBaseId ?? null,
-      refetchResources: fetchDocuments,
+      refetchResources: pageActions.refreshDocuments,
       t,
     });
 
@@ -108,20 +100,24 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
     const handleNotionImportWithLocalUpdate = async (
       event: React.ChangeEvent<HTMLInputElement>,
     ) => {
+      if (!canCreate) return;
+
       await notionImport.handleNotionImport(event);
     };
 
     const handleCreateDocument = async (content: string, title: string) => {
+      if (!canCreate) return;
+
       if (!content) {
         // For empty pages, use createNewPage which handles optimistic updates
-        await createNewPage(title);
+        await pageActions.createNewPage(title);
         return;
       }
 
       // For markdown uploads with content, use optimistic pattern similar to createNewPage
-      const tempPageId = createOptimisticPage(title);
+      const tempPageId = pageActions.createOptimisticPage(title);
       // Set selected page to temp ID immediately (with URL update disabled for temp IDs)
-      setSelectedPageId(tempPageId, false);
+      pageActions.setSelectedPageId(tempPageId, false);
 
       try {
         const newDoc = await createDocument({
@@ -138,7 +134,7 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
             typeof newDoc.editorData === 'string'
               ? JSON.parse(newDoc.editorData)
               : newDoc.editorData || null,
-          fileType: 'custom/document' as const,
+          fileType: CUSTOM_DOCUMENT_FILE_TYPE,
           filename: newDoc.title || title,
           id: newDoc.id,
           metadata: newDoc.metadata || {},
@@ -151,19 +147,21 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
         };
 
         // Replace optimistic with real
-        replaceTempPageWithReal(tempPageId, realPage);
+        pageActions.replaceTempPageWithReal(tempPageId, realPage);
         // Update selected page ID and URL to the real page
-        setSelectedPageId(newDoc.id);
+        pageActions.setSelectedPageId(newDoc.id);
       } catch (error) {
         console.error('Failed to create page:', error);
         // Remove temp document on error
-        usePageStore.getState().removeTempPage(tempPageId);
-        setSelectedPageId(null);
+        pageActions.removeTempPage(tempPageId);
+        pageActions.setSelectedPageId(null);
         throw error;
       }
     };
 
     const handleUploadFile = async (file: File) => {
+      if (!canCreate) return;
+
       try {
         setIsUploading(true);
 
@@ -179,7 +177,7 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
           const fileName = file.name.replace(/\.(pdf|docx)$/i, '');
 
           // Create optimistic document but don't select it yet
-          const tempPageId = createOptimisticPage(fileName);
+          const tempPageId = pageActions.createOptimisticPage(fileName);
 
           try {
             // Upload file to server
@@ -206,7 +204,7 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
                 typeof parsedDocument.editorData === 'string'
                   ? JSON.parse(parsedDocument.editorData)
                   : parsedDocument.editorData || null,
-              fileType: parsedDocument.fileType || 'custom/document',
+              fileType: parsedDocument.fileType || CUSTOM_DOCUMENT_FILE_TYPE,
               filename: parsedDocument.filename || fileName,
               id: parsedDocument.id,
               metadata: parsedDocument.metadata || {},
@@ -219,10 +217,10 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
             };
 
             // Replace optimistic with real document in the store
-            replaceTempPageWithReal(tempPageId, realPage);
+            pageActions.replaceTempPageWithReal(tempPageId, realPage);
 
             // Update selected page ID in store (with full ID including prefix)
-            setSelectedPageId(parsedDocument.id, false);
+            pageActions.setSelectedPageId(parsedDocument.id, false);
 
             // Update URL with stripped ID (without prefix)
             const cleanId = standardizeIdentifier(parsedDocument.id);
@@ -231,7 +229,7 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
           } catch (error) {
             console.error('Failed to upload and parse file:', error);
             // Remove temp document on error
-            usePageStore.getState().removeTempPage(tempPageId);
+            pageActions.removeTempPage(tempPageId);
             throw error;
           }
         }
@@ -240,8 +238,6 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
       } finally {
         setIsUploading(false);
       }
-
-      return false; // Prevent default upload behavior
     };
 
     return (
@@ -258,6 +254,7 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
             <Flexbox
               className={styles.card}
               padding={16}
+              style={canCreate ? undefined : { cursor: 'not-allowed', opacity: 0.5 }}
               onClick={() => handleCreateDocument('', t('pageList.untitled'))}
             >
               <span className={styles.actionTitle}>{t('pageEditor.empty.createNewDocument')}</span>
@@ -274,15 +271,17 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
             {/* Upload Files (PDF, DOCX, Markdown) */}
             <Upload
               accept=".md,.markdown,.pdf,.docx"
-              beforeUpload={handleUploadFile}
-              disabled={isUploading}
+              disabled={!canCreate || isUploading}
               multiple={false}
-              showUploadList={false}
+              onFiles={([file]) => handleUploadFile(file)}
             >
               <Flexbox
                 className={styles.card}
                 padding={16}
-                style={{ opacity: isUploading ? 0.5 : 1 }}
+                style={{
+                  cursor: canCreate ? undefined : 'not-allowed',
+                  opacity: !canCreate || isUploading ? 0.5 : 1,
+                }}
               >
                 <span className={styles.actionTitle}>
                   {isUploading ? 'Uploading...' : t('pageEditor.empty.uploadFiles')}
@@ -302,7 +301,12 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
             <Flexbox
               className={styles.card}
               padding={16}
-              onClick={notionImport.handleOpenNotionGuide}
+              style={canCreate ? undefined : { cursor: 'not-allowed', opacity: 0.5 }}
+              onClick={() => {
+                if (!canCreate) return;
+
+                notionImport.handleOpenNotionGuide();
+              }}
             >
               <span className={styles.actionTitle}>{t('pageEditor.empty.importNotion')}</span>
               <div className={styles.glow} style={{ background: cssVar.geekblue }} />
@@ -316,16 +320,6 @@ const PageExplorerPlaceholder = memo<PageExplorerPlaceholderProps>(
             </Flexbox>
           </Flexbox>
         </Center>
-        <GuideModal
-          cancelText={t('header.actions.notionGuide.cancel')}
-          cover={<GuideVideo height={269} src={FILE_URL.importFromNotionGuide} width={358} />}
-          desc={t('header.actions.notionGuide.desc')}
-          okText={t('header.actions.notionGuide.ok')}
-          open={notionImport.notionGuideOpen}
-          title={t('header.actions.notionGuide.title')}
-          onCancel={notionImport.handleCloseNotionGuide}
-          onOk={notionImport.handleStartNotionImport}
-        />
         <input
           accept=".zip"
           ref={notionImport.notionInputRef}

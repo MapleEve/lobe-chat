@@ -1,106 +1,139 @@
 'use client';
 
-import { Flexbox } from '@lobehub/ui';
-import { createStaticStyles } from 'antd-style';
-import { memo, useEffect, useMemo, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { createStaticStyles, Flexbox } from '@lobehub/ui';
+import { memo, useCallback, useMemo } from 'react';
+import { useNavigate, useParams } from 'react-router';
 
-import Loading from '@/components/Loading/BrandTextLoading';
-import NavHeader from '@/features/NavHeader';
-import { useAgentStore } from '@/store/agent';
+import NotFound from '@/components/404';
+import AsyncBoundary from '@/components/AsyncBoundary';
+import {
+  AgentChannelDetailBodySkeleton,
+  AgentChannelListBodySkeleton,
+} from '@/components/Skeleton/AgentChannel';
+import PlatformDetail from '@/features/AgentChannel/PlatformDetail';
+import ComingSoonDetail from '@/features/AgentChannel/PlatformDetail/ComingSoon';
+import PlatformGrid from '@/features/AgentChannel/PlatformGrid';
+import { useAgentChannels } from '@/features/AgentChannel/useAgentChannels';
+import ResourceConfigAccessGate from '@/features/ResourcePermission/ResourceConfigAccessGate';
+import { usePermission } from '@/hooks/usePermission';
 
-import { BOT_RUNTIME_STATUSES, type BotRuntimeStatus } from '../../../../types/botRuntimeStatus';
-import PlatformDetail from './detail';
-import PlatformList from './list';
+import Header from './Header';
 
 const styles = createStaticStyles(({ css }) => ({
   container: css`
-    overflow: hidden;
+    overflow-y: auto;
     display: flex;
     flex: 1;
+    flex-direction: column;
+    align-items: center;
 
     width: 100%;
     height: 100%;
   `,
 }));
 
-const ChannelPage = memo(() => {
-  const { aid } = useParams<{ aid?: string }>();
-  const [activeProviderId, setActiveProviderId] = useState<string>('');
+const ChannelContent = memo(() => {
+  const { aid, platform } = useParams<{ aid?: string; platform?: string }>();
+  const navigate = useNavigate();
+  const { allowed: canEdit } = usePermission('edit_own_content');
 
-  const { data: platforms, isLoading: platformsLoading } = useAgentStore((s) =>
-    s.useFetchPlatformDefinitions(),
-  );
-  const { data: providers, isLoading: providersLoading } = useAgentStore((s) =>
-    s.useFetchBotProviders(aid),
-  );
-  const triggerRefreshAllBotStatuses = useAgentStore((s) => s.triggerRefreshAllBotStatuses);
-
-  // Fire-and-forget a live gateway status refresh on entry. The list renders
-  // from cached statuses immediately; SWR revalidates once Redis is updated.
-  useEffect(() => {
-    if (!aid) return;
-    triggerRefreshAllBotStatuses(aid);
-  }, [aid, triggerRefreshAllBotStatuses]);
-
-  const isLoading = platformsLoading || providersLoading;
-
-  // Default to first platform once loaded
-  const effectiveActiveId = activeProviderId || platforms?.[0]?.id || '';
-
-  const platformRuntimeStatuses = useMemo(
-    () =>
-      new Map<string, BotRuntimeStatus>(
-        (providers ?? [])
-          .filter((provider) => provider.enabled)
-          .map((provider) => [
-            provider.platform,
-            ((provider as any).runtimeStatus as BotRuntimeStatus) ??
-              BOT_RUNTIME_STATUSES.disconnected,
-          ]),
-      ),
-    [providers],
-  );
+  const {
+    allPlatforms,
+    error,
+    hasData,
+    isLoading,
+    platformRuntimeStatuses,
+    platforms,
+    platformsLoading,
+    providers,
+    retry,
+  } = useAgentChannels(aid, canEdit);
 
   const activePlatformDef = useMemo(
-    () => platforms?.find((p) => p.id === effectiveActiveId) || platforms?.[0],
-    [platforms, effectiveActiveId],
+    () => (platform ? allPlatforms.find((item) => item.id === platform) : undefined),
+    [allPlatforms, platform],
   );
 
   const currentConfig = useMemo(
-    () => providers?.find((p) => p.platform === effectiveActiveId),
-    [providers, effectiveActiveId],
+    () => providers?.find((item) => item.platform === platform),
+    [platform, providers],
+  );
+
+  const handleSelectPlatform = useCallback(
+    (platformId: string) => navigate(platformId, { relative: 'path' }),
+    [navigate],
   );
 
   if (!aid) return null;
 
   return (
-    <Flexbox flex={1} height={'100%'}>
-      <NavHeader />
-      <Flexbox flex={1} style={{ overflowY: 'auto' }}>
-        {isLoading && <Loading debugId="ChannelPage" />}
-
-        {!isLoading && platforms && platforms.length > 0 && activePlatformDef && (
-          <div className={styles.container}>
-            <PlatformList
-              activeId={effectiveActiveId}
-              agentId={aid}
-              platforms={platforms}
-              providers={providers}
-              runtimeStatuses={platformRuntimeStatuses}
-              onSelect={setActiveProviderId}
-            />
-            <PlatformDetail
-              agentId={aid}
-              currentConfig={currentConfig}
-              platformDef={activePlatformDef}
-              runtimeStatus={platformRuntimeStatuses.get(activePlatformDef.id)}
-            />
-          </div>
-        )}
+    <Flexbox flex={1} height={'100%'} style={{ overflow: 'hidden' }}>
+      <Header
+        agentId={aid}
+        currentConfig={currentConfig}
+        disabled={!canEdit}
+        platformDef={activePlatformDef}
+        platformId={platform}
+        platformsLoading={platformsLoading}
+        providers={providers}
+        runtimeStatus={
+          activePlatformDef ? platformRuntimeStatuses.get(activePlatformDef.id) : undefined
+        }
+      />
+      <Flexbox flex={1} style={{ overflow: 'hidden' }}>
+        <AsyncBoundary
+          data={hasData ? platforms : undefined}
+          error={error}
+          errorVariant={'block'}
+          isLoading={isLoading}
+          // Body half of the route skeleton (the real header is already mounted),
+          // so the chunk wait and the platform fetch share one shape.
+          loading={platform ? <AgentChannelDetailBodySkeleton /> : <AgentChannelListBodySkeleton />}
+          onRetry={retry}
+        >
+          {!platform ? (
+            <div className={styles.container}>
+              <PlatformGrid
+                agentId={aid}
+                platforms={allPlatforms}
+                runtimeStatuses={platformRuntimeStatuses}
+                onSelect={handleSelectPlatform}
+              />
+            </div>
+          ) : activePlatformDef ? (
+            <div className={styles.container}>
+              {activePlatformDef.comingSoon ? (
+                <ComingSoonDetail platformDef={activePlatformDef} />
+              ) : (
+                <PlatformDetail
+                  agentId={aid}
+                  currentConfig={currentConfig}
+                  disabled={!canEdit}
+                  platformDef={activePlatformDef}
+                />
+              )}
+            </div>
+          ) : (
+            <NotFound />
+          )}
+        </AsyncBoundary>
       </Flexbox>
     </Flexbox>
   );
 });
+
+const ChannelPage = () => {
+  const { aid } = useParams<{ aid?: string }>();
+
+  return (
+    <ResourceConfigAccessGate
+      redirectPath={`/agent/${aid ?? ''}`}
+      resourceId={aid}
+      resourceType="agent"
+    >
+      <ChannelContent />
+    </ResourceConfigAccessGate>
+  );
+};
 
 export default ChannelPage;

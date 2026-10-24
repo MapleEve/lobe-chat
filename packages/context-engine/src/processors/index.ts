@@ -1,4 +1,8 @@
 // Transformer processors
+export {
+  type ActivationResultTrimConfig,
+  ActivationResultTrimProcessor,
+} from './ActivationResultTrim';
 export { AgentCouncilFlattenProcessor } from './AgentCouncilFlatten';
 export { CompressedGroupRoleTransformProcessor } from './CompressedGroupRoleTransform';
 export { DisabledToolCallFilter } from './DisabledToolCallFilter';
@@ -9,22 +13,31 @@ export {
   type OrchestrationAgentInfo,
 } from './GroupOrchestrationFilter';
 export { GroupRoleTransformProcessor } from './GroupRoleTransform';
-export { HistoryTruncateProcessor } from './HistoryTruncate';
+export { getSlicedMessages, HistoryTruncateProcessor } from './HistoryTruncate';
 export { InputTemplateProcessor } from './InputTemplate';
 export { MessageCleanupProcessor } from './MessageCleanup';
 export { MessageContentProcessor } from './MessageContent';
+export { PlaceholderMessageFilterProcessor } from './PlaceholderMessageFilter';
 export {
   buildPlaceholderGenerators,
   formatPlaceholderValues,
+  HYDRATED_TOOL_RESULTS,
   PlaceholderVariablesProcessor,
   renderPlaceholderTemplate,
 } from './PlaceholderVariables';
 export { ReactionFeedbackProcessor } from './ReactionFeedback';
+export {
+  cacheEconomicsForProvider,
+  type StaleToolResultTrimConfig,
+  StaleToolResultTrimProcessor,
+} from './StaleToolResultTrim';
 export { SupervisorRoleRestoreProcessor } from './SupervisorRoleRestore';
+export { TaskCallbackMessageProcessor } from './TaskCallbackMessage';
 export { TaskMessageProcessor } from './TaskMessage';
 export { TasksFlattenProcessor } from './TasksFlatten';
 export { ToolCallProcessor } from './ToolCall';
 export { ToolMessageReorder } from './ToolMessageReorder';
+export { VerifyMessageProcessor } from './VerifyMessage';
 
 // Re-export types
 export type { AgentInfo, GroupRoleTransformConfig } from './GroupRoleTransform';

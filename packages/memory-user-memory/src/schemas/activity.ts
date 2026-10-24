@@ -4,42 +4,41 @@ import { ActivityTypeEnum, TypesEnum } from '@lobechat/types';
 import type { JSONSchema7 } from 'json-schema';
 import { z } from 'zod';
 
-import { MemoryTypeSchema } from './common';
-
 const ActivityAssociatedLocationSchema = z.object({
-  address: z.string().optional().nullable(),
-  extra: z.string().nullable().optional(),
-  name: z.string().optional(),
-  tags: z.array(z.string()).optional().nullable(),
-  type: z.string().optional(),
+  address: z.string().nullish(),
+  extra: z.string().nullish(),
+  name: z.string().nullish(),
+  tags: z.array(z.string()).nullish(),
+  type: z.string().nullish(),
 });
 
 const ActivityAssociationSchema = z.object({
-  extra: z.string().nullable().optional(),
+  extra: z.string().nullish(),
   name: z.string(),
-  type: z.string().optional(),
+  type: z.string().nullish(),
 });
 
 export const WithActivitySchema = z.object({
-  associatedLocations: z.array(ActivityAssociatedLocationSchema).optional().nullable(),
-  associatedObjects: z.array(ActivityAssociationSchema).optional().nullable(),
-  associatedSubjects: z.array(ActivityAssociationSchema).optional().nullable(),
-  endsAt: z.string().optional().nullable(),
-  feedback: z.string().optional().nullable(),
-  metadata: z.record(z.unknown()).optional().nullable(),
+  associatedLocations: z.array(ActivityAssociatedLocationSchema).nullish(),
+  associatedObjects: z.array(ActivityAssociationSchema).nullish(),
+  associatedSubjects: z.array(ActivityAssociationSchema).nullish(),
+  endsAt: z.string().nullish(),
+  feedback: z.string().nullish(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
   narrative: z.string(),
-  notes: z.string().optional().nullable(),
-  startsAt: z.string().optional().nullable(),
-  status: z.string().optional().nullable(),
-  tags: z.array(z.string()).optional().nullable(),
-  timezone: z.string().optional().nullable(),
+  notes: z.string().nullish(),
+  startsAt: z.string().nullish(),
+  status: z.string().nullish(),
+  tags: z.array(z.string()).nullish(),
+  timezone: z.string().nullish(),
   type: z.union([z.nativeEnum(ActivityTypeEnum), z.string()]).optional(),
 });
 
 export const ActivityMemoryItemSchema = z.object({
   details: z.string(),
   memoryCategory: z.string(),
-  memoryType: MemoryTypeSchema,
+  memoryType: z.literal(TypesEnum.Activity),
+  sourceIds: z.array(z.string()).nullish(),
   summary: z.string(),
   tags: z.array(z.string()),
   title: z.string(),
@@ -59,7 +58,7 @@ export type ActivityMemory = z.infer<typeof ActivityMemoriesSchema>;
 
 export const ActivityMemorySchema: GenerateObjectSchema = {
   description:
-    'Extract episodic activities with clear timelines, participants, objects, subjects, locations, and feelings. Temporal and associated fields are optional—omit when missing rather than guessing.',
+    'Extract episodic activities with clear timelines, participants, objects, subjects, locations, and feelings. Return every schema key, using null for unknown optional values and [] for empty arrays.',
   name: 'activity_extraction',
   schema: {
     additionalProperties: false,
@@ -77,6 +76,7 @@ export const ActivityMemorySchema: GenerateObjectSchema = {
                 'Talked through renewal scope, confirmed timeline flexibility, and captured follow-ups.',
               memoryCategory: 'work',
               memoryType: 'activity',
+              sourceIds: ['message-3'],
               summary: 'Client Q2 renewal meeting with Alice (ACME)',
               tags: ['meeting', 'client', 'renewal'],
               title: 'ACME Q2 renewal meeting',
@@ -125,7 +125,7 @@ export const ActivityMemorySchema: GenerateObjectSchema = {
           properties: {
             details: {
               description:
-                'Optional detailed information or longer notes supporting the summary and narrative.',
+                'Detailed information or longer notes supporting the summary and narrative. Use an empty string when no additional detail exists.',
               type: 'string',
             },
             memoryCategory: {
@@ -142,6 +142,12 @@ export const ActivityMemorySchema: GenerateObjectSchema = {
               description: 'Concise overview of this activity.',
               type: 'string',
             },
+            sourceIds: {
+              description:
+                'Stable source message ids that support this activity. Use [] when unavailable.',
+              items: { type: 'string' },
+              type: ['array', 'null'],
+            },
             tags: {
               description: 'Model-generated tags summarizing key facets of the activity.',
               items: { type: 'string' },
@@ -155,7 +161,7 @@ export const ActivityMemorySchema: GenerateObjectSchema = {
             withActivity: {
               additionalProperties: false,
               description:
-                'Structured activity fields. Temporal and association values are optional—include only when the user mentioned them.',
+                'Structured activity fields. Use null for unknown optional scalar values and [] for empty associations.',
               properties: {
                 associatedLocations: {
                   description:
@@ -244,7 +250,7 @@ export const ActivityMemorySchema: GenerateObjectSchema = {
                 },
                 endsAt: {
                   description:
-                    'ISO 8601 end time for the activity when specified. Omit if not explicitly provided.',
+                    'ISO 8601 end time for the activity when specified. Use null if not explicitly provided.',
                   format: 'date-time',
                   type: ['string', 'null'],
                 },
@@ -266,19 +272,27 @@ export const ActivityMemorySchema: GenerateObjectSchema = {
                 },
                 notes: {
                   description:
-                    'Short annotations such as agenda, preparation, or quick bullets distinct from narrative.',
+                    'Short annotations such as agenda, preparation, or quick bullets distinct from narrative. Use null when absent.',
                   type: ['string', 'null'],
                 },
                 startsAt: {
                   description:
-                    'ISO 8601 start time for the activity when specified. Omit if not explicitly provided.',
+                    'ISO 8601 start time for the activity when specified. Use null if not explicitly provided.',
                   format: 'date-time',
                   type: ['string', 'null'],
                 },
                 status: {
                   description:
-                    'Lifecycle status when mentioned. Use planned/completed/cancelled/ongoing/on_hold/pending. Omit if unclear.',
-                  enum: ['planned', 'completed', 'cancelled', 'ongoing', 'on_hold', 'pending'],
+                    'Lifecycle status when mentioned. Use planned/completed/cancelled/ongoing/on_hold/pending. Use null if unclear.',
+                  enum: [
+                    'planned',
+                    'completed',
+                    'cancelled',
+                    'ongoing',
+                    'on_hold',
+                    'pending',
+                    null,
+                  ],
                   type: ['string', 'null'],
                 },
                 tags: {
@@ -322,6 +336,7 @@ export const ActivityMemorySchema: GenerateObjectSchema = {
             'details',
             'memoryType',
             'memoryCategory',
+            'sourceIds',
             'tags',
             'withActivity',
           ],

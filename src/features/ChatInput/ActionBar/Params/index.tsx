@@ -1,12 +1,12 @@
-import { SlidersHorizontal } from 'lucide-react';
-import { memo, useState } from 'react';
+import { Settings2Icon } from 'lucide-react';
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useAgentStore } from '@/store/agent';
 import { agentByIdSelectors } from '@/store/agent/selectors';
 
 import { useAgentId } from '../../hooks/useAgentId';
-import Action from '../components/Action';
+import { ChatInputAction } from '../components/ChatInputAction';
 import Controls from './Controls';
 
 const Params = memo(() => {
@@ -14,19 +14,26 @@ const Params = memo(() => {
   const [isLoading] = useAgentStore((s) => [
     agentByIdSelectors.isAgentConfigLoadingById(agentId)(s),
   ]);
-  const [updating, setUpdating] = useState(false);
   const { t } = useTranslation('setting');
 
-  if (isLoading) return <Action disabled icon={SlidersHorizontal} />;
+  if (isLoading) return <ChatInputAction disabled icon={Settings2Icon} />;
 
   return (
-    <Action
-      icon={SlidersHorizontal}
-      loading={updating}
+    <ChatInputAction
+      icon={Settings2Icon}
       showTooltip={false}
       title={t('settingModel.params.title')}
       popover={{
-        content: <Controls setUpdating={setUpdating} updating={updating} />,
+        content: <Controls />,
+        maxWidth: 384,
+        minWidth: 384,
+        styles: {
+          content: {
+            borderRadius: 16,
+            overflow: 'hidden',
+            padding: 0,
+          },
+        },
       }}
     />
   );

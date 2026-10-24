@@ -1,30 +1,24 @@
 import { validateVideoFileSize } from '@lobechat/utils/client';
-import { type ItemType } from '@lobehub/ui';
-import { Icon, Tooltip } from '@lobehub/ui';
-import { Upload } from 'antd';
-import { css, cx } from 'antd-style';
-import isEqual from 'fast-deep-equal';
-import { ArrowRight, FileUp, FolderUp, ImageUp, LibraryBig, Paperclip } from 'lucide-react';
+import { css, cx, Icon, toast, Tooltip, Upload } from '@lobehub/ui';
+import { FileUp, FolderUp, ImageUp, Paperclip } from 'lucide-react';
 import { memo, Suspense, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { message } from '@/components/AntdStaticMethods';
-import FileIcon from '@/components/FileIcon';
-import RepoIcon from '@/components/LibIcon';
 import TipGuide from '@/components/TipGuide';
-import { openAttachKnowledgeModal } from '@/features/LibraryModal';
-import { useVisualMediaUploadAbility } from '@/hooks/useVisualMediaUploadAbility';
-import { useAgentStore } from '@/store/agent';
-import { agentByIdSelectors } from '@/store/agent/selectors';
+import { useMediaUploadAbility } from '@/hooks/useMediaUploadAbility';
+import { usePermission } from '@/hooks/usePermission';
 import { useFileStore } from '@/store/file';
 import { featureFlagsSelectors, useServerConfigStore } from '@/store/serverConfig';
 import { useUserStore } from '@/store/user';
 import { preferenceSelectors } from '@/store/user/selectors';
 
 import { useAgentId } from '../../hooks/useAgentId';
-import Action from '../components/Action';
+import { useEffectiveModel } from '../../hooks/useEffectiveModel';
+import { useLargeFileLocalPath } from '../../hooks/useLargeFileLocalPath';
+import { useChatInputStore } from '../../store';
 import { type ActionDropdownMenuItems } from '../components/ActionDropdown';
-import CheckboxItem from '../components/CheckboxWithLoading';
+import { ChatInputAction } from '../components/ChatInputAction';
+import { MENU_ICON_SIZE, useKnowledgeMenuItems } from './useKnowledgeMenuItems';
 
 const hotArea = css`
   &::before {
@@ -35,7 +29,11 @@ const hotArea = css`
   }
 `;
 
-const FileUpload = memo(() => {
+interface FileUploadProps {
+  includeKnowledge?: boolean;
+}
+
+const FileUpload = memo<FileUploadProps>(({ includeKnowledge = true }) => {
   const { t } = useTranslation('chat');
 
   const enableKnowledgeBase = useServerConfigStore(
@@ -43,12 +41,17 @@ const FileUpload = memo(() => {
   );
 
   const upload = useFileStore((s) => s.uploadChatFiles);
+  const editor = useChatInputStore((s) => s.editor);
 
   const agentId = useAgentId();
-  const model = useAgentStore((s) => agentByIdSelectors.getAgentModelById(agentId)(s));
-  const provider = useAgentStore((s) => agentByIdSelectors.getAgentModelProviderById(agentId)(s));
+  const { model, provider } = useEffectiveModel(agentId);
+  const routeLargeFilesToLocalPaths = useLargeFileLocalPath(agentId, editor);
 
-  const { canUploadImage, canUploadVideo } = useVisualMediaUploadAbility(model, provider);
+  const { canUploadImage, canUploadVideo, canUploadAudio } = useMediaUploadAbility(
+    model,
+    provider,
+    agentId,
+  );
 
   const [showTip, updateGuideState] = useUserStore((s) => [
     preferenceSelectors.showUploadFileInKnowledgeBaseTip(s),
@@ -57,35 +60,46 @@ const FileUpload = memo(() => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
 
-  const files = useAgentStore((s) => agentByIdSelectors.getAgentFilesById(agentId)(s), isEqual);
-  const knowledgeBases = useAgentStore(
-    (s) => agentByIdSelectors.getAgentKnowledgeBasesById(agentId)(s),
-    isEqual,
-  );
+  const knowledgeItems = useKnowledgeMenuItems({
+    enabled: includeKnowledge,
+    onUpdatingChange: setUpdating,
+  });
 
-  const [toggleFile, toggleKnowledgeBase] = useAgentStore((s) => [
-    s.toggleFile,
-    s.toggleKnowledgeBase,
-  ]);
+  // Viewer doesn't have `file:upload` permission — backend would 403.
+  // Render the disabled paperclip with a tooltip so the entry stays visible
+  // (per disabled-not-hidden UX rule), but block the dropdown which would
+  // otherwise let users trigger the upload anyway.
+  const { allowed: canUpload, reason } = usePermission('create_content');
 
-  if (!enableKnowledgeBase) return null;
+  if (includeKnowledge && !enableKnowledgeBase) return null;
+
+  if (!canUpload) {
+    return (
+      <Tooltip title={reason}>
+        <ChatInputAction
+          disabled
+          icon={Paperclip}
+          showTooltip={false}
+          title={t('upload.action.tooltip')}
+        />
+      </Tooltip>
+    );
+  }
 
   const uploadItems: ActionDropdownMenuItems = [
     {
       closeOnClick: false,
       disabled: !canUploadImage,
-      icon: ImageUp,
+      icon: <Icon icon={ImageUp} size={MENU_ICON_SIZE} />,
       key: 'upload-image',
       label: canUploadImage ? (
         <Upload
           multiple
           accept={'image/*'}
-          showUploadList={false}
-          beforeUpload={async (file) => {
+          onFiles={async (files) => {
             setDropdownOpen(false);
-            await upload([file]);
-
-            return false;
+            editor?.focus();
+            await upload(files, agentId);
           }}
         >
           <div className={cx(hotArea)}>{t('upload.action.imageUpload')}</div>
@@ -98,34 +112,37 @@ const FileUpload = memo(() => {
     },
     {
       closeOnClick: false,
-      icon: FileUp,
+      icon: <Icon icon={FileUp} size={MENU_ICON_SIZE} />,
       key: 'upload-file',
       label: (
         <Upload
           multiple
-          showUploadList={false}
-          beforeUpload={async (file) => {
+          beforeUpload={(file) => {
             if (
               (file.type.startsWith('image') && !canUploadImage) ||
-              (file.type.startsWith('video') && !canUploadVideo)
+              (file.type.startsWith('video') && !canUploadVideo) ||
+              (file.type.startsWith('audio') && !canUploadAudio)
             )
               return false;
 
-            // Validate video file size
             const validation = validateVideoFileSize(file);
             if (!validation.isValid) {
-              message.error(
+              toast.error(
                 t('upload.validation.videoSizeExceeded', {
                   actualSize: validation.actualSize,
+                  maxSize: validation.maxSize,
                 }),
               );
               return false;
             }
 
+            return true;
+          }}
+          onFiles={async (files) => {
             setDropdownOpen(false);
-            await upload([file]);
-
-            return false;
+            editor?.focus();
+            const filesToUpload = routeLargeFilesToLocalPaths(files);
+            if (filesToUpload.length > 0) await upload(filesToUpload, agentId);
           }}
         >
           <div className={cx(hotArea)}>{t('upload.action.fileUpload')}</div>
@@ -134,35 +151,38 @@ const FileUpload = memo(() => {
     },
     {
       closeOnClick: false,
-      icon: FolderUp,
+      icon: <Icon icon={FolderUp} size={MENU_ICON_SIZE} />,
       key: 'upload-folder',
       label: (
         <Upload
           directory
           multiple={true}
-          showUploadList={false}
-          beforeUpload={async (file) => {
+          beforeUpload={(file) => {
             if (
               (file.type.startsWith('image') && !canUploadImage) ||
-              (file.type.startsWith('video') && !canUploadVideo)
+              (file.type.startsWith('video') && !canUploadVideo) ||
+              (file.type.startsWith('audio') && !canUploadAudio)
             )
               return false;
 
-            // Validate video file size
             const validation = validateVideoFileSize(file);
             if (!validation.isValid) {
-              message.error(
+              toast.error(
                 t('upload.validation.videoSizeExceeded', {
                   actualSize: validation.actualSize,
+                  maxSize: validation.maxSize,
                 }),
               );
               return false;
             }
 
+            return true;
+          }}
+          onFiles={async (files) => {
             setDropdownOpen(false);
-            await upload([file]);
-
-            return false;
+            editor?.focus();
+            const filesToUpload = routeLargeFilesToLocalPaths(files);
+            if (filesToUpload.length > 0) await upload(filesToUpload, agentId);
           }}
         >
           <div className={cx(hotArea)}>{t('upload.action.folderUpload')}</div>
@@ -171,77 +191,10 @@ const FileUpload = memo(() => {
     },
   ];
 
-  const knowledgeItems: ItemType[] = [];
-
-  // Only add knowledge base items if there are files or knowledge bases
-  if (files.length > 0 || knowledgeBases.length > 0) {
-    knowledgeItems.push({
-      children: [
-        // first the files
-        ...files.map((item) => ({
-          icon: <FileIcon fileName={item.name} fileType={item.type} size={20} />,
-          key: item.id,
-          label: (
-            <CheckboxItem
-              checked={item.enabled}
-              id={item.id}
-              label={item.name}
-              onUpdate={async (id, enabled) => {
-                setUpdating(true);
-                await toggleFile(id, enabled);
-                setUpdating(false);
-              }}
-            />
-          ),
-        })),
-
-        // then the knowledge bases
-        ...knowledgeBases.map((item) => ({
-          icon: <RepoIcon />,
-          key: item.id,
-          label: (
-            <CheckboxItem
-              checked={item.enabled}
-              id={item.id}
-              label={item.name}
-              onUpdate={async (id, enabled) => {
-                setUpdating(true);
-                await toggleKnowledgeBase(id, enabled);
-                setUpdating(false);
-              }}
-            />
-          ),
-        })),
-      ],
-      key: 'relativeFilesOrLibraries',
-      label: t('knowledgeBase.relativeFilesOrLibraries'),
-      type: 'group',
-    });
-  }
-
-  // Always add the "View More" option
-  knowledgeItems.push(
-    {
-      type: 'divider',
-    },
-    {
-      extra: <Icon icon={ArrowRight} />,
-      icon: LibraryBig,
-      key: 'knowledge-base-store',
-      label: t('knowledgeBase.viewMore'),
-      onClick: () => {
-        openAttachKnowledgeModal();
-      },
-    },
-  );
-
-  const items: ActionDropdownMenuItems = [
-    ...uploadItems,
-    ...(knowledgeItems.length > 0 ? knowledgeItems : []),
-  ];
+  const items: ActionDropdownMenuItems = [...uploadItems, ...knowledgeItems];
 
   const content = (
-    <Action
+    <ChatInputAction
       icon={Paperclip}
       loading={updating}
       open={dropdownOpen}
@@ -259,8 +212,10 @@ const FileUpload = memo(() => {
   );
 
   return (
-    <Suspense fallback={<Action disabled icon={Paperclip} title={t('upload.action.tooltip')} />}>
-      {showTip ? (
+    <Suspense
+      fallback={<ChatInputAction disabled icon={Paperclip} title={t('upload.action.tooltip')} />}
+    >
+      {includeKnowledge && showTip ? (
         <TipGuide
           open={showTip}
           placement={'top'}
